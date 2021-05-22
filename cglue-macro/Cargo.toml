@@ -1,0 +1,13 @@
+[package]
+name = "cglue-macro"
+version = "0.1.0"
+authors = ["Aurimas Blažulionis <0x60@pm.me>"]
+edition = "2018"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "1", features = ["full"] }
+proc-macro2 = "1"
+quote = "1"

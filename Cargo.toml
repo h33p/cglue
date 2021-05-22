@@ -1,0 +1,12 @@
+
+[workspace]
+members = [
+    "cglue",
+	"cglue-macro"
+]
+
+default-members = [
+    "cglue",
+	"cglue-macro"
+]
+
