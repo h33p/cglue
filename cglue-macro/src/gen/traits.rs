@@ -60,10 +60,10 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
     }
 
     // Formatted documentation strings
-    let vtbl_doc = format!("/// CGlue vtable for trait {}.", trait_name);
-    let vtbl_opaque_doc = format!("/// Opaque CGlue vtable for trait {}.", trait_name);
-    let trait_obj_doc = format!("/// CGlue Trait Object type for trait {}.", trait_name);
-    let opaque_trait_obj_doc = format!("/// Opaque CGlue Trait Object for trait {}.", trait_name);
+    let vtbl_doc = format!("CGlue vtable for trait {}.", trait_name);
+    let vtbl_opaque_doc = format!("Opaque CGlue vtable for trait {}.", trait_name);
+    let trait_obj_doc = format!("CGlue Trait Object type for trait {}.", trait_name);
+    let opaque_trait_obj_doc = format!("Opaque CGlue Trait Object for trait {}.", trait_name);
 
     // Glue it all together
     let gen = quote! {
