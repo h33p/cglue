@@ -2,152 +2,124 @@ use proc_macro2::TokenStream;
 
 use super::func::ParsedFunc;
 
-use quote::{quote, ToTokens};
+use quote::*;
 use syn::*;
 
 pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
-    // Need to preserve the same visibility as the trait itself.
-    let vis = tr.vis.to_token_stream().to_string();
-
-    let trname = tr.ident.to_string();
-
     // Path to trait group import.
-    let trg_path = format!("{}::trait_group", crate::util::crate_path().to_string());
+    let trg_path: TokenStream = format!("{}::trait_group", crate::util::crate_path().to_string())
+        .parse()
+        .unwrap();
+
+    // Need to preserve the same visibility as the trait itself.
+    let vis = tr.vis.to_token_stream();
+
+    let trait_name = &tr.ident;
+
+    // Additional identifiers
+    let vtbl_ident = format_ident!("CGlueVtbl{}", trait_name);
+    let opaque_vtbl_ident = format_ident!("Opaque{}", vtbl_ident);
+    let trait_obj_ident = format_ident!("CGlueTraitObj{}", trait_name);
+    let opaque_trait_obj_ident = format_ident!("CGlueOpaqueTraitObj{}", trait_name);
 
     let mut funcs = vec![];
 
     // Parse all functions in the trait
     for item in &tr.items {
         if let TraitItem::Method(m) = item {
-            funcs.push(ParsedFunc::new(m.sig.clone(), trname.clone()));
+            funcs.push(ParsedFunc::new(m.sig.clone(), trait_name.clone()));
         }
     }
 
-    let vtbl_name = format!("CGlueVtbl{}", trname);
-
-    // Define the vtable
-    let mut vtbl = format!(
-        r#"
-        /// CGlue vtable for trait {}.
-        ///
-        /// This virtual function table contains ABI-safe interface for the given trait.
-        #[repr(C)]
-        {} struct {}<T> {{
-        "#,
-        trname, vis, vtbl_name
-    );
+    // Function definitions in the vtable
+    let mut vtbl_func_defintions = TokenStream::new();
 
     for func in &funcs {
-        vtbl.push_str(&func.vtbl_def());
+        func.vtbl_def(&mut vtbl_func_defintions);
     }
 
-    vtbl.push_str("}");
-
-    let parsed_vtbl: TokenStream = vtbl.parse().unwrap();
-
-    // Define the default implementation for the vtable reference
-    let mut vtbl_default = format!(
-        r#"
-        impl<'a, T: {}> Default for &'a {}<T> {{
-            /// Create a static vtable for the given type.
-            fn default() -> Self {{
-                &{} {{
-        "#,
-        trname, vtbl_name, vtbl_name
-    );
+    // Default functions for vtable reference
+    let mut vtbl_default_funcs = TokenStream::new();
 
     for func in &funcs {
-        vtbl_default.push_str(&func.vtbl_default_def());
+        func.vtbl_default_def(&mut vtbl_default_funcs);
     }
-
-    vtbl_default.push_str(
-        r#"
-                }
-            }
-        }
-        "#,
-    );
-
-    let parsed_vtbl_default: TokenStream = vtbl_default.parse().unwrap();
 
     // Define wrapped functions for the vtable
-    let mut cfuncs = String::new();
+    let mut cfuncs = TokenStream::new();
 
-    for func in funcs.iter().filter_map(ParsedFunc::cfunc_def) {
-        cfuncs.push_str(&func);
+    for func in funcs.iter() {
+        func.cfunc_def(&mut cfuncs);
     }
-
-    let parsed_cfuncs: TokenStream = cfuncs.parse().unwrap();
-
-    // Define safe opaque conversion for the vtable
-    let mut vtbl_opaque = format!(
-        r#"
-        /// Opaque CGlue vtable for trait {}.
-        ///
-        /// This virtual function table has type information destroyed, is used in CGlue objects
-        /// and trait groups.
-        "#,
-        trname
-    );
-
-    vtbl_opaque.push_str(&format!(
-        r#"
-        {} type Opaque{} = {}<core::ffi::c_void>;
-
-        unsafe impl<T: {}> {}::CGlueBaseVtbl for {}<T> {{
-            type OpaqueVtbl = Opaque{};
-        }}
-
-        impl<T: {}> {}::CGlueVtbl<T> for {}<T> {{}}
-
-        /// CGlue Trait Object type for trait {}.
-        pub type CGlueTraitObj{}<'a, T> = {}::CGlueTraitObj::<'a, T, CGlueVtbl{}<T>>;
-
-        /// Opaque CGlue Trait Object for trait {}.
-        pub type CGlueOpaqueTraitObj{}<'a> = CGlueTraitObj{}<'a, ::core::ffi::c_void>;
-        "#,
-        vis,
-        vtbl_name,
-        vtbl_name,
-        trname,
-        trg_path,
-        vtbl_name,
-        vtbl_name,
-        trname,
-        trg_path,
-        vtbl_name,
-        trname,
-        trname,
-        trg_path,
-        trname,
-        trname,
-        trname,
-        trname
-    ));
-
-    let parsed_vtbl_opaque: TokenStream = vtbl_opaque.parse().unwrap();
 
     // Implement the trait for a type that has AsRef<OpaqueCGlueVtblT>
-    let mut trait_impl = format!(
-        "impl<T: AsRef<Opaque{}> + {}::CGlueObj<core::ffi::c_void>> {} for T {{",
-        vtbl_name, trg_path, trname
-    );
+    let mut trait_impl_fns = TokenStream::new();
 
     for func in &funcs {
-        trait_impl.push_str(&func.trait_impl());
+        func.trait_impl(&mut trait_impl_fns);
     }
 
-    trait_impl.push('}');
-
-    let parsed_trait_impl: TokenStream = trait_impl.parse().unwrap();
+    // Formatted documentation strings
+    let vtbl_doc = format!("/// CGlue vtable for trait {}.", trait_name);
+    let vtbl_opaque_doc = format!("/// Opaque CGlue vtable for trait {}.", trait_name);
+    let trait_obj_doc = format!("/// CGlue Trait Object type for trait {}.", trait_name);
+    let opaque_trait_obj_doc = format!("/// Opaque CGlue Trait Object for trait {}.", trait_name);
 
     // Glue it all together
     let gen = quote! {
-        #parsed_vtbl
-        #parsed_vtbl_default
-        #parsed_cfuncs
-        #parsed_vtbl_opaque
-        #parsed_trait_impl
+        /* Primary vtable definition. */
+
+        #[doc = #vtbl_doc]
+        ///
+        /// This virtual function table contains ABI-safe interface for the given trait.
+        #[repr(C)]
+        #vis struct #vtbl_ident<T> {
+            #vtbl_func_defintions
+        }
+
+        /* Default implementation. */
+
+        /// Default vtable reference creation.
+        impl<'a, T: #trait_name> Default for &'a #vtbl_ident<T> {
+            /// Create a static vtable for the given type.
+            fn default() -> Self {
+                &#vtbl_ident {
+                    #vtbl_default_funcs
+                }
+            }
+        }
+
+        /* Vtable trait implementations. */
+
+        #[doc = #vtbl_opaque_doc]
+        ///
+        /// This virtual function table has type information destroyed, is used in CGlue objects
+        /// and trait groups.
+
+        #vis type #opaque_vtbl_ident = #vtbl_ident<core::ffi::c_void>;
+
+        unsafe impl<T: #trait_name> #trg_path::CGlueBaseVtbl for #vtbl_ident<T> {
+            type OpaqueVtbl = #opaque_vtbl_ident;
+        }
+
+        impl<T: #trait_name> #trg_path::CGlueVtbl<T> for #vtbl_ident<T> {}
+
+        #[doc = #trait_obj_doc]
+        pub type #trait_obj_ident<'a, T> = #trg_path::CGlueTraitObj::<'a, T, #vtbl_ident<T>>;
+
+        #[doc = #opaque_trait_obj_doc]
+        pub type #opaque_trait_obj_ident<'a> = #trait_obj_ident<'a, ::core::ffi::c_void>;
+
+        /* Internal wrapper functions. */
+
+        #cfuncs
+
+        /* Trait implementation. */
+
+        /// Implement the traits for any CGlue object.
+        impl<T: AsRef<#opaque_vtbl_ident> + #trg_path::CGlueObj<core::ffi::c_void>> #trait_name for T {
+            #trait_impl_fns
+        }
     };
 
     gen.into()
