@@ -1,3 +1,62 @@
+//!
+//! # CGlue
+//!
+//! If all code is glued together, our glue is the safest in the market.
+//!
+//! ## FFI-safe trait generation, helper structures, and more!
+//!
+//! CGlue offers an easy way to ABI (application binary interface) safety. Just a few annotations and your trait is ready to go!
+//!
+//! ```rust
+//! use cglue_macro::*;
+//!
+//! #[cglue_trait]
+//! pub trait InfoPrinter {
+//! 	fn print_info(&self);
+//! }
+//!
+//! struct Info {
+//! 	value: usize
+//! }
+//!
+//! impl InfoPrinter for Info {
+//! 	fn print_info(&self) {
+//! 		println!("Info struct: {}", self.value);
+//! 	}
+//! }
+//!
+//! fn use_info_printer(printer: &impl InfoPrinter) {
+//! 	println!("Printing info:");
+//! 	printer.print_info();
+//! }
+//!
+//! fn main() {
+//! 	let mut info = Info {
+//! 		value: 5
+//! 	};
+//!
+//! 	let obj = cglue_obj!(info as InfoPrinter);
+//!
+//! 	use_info_printer(&obj);
+//! }
+//! ```
+//!
+//! A CGlue object is ABI-safe, meaning it can be used across FFI-boundary - C code, or dynamically loaded Rust libraries. While Rust does not guarantee your code will work with 2 different compiler versions clashing, CGlue glues it all together in a way that works.
+//!
+//! This is done by generating wrapper vtables (virtual function tables) for the specified trait, and creating an opaque object with matching table. Here is what's behind the `cglue_obj` macro:
+//!
+//! ```ignore
+//! let obj = cglue::trait_group::CGlueTraitObj::<_, CGlueVtblInfoPrinter<_>>::from(&mut info).into_opaque();
+//! ```
+//!
+//! `cglue_trait` annotation generates a `CGlueVtblInfoPrinter` structure, and all the code needed to construct it for a type implementing the `InfoPrinter` trait. Then, a `CGlueTraitObj` is constructed that wraps the input object and implements the `InfoPrinter` trait.
+//!
+//! But that's not all, you can also group traits together!
+//!
+//! ```rust
+//!
+//! ```
+
 pub mod arc;
 pub mod callback;
 pub mod option;
@@ -5,12 +64,9 @@ pub mod repr_cstring;
 pub mod trait_group;
 
 //#[cfg(test)]
-mod tests {
+pub mod tests {
 
-    use crate::trait_group::*;
     use cglue_macro::*;
-
-    use core::convert::TryFrom;
 
     //#[cglue_derive(TestGroup)]
     struct SA {}
@@ -18,7 +74,7 @@ mod tests {
     struct SB {}
 
     #[cglue_trait]
-    trait TA {
+    pub trait TA {
         extern "C" fn ta_1(&self) -> usize;
     }
 
@@ -35,7 +91,7 @@ mod tests {
     }
 
     #[cglue_trait]
-    trait TB {
+    pub trait TB {
         extern "C" fn tb_1(&self);
     }
 
@@ -44,7 +100,7 @@ mod tests {
     }
 
     #[cglue_trait]
-    trait TC {
+    pub trait TC {
         fn tc_1(&self);
         extern "C" fn tc_2(&mut self);
     }
@@ -54,18 +110,13 @@ mod tests {
         extern "C" fn tc_2(&mut self) {}
     }
 
-    fn brrr() {
-        let mut a = SA {};
-        let obj = CGlueTraitObj::<_, CGlueVtblTC<_>>::from(&mut a).into_opaque();
-    }
-
     #[test]
     fn call_a() {
         let mut a = SA {};
         let mut b = SB {};
 
-        let obja = CGlueTraitObj::<_, CGlueVtblTA<_>>::from(&mut a).into_opaque();
-        let objb = CGlueTraitObj::<_, CGlueVtblTA<_>>::from(&mut b).into_opaque();
+        let obja = cglue_obj!(a as TA);
+        let objb = CGlueTraitObjTA::from(&mut b).into_opaque();
 
         assert_eq!(obja.ta_1() + objb.ta_1(), 11);
     }

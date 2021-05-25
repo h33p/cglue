@@ -13,14 +13,17 @@ pub struct CGlueTraitObj<'a, T, V> {
 }
 
 /// Opaque type of the trait object.
-pub type CGlueOpaqueTraitObj<'a, V> = CGlueTraitObj<'a, c_void, <V as CGlueVtbl>::OpaqueVtbl>;
+pub type CGlueOpaqueTraitObjOut<'a, V> =
+    CGlueTraitObj<'a, c_void, <V as CGlueBaseVtbl>::OpaqueVtbl>;
 
-impl<'a, T, V: CGlueVtbl> CGlueTraitObj<'a, T, V> {
+pub type CGlueOpaqueTraitObj<'a, V> = CGlueTraitObj<'a, c_void, V>;
+
+impl<'a, T, V: CGlueVtbl<T>> CGlueTraitObj<'a, T, V> {
     /// Transform self into an opaque version of the trait object.
     ///
     /// The opaque version safely destroys type information, and after this point there is no way
     /// back.
-    pub fn into_opaque(self) -> CGlueOpaqueTraitObj<'a, V> {
+    pub fn into_opaque(self) -> CGlueOpaqueTraitObjOut<'a, V> {
         unsafe { std::mem::transmute(self) }
     }
 }
@@ -41,11 +44,14 @@ impl<T, V> CGlueObj<T> for CGlueTraitObj<'_, T, V> {
     }
 }
 
-impl<'a, T: GetCGlueVtbl<'a, V>, V: CGlueVtbl> From<&'a mut T> for CGlueTraitObj<'a, T, V> {
+impl<'a, T, V: CGlueVtbl<T>> From<&'a mut T> for CGlueTraitObj<'a, T, V>
+where
+    &'a V: Default,
+{
     fn from(this: &'a mut T) -> Self {
         Self {
             this,
-            vtbl: T::get_vtbl(),
+            vtbl: Default::default(),
         }
     }
 }
@@ -59,22 +65,19 @@ pub trait CGlueObj<T> {
 }
 
 /// Trait for CGlue vtables.
+pub trait CGlueVtbl<T>: CGlueBaseVtbl {}
+
+/// Trait for CGlue vtables.
 ///
 /// # Safety
 ///
 /// This trait is meant to be implemented by the code generator. If implementing manually, make
 /// sure that the `OpaqueVtbl` is the exact same type, with the only difference being `this` types.
-pub unsafe trait CGlueVtbl: Sized {
+pub unsafe trait CGlueBaseVtbl: Sized {
     type OpaqueVtbl: Sized;
 
     /// Get the opaque vtable for the type.
     fn as_opaque(&self) -> &Self::OpaqueVtbl {
         unsafe { &*(self as *const Self as *const Self::OpaqueVtbl) }
     }
-}
-
-/// Build a vtable for the object.
-pub trait GetCGlueVtbl<'a, T: CGlueVtbl> {
-    /// Builds the wanted vtable.
-    fn get_vtbl() -> &'a T;
 }

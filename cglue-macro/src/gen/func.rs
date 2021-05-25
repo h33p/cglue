@@ -46,29 +46,27 @@ impl ParsedFunc {
 
     pub fn vtbl_args(&self) -> String {
         let i1 = self
-            .receiver.clone().map(ParsedArg::from)
+            .receiver
+            .clone()
+            .map(|r| ParsedArg::from_receiver(r, "T"))
             .into_iter()
             .map(|i| i.to_string());
 
-        let i2 = self
-            .args
-            .iter()
-            .map(ToString::to_string);
+        let i2 = self.args.iter().map(ToString::to_string);
 
-        i1.chain(i2)
-            .collect::<Vec<_>>()
-            .join(", ")
+        i1.chain(i2).collect::<Vec<_>>().join(", ")
     }
 
     pub fn trait_args(&self) -> String {
-        let i1 = self.receiver.as_ref().map(|i| i.to_token_stream().to_string())
+        let i1 = self
+            .receiver
+            .as_ref()
+            .map(|i| i.to_token_stream().to_string())
             .into_iter();
 
         let i2 = self.args.iter().map(ToString::to_string);
 
-        i1.chain(i2)
-            .collect::<Vec<_>>()
-            .join(", ")
+        i1.chain(i2).collect::<Vec<_>>().join(", ")
     }
 
     pub fn chained_call_args(&self) -> String {
@@ -82,7 +80,7 @@ impl ParsedFunc {
     /// Create a VTable definition for this function
     pub fn vtbl_def(&self) -> String {
         format!(
-            "{}: extern \"C\" fn({}) -> {},",
+            "pub {}: extern \"C\" fn({}) -> {},",
             self.name.to_string(),
             self.vtbl_args(),
             self.out.to_string()
@@ -139,12 +137,14 @@ impl ParsedFunc {
         let call_args = self.chained_call_args();
 
         let this_arg = match &self.receiver {
-            Some(x) => if x.mutability.is_some() {
-                "self.cobj_mut()"
-            } else {
-                "self.cobj_ref()"
-            },
-            _ => "()"
+            Some(x) => {
+                if x.mutability.is_some() {
+                    "self.cobj_mut()"
+                } else {
+                    "self.cobj_ref()"
+                }
+            }
+            _ => "()",
         };
 
         format!(
@@ -153,7 +153,14 @@ impl ParsedFunc {
                 {} fn {} ({}) -> {} {{
                     (self.as_ref().{})({}, {})
                 }}
-            "#, self.abi.prefix(), name, args, out, name, this_arg, call_args
+            "#,
+            self.abi.prefix(),
+            name,
+            args,
+            out,
+            name,
+            this_arg,
+            call_args
         )
     }
 }
@@ -168,7 +175,7 @@ impl FuncAbi {
     pub fn prefix(&self) -> &'static str {
         match self {
             FuncAbi::ReprC => "extern \"C\"",
-            FuncAbi::Wrapped => ""
+            FuncAbi::Wrapped => "",
         }
     }
 }
@@ -249,8 +256,8 @@ impl ToString for ParsedReturnType {
     }
 }
 
-impl From<Receiver> for ParsedType {
-    fn from(ty: Receiver) -> Self {
+impl ParsedType {
+    fn from_receiver(ty: Receiver, typename: &str) -> Self {
         let mut s = String::new();
 
         if ty.reference.is_some() {
@@ -261,7 +268,7 @@ impl From<Receiver> for ParsedType {
             s.push_str("mut ");
         }
 
-        s.push_str("T");
+        s.push_str(typename);
 
         let outty = Type::Verbatim(s.parse().unwrap());
         ParsedType::Other(outty)
@@ -286,7 +293,7 @@ impl ToString for ParsedArg {
 impl From<FnArg> for ParsedArg {
     fn from(arg: FnArg) -> Self {
         match arg {
-            FnArg::Receiver(ty) => ty.into(),
+            FnArg::Receiver(ty) => ParsedArg::from_receiver(ty, "T"),
             FnArg::Typed(ty) => Self {
                 name: *ty.pat,
                 ty: (*ty.ty).into(),
@@ -295,11 +302,11 @@ impl From<FnArg> for ParsedArg {
     }
 }
 
-impl From<Receiver> for ParsedArg {
-    fn from(ty: Receiver) -> Self {
+impl ParsedArg {
+    fn from_receiver(ty: Receiver, typename: &str) -> Self {
         Self {
             name: Pat::Verbatim("this".parse().unwrap()),
-            ty: ty.into(),
+            ty: ParsedType::from_receiver(ty, typename),
         }
     }
 }

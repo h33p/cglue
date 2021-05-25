@@ -11,9 +11,8 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
 
     let trname = tr.ident.to_string();
 
-    // Path to trait group import. 
-    // TODO: We somehow need to know here whether to use crate or ::cglue.
-    let trg_path = format!("{}::trait_group", "crate");
+    // Path to trait group import.
+    let trg_path = format!("{}::trait_group", crate::util::crate_path().to_string());
 
     let mut funcs = vec![];
 
@@ -49,12 +48,12 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
     // Define the default implementation for the vtable reference
     let mut vtbl_default = format!(
         r#"
-        impl<'a, T: {}> GetCGlueVtbl<'a, {}<T>> for T {{ 
+        impl<'a, T: {}> Default for &'a {}<T> {{
             /// Create a static vtable for the given type.
-            fn get_vtbl() -> &'a {}<T> {{
+            fn default() -> Self {{
                 &{} {{
         "#,
-        trname, vtbl_name, vtbl_name, vtbl_name
+        trname, vtbl_name, vtbl_name
     );
 
     for func in &funcs {
@@ -81,22 +80,58 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
     let parsed_cfuncs: TokenStream = cfuncs.parse().unwrap();
 
     // Define safe opaque conversion for the vtable
-    let vtbl_opaque = format!(
+    let mut vtbl_opaque = format!(
         r#"
-        /// Opaque type for trait {} vtable, used in trait groups.
+        /// Opaque CGlue vtable for trait {}.
+        ///
+        /// This virtual function table has type information destroyed, is used in CGlue objects
+        /// and trait groups.
+        "#,
+        trname
+    );
+
+    vtbl_opaque.push_str(&format!(
+        r#"
         {} type Opaque{} = {}<core::ffi::c_void>;
 
-        unsafe impl<T: {}> {}::CGlueVtbl for {}<T> {{
+        unsafe impl<T: {}> {}::CGlueBaseVtbl for {}<T> {{
             type OpaqueVtbl = Opaque{};
         }}
+
+        impl<T: {}> {}::CGlueVtbl<T> for {}<T> {{}}
+
+        /// CGlue Trait Object type for trait {}.
+        pub type CGlueTraitObj{}<'a, T> = {}::CGlueTraitObj::<'a, T, CGlueVtbl{}<T>>;
+
+        /// Opaque CGlue Trait Object for trait {}.
+        pub type CGlueOpaqueTraitObj{}<'a> = CGlueTraitObj{}<'a, ::core::ffi::c_void>;
         "#,
-        trname, vis, vtbl_name, vtbl_name, trname, trg_path, vtbl_name, vtbl_name
-    );
+        vis,
+        vtbl_name,
+        vtbl_name,
+        trname,
+        trg_path,
+        vtbl_name,
+        vtbl_name,
+        trname,
+        trg_path,
+        vtbl_name,
+        trname,
+        trname,
+        trg_path,
+        trname,
+        trname,
+        trname,
+        trname
+    ));
 
     let parsed_vtbl_opaque: TokenStream = vtbl_opaque.parse().unwrap();
 
     // Implement the trait for a type that has AsRef<OpaqueCGlueVtblT>
-    let mut trait_impl = format!("impl<T: AsRef<Opaque{}> + {}::CGlueObj<core::ffi::c_void>> {} for T {{", vtbl_name, trg_path, trname);
+    let mut trait_impl = format!(
+        "impl<T: AsRef<Opaque{}> + {}::CGlueObj<core::ffi::c_void>> {} for T {{",
+        vtbl_name, trg_path, trname
+    );
 
     for func in &funcs {
         trait_impl.push_str(&func.trait_impl());

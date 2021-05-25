@@ -6,6 +6,7 @@ edition = "2018"
 description = "FFI safe abstractions for making plugins and C-compatible libraries"
 
 [dependencies]
+paste = "1"
 
 
 #[dev-dependencies]
