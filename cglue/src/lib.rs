@@ -12,32 +12,32 @@
 //!
 //! #[cglue_trait]
 //! pub trait InfoPrinter {
-//! 	fn print_info(&self);
+//!     fn print_info(&self);
 //! }
 //!
 //! struct Info {
-//! 	value: usize
+//!     value: usize
 //! }
 //!
 //! impl InfoPrinter for Info {
-//! 	fn print_info(&self) {
-//! 		println!("Info struct: {}", self.value);
-//! 	}
+//!     fn print_info(&self) {
+//!         println!("Info struct: {}", self.value);
+//!     }
 //! }
 //!
 //! fn use_info_printer(printer: &impl InfoPrinter) {
-//! 	println!("Printing info:");
-//! 	printer.print_info();
+//!     println!("Printing info:");
+//!     printer.print_info();
 //! }
 //!
 //! fn main() {
-//! 	let mut info = Info {
-//! 		value: 5
-//! 	};
+//!     let mut info = Info {
+//!         value: 5
+//!     };
 //!
-//! 	let obj = cglue_obj!(info as InfoPrinter);
+//!     let obj = cglue_obj!(info as InfoPrinter);
 //!
-//! 	use_info_printer(&obj);
+//!     use_info_printer(&obj);
 //! }
 //! ```
 //!
@@ -46,7 +46,7 @@
 //! This is done by generating wrapper vtables (virtual function tables) for the specified trait, and creating an opaque object with matching table. Here is what's behind the `cglue_obj` macro:
 //!
 //! ```ignore
-//! let obj = cglue::trait_group::CGlueTraitObj::<_, CGlueVtblInfoPrinter<_>>::from(&mut info).into_opaque();
+//! let obj = CGlueTraitObjInfoPrinter::from(&mut info).into_opaque();
 //! ```
 //!
 //! `cglue_trait` annotation generates a `CGlueVtblInfoPrinter` structure, and all the code needed to construct it for a type implementing the `InfoPrinter` trait. Then, a `CGlueTraitObj` is constructed that wraps the input object and implements the `InfoPrinter` trait.
