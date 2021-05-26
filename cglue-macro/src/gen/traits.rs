@@ -55,9 +55,17 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
     // Implement the trait for a type that has AsRef<OpaqueCGlueVtblT>
     let mut trait_impl_fns = TokenStream::new();
 
+    let mut need_mut = false;
+
     for func in &funcs {
-        func.trait_impl(&mut trait_impl_fns);
+        need_mut = func.trait_impl(&mut trait_impl_fns) || need_mut;
     }
+
+    // If the trait has funcs with mutable self, disallow &T objects.
+    let required_mutability = match need_mut {
+        true => quote!(CGlueObjMut),
+        _ => quote!(CGlueObjRef),
+    };
 
     // Formatted documentation strings
     let vtbl_doc = format!("CGlue vtable for trait {}.", trait_name);
@@ -105,10 +113,10 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
         impl<T: #trait_name> #trg_path::CGlueVtbl<T> for #vtbl_ident<T> {}
 
         #[doc = #trait_obj_doc]
-        pub type #trait_obj_ident<'a, T> = #trg_path::CGlueTraitObj::<'a, T, #vtbl_ident<T>>;
+        pub type #trait_obj_ident<'a, T, B> = #trg_path::CGlueTraitObj::<'a, B, #vtbl_ident<T>>;
 
         #[doc = #opaque_trait_obj_doc]
-        pub type #opaque_trait_obj_ident<'a> = #trait_obj_ident<'a, ::core::ffi::c_void>;
+        pub type #opaque_trait_obj_ident<'a, B> = #trait_obj_ident<'a, ::core::ffi::c_void, B>;
 
         /* Internal wrapper functions. */
 
@@ -117,7 +125,7 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
         /* Trait implementation. */
 
         /// Implement the traits for any CGlue object.
-        impl<T: AsRef<#opaque_vtbl_ident> + #trg_path::CGlueObj<core::ffi::c_void>> #trait_name for T {
+        impl<T: AsRef<#opaque_vtbl_ident> + #trg_path::#required_mutability<core::ffi::c_void>> #trait_name for T {
             #trait_impl_fns
         }
     };

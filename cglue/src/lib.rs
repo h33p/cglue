@@ -35,7 +35,7 @@
 //!         value: 5
 //!     };
 //!
-//!     let obj = cglue_obj!(info as InfoPrinter);
+//!     let obj = cglue_obj!(&mut info as InfoPrinter);
 //!
 //!     use_info_printer(&obj);
 //! }
@@ -62,6 +62,7 @@ pub mod callback;
 pub mod option;
 pub mod repr_cstring;
 pub mod trait_group;
+pub mod wrap_box;
 
 //#[cfg(test)]
 pub mod tests {
@@ -92,11 +93,18 @@ pub mod tests {
 
     #[cglue_trait]
     pub trait TB {
-        extern "C" fn tb_1(&self);
+        extern "C" fn tb_1(&self, val: usize) -> usize;
+        fn tb_2(&self, val: usize) -> usize;
     }
 
     impl TB for SB {
-        extern "C" fn tb_1(&self) {}
+        extern "C" fn tb_1(&self, val: usize) -> usize {
+            val * 2
+        }
+
+        fn tb_2(&self, val: usize) -> usize {
+            val * val
+        }
     }
 
     #[cglue_trait]
@@ -112,13 +120,15 @@ pub mod tests {
 
     #[test]
     fn call_a() {
-        let mut a = SA {};
+        let a = SA {};
         let mut b = SB {};
+        let c = SB {};
 
-        let obja = cglue_obj!(a as TA);
-        let objb = CGlueTraitObjTA::from(&mut b).into_opaque();
+        let obja = cglue_obj!(&a as TA);
+        let objb = cglue_obj!(&mut b as TA);
+        let objc = cglue_obj!(c as TA);
 
-        assert_eq!(obja.ta_1() + objb.ta_1(), 11);
+        assert_eq!(obja.ta_1() + objb.ta_1() + objc.ta_1(), 17);
     }
 
     cglue_trait_group!(TestGroup, TA, { TB, TC });
@@ -127,7 +137,10 @@ pub mod tests {
 
     #[test]
     fn get_b() {
-        let a = SA {};
         let b = SB {};
+
+        let objb = cglue_obj!(b as TB);
+
+        assert_eq!(objb.tb_2(objb.tb_1(10)), 400);
     }
 }

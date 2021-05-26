@@ -3,9 +3,9 @@ extern crate proc_macro;
 mod gen;
 mod util;
 
-use gen::single_obj::ObjStruct;
 use proc_macro::TokenStream;
-use quote::quote;
+use quote::ToTokens;
+use quote::{format_ident, quote};
 use syn::*;
 
 #[proc_macro]
@@ -16,14 +16,15 @@ pub fn cglue_trait_group(_args: TokenStream) -> TokenStream {
 
 #[proc_macro]
 pub fn cglue_obj(args: TokenStream) -> TokenStream {
-    let ObjStruct { ident, target } = parse_macro_input!(args as ObjStruct);
+    let cast = parse_macro_input!(args as ExprCast);
 
-    let target: proc_macro2::TokenStream = format!("CGlueTraitObj{}", target.to_string())
-        .parse()
-        .unwrap();
+    let ident = cast.expr;
+    let target = cast.ty;
+
+    let target = format_ident!("CGlueTraitObj{}", target.to_token_stream().to_string());
 
     let gen = quote! {
-        #target::from(&mut #ident).into_opaque()
+        #target::from(#ident).into_opaque()
     };
 
     gen.into()

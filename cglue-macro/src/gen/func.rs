@@ -112,6 +112,7 @@ impl ParsedFunc {
         let name = &self.name;
         let args = self.vtbl_args();
         let out = &self.out;
+        let call_args = self.chained_call_args();
 
         let trname = &self.trait_name;
         let fnname = format_ident!("{}{}", FN_PREFIX, name);
@@ -120,7 +121,7 @@ impl ParsedFunc {
         // TODO: add checks for result wrapping
         let gen = quote! {
             extern "C" fn #fnname<T: #trname>(#args) -> #out {
-                this.#name(/* TODO */)
+                this.#name(#call_args)
             }
         };
 
@@ -141,21 +142,20 @@ impl ParsedFunc {
         tokens.extend(quote!(#name: #fnname,));
     }
 
-    pub fn trait_impl(&self, tokens: &mut TokenStream) {
+    pub fn trait_impl(&self, tokens: &mut TokenStream) -> bool {
         let name = &self.name;
         let args = self.trait_args();
         let out = &self.out;
         let call_args = self.chained_call_args();
 
-        let this_arg = match &self.receiver {
-            Some(x) => {
-                if x.mutability.is_some() {
-                    quote!(self.cobj_mut())
-                } else {
-                    quote!(self.cobj_ref())
-                }
-            }
-            _ => quote!(()),
+        let need_mut = match &self.receiver {
+            Some(x) => x.mutability.is_some(),
+            _ => panic!("No receiver! Should not get to this point!"),
+        };
+
+        let this_arg = match need_mut {
+            true => quote!(self.cobj_mut()),
+            false => quote!(self.cobj_ref()),
         };
 
         let abi = self.abi.prefix();
@@ -168,6 +168,8 @@ impl ParsedFunc {
         };
 
         tokens.extend(gen);
+
+        need_mut
     }
 }
 
