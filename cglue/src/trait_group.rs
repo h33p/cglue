@@ -9,11 +9,11 @@ use core::ops::{Deref, DerefMut};
 /// This is the simplest form of trait object, represented by a this pointer, and a vtable for
 /// single trait.
 ///
-/// `this` value usually is either a reference, or a mutable reference, or a `CBox`, which
+/// `instance` value usually is either a reference, or a mutable reference, or a `CBox`, which
 /// contains static reference to the instance, and a dedicated drop function for freeing resources.
 #[repr(C)]
 pub struct CGlueTraitObj<'a, T, V> {
-    this: T,
+    instance: T,
     vtbl: &'a V,
 }
 
@@ -67,13 +67,13 @@ impl<T, V> AsRef<V> for CGlueTraitObj<'_, T, V> {
 
 impl<T: Deref<Target = F>, F, V> CGlueObjRef<F> for CGlueTraitObj<'_, T, V> {
     fn cobj_ref(&self) -> &F {
-        self.this.deref()
+        self.instance.deref()
     }
 }
 
 impl<T: Deref<Target = F> + DerefMut, F, V> CGlueObjMut<F> for CGlueTraitObj<'_, T, V> {
     fn cobj_mut(&mut self) -> &mut F {
-        self.this.deref_mut()
+        self.instance.deref_mut()
     }
 }
 
@@ -81,9 +81,9 @@ impl<'a, T, V: CGlueVtbl<T>> From<&'a mut T> for CGlueTraitObj<'a, &'a mut T, V>
 where
     &'a V: Default,
 {
-    fn from(this: &'a mut T) -> Self {
+    fn from(instance: &'a mut T) -> Self {
         Self {
-            this,
+            instance,
             vtbl: Default::default(),
         }
     }
@@ -93,9 +93,9 @@ impl<'a, T, V: CGlueVtbl<T>> From<&'a T> for CGlueTraitObj<'a, &'a T, V>
 where
     &'a V: Default,
 {
-    fn from(this: &'a T) -> Self {
+    fn from(instance: &'a T) -> Self {
         Self {
-            this,
+            instance,
             vtbl: Default::default(),
         }
     }
@@ -107,7 +107,7 @@ where
 {
     fn from(this: T) -> Self {
         Self {
-            this: CBox::from(this),
+            instance: CBox::from(this),
             vtbl: Default::default(),
         }
     }

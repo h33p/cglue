@@ -7,20 +7,23 @@ use syn::*;
 
 pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
     // Path to trait group import.
-    let trg_path: TokenStream = format!("{}::trait_group", crate::util::crate_path().to_string())
-        .parse()
-        .unwrap();
+    let crate_path = crate::util::crate_path();
+    let trg_path: TokenStream = quote!(#crate_path::trait_group);
 
     // Need to preserve the same visibility as the trait itself.
     let vis = tr.vis.to_token_stream();
 
     let trait_name = &tr.ident;
 
+    let c_void = quote!(::core::ffi::c_void);
+
     // Additional identifiers
     let vtbl_ident = format_ident!("CGlueVtbl{}", trait_name);
     let opaque_vtbl_ident = format_ident!("Opaque{}", vtbl_ident);
     let trait_obj_ident = format_ident!("CGlueTraitObj{}", trait_name);
-    let opaque_trait_obj_ident = format_ident!("CGlueOpaqueTraitObj{}", trait_name);
+    let opaque_owned_trait_obj_ident = format_ident!("CGlueOpaqueTraitObj{}", trait_name);
+    let opaque_mut_trait_obj_ident = format_ident!("CGlueMutOpaqueTraitObj{}", trait_name);
+    let opaque_ref_trait_obj_ident = format_ident!("CGlueRefOpaqueTraitObj{}", trait_name);
 
     let mut funcs = vec![];
 
@@ -71,7 +74,21 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
     let vtbl_doc = format!("CGlue vtable for trait {}.", trait_name);
     let vtbl_opaque_doc = format!("Opaque CGlue vtable for trait {}.", trait_name);
     let trait_obj_doc = format!("CGlue Trait Object type for trait {}.", trait_name);
-    let opaque_trait_obj_doc = format!("Opaque CGlue Trait Object for trait {}.", trait_name);
+
+    let opaque_owned_trait_obj_doc =
+        format!("Owned Opaque CGlue Trait Object for trait {}.", trait_name);
+    let opaque_ref_trait_obj_doc =
+        format!("By-Ref Opaque CGlue Trait Object for trait {}.", trait_name);
+    let opaque_mut_trait_obj_doc =
+        format!("By-Mut Opaque CGlue Trait Object for trait {}.", trait_name);
+
+    let opaque_ref_trait_obj = match need_mut {
+        true => quote!(),
+        false => quote! {
+            #[doc = #opaque_ref_trait_obj_doc]
+            pub type #opaque_ref_trait_obj_ident<'a> = #trait_obj_ident<'a, #c_void, &'a #c_void>;
+        },
+    };
 
     // Glue it all together
     let gen = quote! {
@@ -104,7 +121,7 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
         /// This virtual function table has type information destroyed, is used in CGlue objects
         /// and trait groups.
 
-        #vis type #opaque_vtbl_ident = #vtbl_ident<core::ffi::c_void>;
+        #vis type #opaque_vtbl_ident = #vtbl_ident<#c_void>;
 
         unsafe impl<T: #trait_name> #trg_path::CGlueBaseVtbl for #vtbl_ident<T> {
             type OpaqueVtbl = #opaque_vtbl_ident;
@@ -115,8 +132,13 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
         #[doc = #trait_obj_doc]
         pub type #trait_obj_ident<'a, T, B> = #trg_path::CGlueTraitObj::<'a, B, #vtbl_ident<T>>;
 
-        #[doc = #opaque_trait_obj_doc]
-        pub type #opaque_trait_obj_ident<'a, B> = #trait_obj_ident<'a, ::core::ffi::c_void, B>;
+        #[doc = #opaque_owned_trait_obj_doc]
+        pub type #opaque_owned_trait_obj_ident<'a> = #trait_obj_ident<'a, #c_void, #crate_path::wrap_box::CBox<#c_void>>;
+
+        #[doc = #opaque_mut_trait_obj_doc]
+        pub type #opaque_mut_trait_obj_ident<'a> = #trait_obj_ident<'a, #c_void, &'a mut #c_void>;
+
+        #opaque_ref_trait_obj
 
         /* Internal wrapper functions. */
 
@@ -125,7 +147,7 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
         /* Trait implementation. */
 
         /// Implement the traits for any CGlue object.
-        impl<T: AsRef<#opaque_vtbl_ident> + #trg_path::#required_mutability<core::ffi::c_void>> #trait_name for T {
+        impl<T: AsRef<#opaque_vtbl_ident> + #trg_path::#required_mutability<#c_void>> #trait_name for T {
             #trait_impl_fns
         }
     };

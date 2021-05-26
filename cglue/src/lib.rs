@@ -143,4 +143,12 @@ pub mod tests {
 
         assert_eq!(objb.tb_2(objb.tb_1(10)), 400);
     }
+
+    #[no_mangle]
+    pub extern "C" fn brrr(
+        _a: CGlueOpaqueTraitObjTB,
+        _b: CGlueRefOpaqueTraitObjTB,
+        _c: CGlueMutOpaqueTraitObjTB,
+    ) {
+    }
 }

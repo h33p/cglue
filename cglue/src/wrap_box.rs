@@ -8,7 +8,7 @@ use core::ops::{Deref, DerefMut};
 /// The drop function can be called from anywhere, it will free on correct allocator internally.
 #[repr(C)]
 pub struct CBox<T: 'static> {
-    this: &'static mut T,
+    instance: &'static mut T,
     drop: unsafe extern "C" fn(&mut T),
 }
 
@@ -16,21 +16,21 @@ impl<T> Deref for CBox<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        self.this
+        self.instance
     }
 }
 
 impl<T> DerefMut for CBox<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.this
+        self.instance
     }
 }
 
 impl<T> From<Box<T>> for CBox<T> {
     fn from(this: Box<T>) -> Self {
-        let this = Box::leak(this);
+        let instance = Box::leak(this);
         Self {
-            this,
+            instance,
             drop: cglue_drop_box::<T>,
         }
     }
@@ -44,7 +44,7 @@ impl<T> From<T> for CBox<T> {
 
 impl<T> Drop for CBox<T> {
     fn drop(&mut self) {
-        unsafe { (self.drop)(self.this) };
+        unsafe { (self.drop)(self.instance) };
     }
 }
 
