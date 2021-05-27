@@ -69,9 +69,7 @@ pub mod tests {
 
     use cglue_macro::*;
 
-    //#[cglue_derive(TestGroup)]
-    struct SA {}
-    //#[cglue_derive(TestGroup)]
+    pub struct SA {}
     struct SB {}
 
     #[cglue_trait]
@@ -132,8 +130,8 @@ pub mod tests {
     }
 
     cglue_trait_group!(TestGroup, TA, { TB, TC });
-    //cglue_impl_group!(SA, TestGroup, { TB, TC });
-    //cglue_impl_group!(SB, TestGroup, { TB, TC });
+    cglue_impl_group!(SA, TestGroup, { TC });
+    cglue_impl_group_priv!(SB, TestGroup, { TB });
 
     #[test]
     fn get_b() {
@@ -146,25 +144,36 @@ pub mod tests {
 
     #[test]
     fn test_group() {
-        let mut b = SA {};
+        let a = SA {};
 
-        let group = TestGroup::new_owned(b, None, Some(Default::default())).into_opaque();
-
-        //group.tc_1();
-
-        println!("TRY AS REFFF:");
+        let group = TestGroup::from(a);
 
         {
             let group = group.as_ref_with_tc().unwrap();
-
-            println!("WOAH");
-
             group.tc_1();
         }
 
-        println!("TRY AS REFFF:");
+        assert!(!group.check_with_tb());
 
-        assert!(group.as_ref_with_tb().is_none());
+        let cast = group.cast_with_tc().unwrap();
+
+        let mut group = TestGroup::from(cast);
+
+        assert!(group.as_mut_with_tb().is_none());
+    }
+
+    #[test]
+    fn test_group_2() {
+        let mut b = SB {};
+
+        let group = TestGroup::from(&mut b);
+        assert!(group.check_with_tb());
+
+        let group = TestGroup::from(&b);
+        assert!(group.check_with_tb());
+
+        let group = TestGroup::from(b);
+        assert!(group.check_with_tb());
     }
 
     #[no_mangle]
@@ -172,6 +181,9 @@ pub mod tests {
         _a: CGlueOpaqueTraitObjTB,
         _b: CGlueRefOpaqueTraitObjTB,
         _c: CGlueMutOpaqueTraitObjTB,
+        _d: TestGroupOpaqueRef,
+        _e: TestGroupOpaqueMut,
+        _f: TestGroupOpaqueBox,
     ) {
     }
 }

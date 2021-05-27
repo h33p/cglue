@@ -2,6 +2,7 @@
 
 use crate::boxed::CBox;
 use core::ffi::c_void;
+use core::mem::ManuallyDrop;
 use core::ops::{Deref, DerefMut};
 
 /// Simple CGlue trait object.
@@ -17,6 +18,39 @@ pub struct CGlueTraitObj<'a, T, V> {
     vtbl: &'a V,
 }
 
+union Opaquifier<T: Opaquable> {
+    input: ManuallyDrop<T>,
+    output: ManuallyDrop<T::OpaqueTarget>,
+}
+
+pub unsafe trait Opaquable: Sized {
+    type OpaqueTarget;
+
+    /// Transform self into an opaque version of the trait object.
+    ///
+    /// The opaque version safely destroys type information, and after this point there is no way
+    /// back.
+    fn into_opaque(self) -> Self::OpaqueTarget {
+        let val = Opaquifier {
+            input: ManuallyDrop::new(self),
+        };
+
+        unsafe { ManuallyDrop::into_inner(val.output) }
+    }
+}
+
+unsafe impl<'a, T> Opaquable for &'a T {
+    type OpaqueTarget = &'a c_void;
+}
+
+unsafe impl<'a, T> Opaquable for &'a mut T {
+    type OpaqueTarget = &'a mut c_void;
+}
+
+unsafe impl<'a, T> Opaquable for CBox<T> {
+    type OpaqueTarget = CBox<c_void>;
+}
+
 /// Opaque type of the trait object.
 pub type CGlueOpaqueTraitObjOutCBox<'a, V> =
     CGlueTraitObj<'a, CBox<c_void>, <V as CGlueBaseVtbl>::OpaqueVtbl>;
@@ -27,36 +61,11 @@ pub type CGlueOpaqueTraitObjOutRef<'a, V> =
 pub type CGlueOpaqueTraitObjOutMut<'a, V> =
     CGlueTraitObj<'a, &'a mut c_void, <V as CGlueBaseVtbl>::OpaqueVtbl>;
 
-pub type CGlueOpaqueTraitObj<'a, V> = CGlueTraitObj<'a, c_void, V>;
+pub type CGlueOpaqueTraitObj<'a, T, V> =
+    CGlueTraitObj<'a, <T as Opaquable>::OpaqueTarget, <V as CGlueBaseVtbl>::OpaqueVtbl>;
 
-impl<'a, T, V: CGlueVtbl<T>> CGlueTraitObj<'a, &'a mut T, V> {
-    /// Transform self into an opaque version of the trait object.
-    ///
-    /// The opaque version safely destroys type information, and after this point there is no way
-    /// back.
-    pub fn into_opaque(self) -> CGlueOpaqueTraitObjOutMut<'a, V> {
-        unsafe { std::mem::transmute(self) }
-    }
-}
-
-impl<'a, T, V: CGlueVtbl<T>> CGlueTraitObj<'a, &'a T, V> {
-    /// Transform self into an opaque version of the trait object.
-    ///
-    /// The opaque version safely destroys type information, and after this point there is no way
-    /// back.
-    pub fn into_opaque(self) -> CGlueOpaqueTraitObjOutRef<'a, V> {
-        unsafe { std::mem::transmute(self) }
-    }
-}
-
-impl<'a, T, V: CGlueVtbl<T>> CGlueTraitObj<'a, CBox<T>, V> {
-    /// Transform self into an opaque version of the trait object.
-    ///
-    /// The opaque version safely destroys type information, and after this point there is no way
-    /// back.
-    pub fn into_opaque(self) -> CGlueOpaqueTraitObjOutCBox<'a, V> {
-        unsafe { std::mem::transmute(self) }
-    }
+unsafe impl<'a, T: Opaquable, F: CGlueBaseVtbl> Opaquable for CGlueTraitObj<'a, T, F> {
+    type OpaqueTarget = CGlueTraitObj<'a, T::OpaqueTarget, F::OpaqueVtbl>;
 }
 
 impl<T, V> AsRef<V> for CGlueTraitObj<'_, T, V> {

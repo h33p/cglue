@@ -1,3 +1,4 @@
+use crate::util::*;
 use itertools::*;
 use proc_macro2::TokenStream;
 use quote::*;
@@ -31,29 +32,6 @@ pub struct TraitGroup {
     optional_vtbl: Vec<TraitInfo>,
 }
 
-/// Parse an input stream that is either a single Ident, or a list of Idents surrounded by braces.
-fn parse_maybe_braced_idents(input: ParseStream) -> Result<Vec<Ident>> {
-    let mut ret = vec![];
-
-    if let Ok(braces) = syn::group::parse_braces(&input) {
-        let content = braces.content;
-
-        while !content.is_empty() {
-            let ident = content.parse()?;
-
-            ret.push(ident);
-
-            if !content.is_empty() {
-                content.parse::<Token![,]>()?;
-            }
-        }
-    } else {
-        ret.push(input.parse()?)
-    }
-
-    Ok(ret)
-}
-
 impl Parse for TraitGroup {
     fn parse(input: ParseStream) -> Result<Self> {
         let name = input.parse()?;
@@ -77,224 +55,92 @@ impl Parse for TraitGroup {
     }
 }
 
-impl TraitGroup {
-    /// Required vtable definitions.
-    ///
-    /// Required means they must be valid - non-Option.
-    ///
-    /// # Arguments
-    ///
-    /// * `iter` - can be any list of traits.
-    ///
-    fn mandatory_vtbl_defs<'a>(&'a self, iter: impl Iterator<Item = &'a TraitInfo>) -> TokenStream {
-        let mut ret = TokenStream::new();
+/// Describes trait group to be implemented on a type.
+pub struct TraitGroupImpl {
+    name: Ident,
+    group: Ident,
+    implemented_vtbl: Vec<Ident>,
+}
 
-        for TraitInfo {
-            vtbl_name,
-            vtbl_typename,
-            ..
-        } in iter
-        {
-            ret.extend(quote!(#vtbl_name: &'a #vtbl_typename<F>, ));
-        }
+impl Parse for TraitGroupImpl {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let name = input.parse()?;
+        input.parse::<Token![,]>()?;
 
-        ret
+        let group = input.parse()?;
+
+        input.parse::<Token![,]>()?;
+        let implemented_traits = parse_maybe_braced_idents(input)?;
+
+        let implemented_vtbl = implemented_traits
+            .into_iter()
+            .map(|i| format_ident!("{}", i.to_string().to_lowercase()))
+            .collect();
+
+        // TODO: sort optionals for consistency
+
+        Ok(Self {
+            name,
+            group,
+            implemented_vtbl,
+        })
     }
+}
 
-    /// Optional and vtable definitions.
+impl TraitGroupImpl {
+    /// Generate full code for the trait group.
     ///
-    /// Optional means they are of type `Option<&'a VTable>`.
-    fn optional_vtbl_defs(&self) -> TokenStream {
-        let mut ret = TokenStream::new();
+    /// This trait group will have all variants generated for converting, building, and
+    /// converting it.
+    pub fn implement_group(&self, is_private: bool) -> TokenStream {
+        let crate_path = crate::util::crate_path();
 
-        for TraitInfo {
-            vtbl_name,
-            vtbl_typename,
-            ..
-        } in &self.optional_vtbl
-        {
-            ret.extend(quote!(#vtbl_name: ::core::option::Option<&'a #vtbl_typename<F>>, ));
-        }
+        let name = &self.name;
+        let group = &self.group;
+        let func_name = TraitGroup::optional_func_name("new", self.implemented_vtbl.iter());
+        let func_name_boxed =
+            TraitGroup::optional_func_name("new_boxed", self.implemented_vtbl.iter());
 
-        ret
-    }
+        let c_void = quote!(::core::ffi::c_void);
+        let opaquable = quote!(#crate_path::trait_group::Opaquable);
 
-    /// Mixed vtable definitoins.
-    ///
-    /// This function goes through optional vtables, and mixes them between `Option`, and
-    /// non-`Option` types for the definitions.
-    ///
-    /// # Arguments
-    ///
-    /// * `iter` - iterator of required/mandatory types. These types will have non-`Option` type
-    /// assigned. It is crucial to have the same order of values!
-    fn mixed_opt_vtbl_defs<'a>(&'a self, iter: impl Iterator<Item = &'a TraitInfo>) -> TokenStream {
-        let mut ret = TokenStream::new();
-
-        let mut iter = iter.peekable();
-
-        for (
-            TraitInfo {
-                vtbl_name,
-                vtbl_typename,
-                ..
-            },
-            mandatory,
-        ) in self.optional_vtbl.iter().map(|v| {
-            if iter.peek() == Some(&v) {
-                iter.next();
-                (v, true)
-            } else {
-                (v, false)
-            }
-        }) {
-            let def = match mandatory {
-                true => quote!(#vtbl_name: &'a #vtbl_typename<F>, ),
-                false => quote!(#vtbl_name: ::core::option::Option<&'a #vtbl_typename<F>>, ),
-            };
-            ret.extend(def);
-        }
-
-        ret
-    }
-
-    /// `AsRef<Vtable>` implementations for mandatory vtables.
-    fn mandatory_as_ref_impls(&self) -> TokenStream {
-        self.as_ref_impls(&self.name, self.mandatory_vtbl.iter())
-    }
-
-    /// `AsRef<Vtable>` implementations for arbitrary type and list of tables.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - type name to implement the conversion for.
-    /// * `traits` - vtable types to implement the conversion to.
-    fn as_ref_impls<'a>(
-        &'a self,
-        name: &Ident,
-        traits: impl Iterator<Item = &'a TraitInfo>,
-    ) -> TokenStream {
-        let mut ret = TokenStream::new();
-
-        for TraitInfo {
-            vtbl_name,
-            vtbl_typename,
-            ..
-        } in traits
-        {
-            ret.extend(quote! {
-                impl<T, F> AsRef<#vtbl_typename<F>> for #name<'_, T, F>
-                {
-                    fn as_ref(&self) -> &#vtbl_typename<F> {
-                        &self.#vtbl_name
+        let gen = if is_private {
+            quote! {
+                impl<'a> From<&'a #name> for #group<'a, &'a #c_void, #c_void> {
+                    fn from(instance: &'a #name) -> Self {
+                        #opaquable::into_opaque(#group::#func_name(instance))
                     }
                 }
-            });
-        }
 
-        ret
-    }
-
-    /// List of `vtbl: Default::default(), ` for all mandatory vtables.
-    fn mandatory_vtbl_defaults(&self) -> TokenStream {
-        let mut ret = TokenStream::new();
-
-        for TraitInfo { vtbl_name, .. } in &self.mandatory_vtbl {
-            ret.extend(quote!(#vtbl_name: Default::default(),));
-        }
-
-        ret
-    }
-
-    /// Simple identifier list.
-    fn vtbl_list<'a>(&'a self, iter: impl Iterator<Item = &'a TraitInfo>) -> TokenStream {
-        let mut ret = TokenStream::new();
-
-        for TraitInfo { vtbl_name, .. } in iter {
-            ret.extend(quote!(#vtbl_name,));
-        }
-
-        ret
-    }
-
-    /// Try-unwrapping assignment list `vtbl: vtbl?, `.
-    ///
-    /// # Arguments
-    ///
-    /// * `iter` - vtable identifiers to list and try-unwrap.
-    fn vtbl_unwrap_list<'a>(&'a self, iter: impl Iterator<Item = &'a TraitInfo>) -> TokenStream {
-        let mut ret = TokenStream::new();
-
-        for TraitInfo { vtbl_name, .. } in iter {
-            ret.extend(quote!(#vtbl_name: #vtbl_name?,));
-        }
-
-        ret
-    }
-
-    /// Mixed try-unwrap list for vtables.
-    ///
-    /// This function goes through optional vtables, unwraps the ones in `iter`, leaves others
-    /// bare.
-    ///
-    /// # Arguments
-    ///
-    /// * `iter` - list of vtables to try-unwrap. Must be ordered the same way!
-    fn mixed_opt_vtbl_unwrap_list<'a>(
-        &'a self,
-        iter: impl Iterator<Item = &'a TraitInfo>,
-    ) -> TokenStream {
-        let mut ret = TokenStream::new();
-
-        let mut iter = iter.peekable();
-
-        for (TraitInfo { vtbl_name, .. }, mandatory) in self.optional_vtbl.iter().map(|v| {
-            if iter.peek() == Some(&v) {
-                iter.next();
-                (v, true)
-            } else {
-                (v, false)
+                impl<'a> From<&'a mut #name> for #group<'a, &'a mut #c_void, #c_void> {
+                    fn from(instance: &'a mut #name) -> Self {
+                        #opaquable::into_opaque(#group::#func_name(instance))
+                    }
+                }
             }
-        }) {
-            let def = match mandatory {
-                true => quote!(#vtbl_name: #vtbl_name?, ),
-                false => quote!(#vtbl_name, ),
-            };
-            ret.extend(def);
+        } else {
+            quote! {
+                impl<'a, T: #opaquable + ::core::ops::Deref<Target = #name>> From<T> for #group<'a, T::OpaqueTarget, #c_void> {
+                    fn from(instance: T) -> Self {
+                        #opaquable::into_opaque(#group::#func_name(instance))
+                    }
+                }
+            }
+        };
+
+        quote! {
+            #gen
+
+            impl<'a> From<#name> for #group<'a, #crate_path::boxed::CBox<#c_void>, #c_void> {
+                fn from(instance: #name) -> Self {
+                    #opaquable::into_opaque(#group::#func_name_boxed(instance))
+                }
+            }
         }
-
-        ret
     }
+}
 
-    /// Try-unwrap a list of vtables without assigning them (`vtbl?,`).
-    ///
-    /// # Arguments
-    ///
-    /// * `iter` - vtables to unwrap.
-    fn vtbl_unwrap_validate<'a>(
-        &'a self,
-        iter: impl Iterator<Item = &'a TraitInfo>,
-    ) -> TokenStream {
-        let mut ret = TokenStream::new();
-
-        for TraitInfo { vtbl_name, .. } in iter {
-            ret.extend(quote!((*#vtbl_name)?,));
-        }
-
-        ret
-    }
-
-    /// Bind `Default` to mandatory vtables.
-    fn vtbl_where_bounds(&self) -> TokenStream {
-        let mut ret = TokenStream::new();
-
-        for TraitInfo { vtbl_typename, .. } in &self.mandatory_vtbl {
-            ret.extend(quote!(&'a #vtbl_typename<F>: Default,));
-        }
-
-        ret
-    }
-
+impl TraitGroup {
     /// Identifier for optional group struct.
     ///
     /// # Arguments
@@ -302,11 +148,15 @@ impl TraitGroup {
     /// * `name` - base name of the trait group.
     /// * `postfix` - postfix to add after the naem, and before `With`.
     /// * `traits` - traits that are to be implemented.
-    fn optional_group_ident(&self, name: &Ident, postfix: &str, traits: &[&TraitInfo]) -> Ident {
+    pub fn optional_group_ident<'a>(
+        name: &Ident,
+        postfix: &str,
+        traits: impl Iterator<Item = &'a Ident>,
+    ) -> Ident {
         let mut all_traits = String::new();
 
-        for tr in traits {
-            all_traits.push_str(&tr.ident.to_string());
+        for ident in traits {
+            all_traits.push_str(&ident.to_string());
         }
 
         format_ident!("{}{}With{}", name, postfix, all_traits)
@@ -317,32 +167,18 @@ impl TraitGroup {
     /// # Arguments
     ///
     /// * `prefix` - function name prefix.
-    /// * `traits` - traits the function implements.
-    fn optional_func_name(&self, prefix: &str, traits: &[&TraitInfo]) -> Ident {
+    /// * `lc_names` - lowercase identifiers of the traits the function implements.
+    pub fn optional_func_name<'a>(
+        prefix: &str,
+        lc_names: impl Iterator<Item = &'a Ident>,
+    ) -> Ident {
         let mut ident = format_ident!("{}_with", prefix);
 
-        for tr in traits {
-            ident = format_ident!("{}_{}", ident, tr.lc_name);
+        for lc_name in lc_names {
+            ident = format_ident!("{}_{}", ident, lc_name);
         }
 
         ident
-    }
-
-    /// Get a sequence of `Trait1 + Trait2 + Trait3 ...`
-    ///
-    /// # Arguments
-    ///
-    /// * `traits` - traits to combine.
-    fn impl_traits<'a>(&'a self, mut traits: impl Iterator<Item = &'a TraitInfo>) -> TokenStream {
-        let first = &traits.next().unwrap().ident;
-
-        let mut ret = quote!(#first);
-
-        for TraitInfo { ident, .. } in traits {
-            ret.extend(quote!(+ #ident));
-        }
-
-        ret
     }
 
     /// Generate full code for the trait group.
@@ -365,11 +201,28 @@ impl TraitGroup {
         let mand_vtbl_default = self.mandatory_vtbl_defaults();
         let mand_vtbl_list = self.vtbl_list(self.mandatory_vtbl.iter());
         let full_opt_vtbl_list = self.vtbl_list(self.optional_vtbl.iter());
-        let vtbl_where_bounds = self.vtbl_where_bounds();
+        let vtbl_where_bounds = self.vtbl_where_bounds(self.mandatory_vtbl.iter());
 
         let mut trait_funcs = TokenStream::new();
 
         let mut opt_structs = TokenStream::new();
+
+        let impl_traits =
+            self.impl_traits(self.mandatory_vtbl.iter().chain(self.optional_vtbl.iter()));
+        let base_doc = format!(
+            "Trait group potentially implementing `{}` traits.",
+            impl_traits
+        );
+        let trback_doc = format!("be transformed back into `{}` without losing data.", name);
+        let new_doc = format!("Create new instance of {}.", name);
+
+        let opaque_name = format_ident!("{}Opaque", name);
+        let opaque_name_ref = format_ident!("{}OpaqueRef", name);
+        let opaque_name_mut = format_ident!("{}OpaqueMut", name);
+        let opaque_name_boxed = format_ident!("{}OpaqueBox", name);
+
+        let mut new_direct_impls = TokenStream::new();
+        let mut new_boxed_impls = TokenStream::new();
 
         for traits in self
             .optional_vtbl
@@ -377,15 +230,26 @@ impl TraitGroup {
             .powerset()
             .filter(|v| !v.is_empty())
         {
-            let func_name = self.optional_func_name("cast", &traits);
-            let func_name_final = self.optional_func_name("into", &traits);
-            let func_name_check = self.optional_func_name("check", &traits);
-            let func_name_mut = self.optional_func_name("as_mut", &traits);
-            let func_name_ref = self.optional_func_name("as_ref", &traits);
-            let opt_final_name = self.optional_group_ident(&name, "Final", &traits);
-            let opt_name = self.optional_group_ident(&name, "", &traits);
+            let func_name = Self::optional_func_name("cast", traits.iter().map(|i| &i.lc_name));
+            let func_name_final =
+                Self::optional_func_name("into", traits.iter().map(|i| &i.lc_name));
+            let func_name_check =
+                Self::optional_func_name("check", traits.iter().map(|i| &i.lc_name));
+            let func_name_mut =
+                Self::optional_func_name("as_mut", traits.iter().map(|i| &i.lc_name));
+            let func_name_ref =
+                Self::optional_func_name("as_ref", traits.iter().map(|i| &i.lc_name));
+            let new_func_name = Self::optional_func_name("new", traits.iter().map(|i| &i.lc_name));
+            let new_boxed_func_name =
+                Self::optional_func_name("new_boxed", traits.iter().map(|i| &i.lc_name));
+            let opt_final_name =
+                Self::optional_group_ident(&name, "Final", traits.iter().map(|i| &i.ident));
+            let opt_name = Self::optional_group_ident(&name, "", traits.iter().map(|i| &i.ident));
             let opt_vtbl_defs = self.mandatory_vtbl_defs(traits.iter().copied());
             let opt_mixed_vtbl_defs = self.mixed_opt_vtbl_defs(traits.iter().copied());
+            let new_call_args = self.mixed_default_vtbl_args(traits.iter().copied());
+            let opt_vtbl_where_bounds =
+                self.vtbl_where_bounds(self.mandatory_vtbl.iter().chain(traits.iter().copied()));
 
             let opt_as_ref_impls = self.as_ref_impls(
                 &opt_name,
@@ -560,7 +424,7 @@ impl TraitGroup {
                 #[doc = #func_doc1]
                 ///
                 #[doc = #func_doc2]
-                pub fn #func_name(self) -> ::core::option::Option<impl 'a + #impl_traits>
+                pub fn #func_name(self) -> ::core::option::Option<#opt_name<'a, T, F>>
                     where #opt_name<'a, T, F>: 'a + #impl_traits
                 {
                     let #name {
@@ -623,16 +487,25 @@ impl TraitGroup {
                 }
 
             });
-        }
 
-        let impl_traits =
-            self.impl_traits(self.mandatory_vtbl.iter().chain(self.optional_vtbl.iter()));
-        let base_doc = format!(
-            "Trait group potentially implementing `{}` traits.",
-            impl_traits
-        );
-        let trback_doc = format!("be transformed back into `{}` without losing data.", name);
-        let new_doc = format!("Create new instance of {}.", name);
+            new_direct_impls.extend(quote! {
+                #[doc = #new_doc]
+                pub fn #new_func_name(instance: T) -> Self
+                    where #opt_vtbl_where_bounds
+                {
+                    Self::new(instance, #new_call_args)
+                }
+            });
+
+            new_boxed_impls.extend(quote! {
+                #[doc = #new_doc]
+                pub fn #new_boxed_func_name(instance: F) -> Self
+                    where #opt_vtbl_where_bounds
+                {
+                    Self::new_boxed(instance, #new_call_args)
+                }
+            });
+        }
 
         quote! {
             #[repr(C)]
@@ -658,6 +531,11 @@ impl TraitGroup {
                 #optional_vtbl_defs
             }
 
+            pub type #opaque_name<'a, T: ::core::ops::Deref<Target = #c_void>> = #name<'a, T, T::Target>;
+            pub type #opaque_name_ref<'a> = #name<'a, &'a #c_void, #c_void>;
+            pub type #opaque_name_mut<'a> = #name<'a, &'a mut #c_void, #c_void>;
+            pub type #opaque_name_boxed<'a> = #name<'a, #crate_path::boxed::CBox<#c_void>, #c_void>;
+
             impl<'a, T: ::core::ops::Deref<Target = F>, F: 'a> #name<'a, T, F>
                 where #vtbl_where_bounds
             {
@@ -671,13 +549,15 @@ impl TraitGroup {
                         #full_opt_vtbl_list
                     }
                 }
+
+                #new_direct_impls
             }
 
             impl<'a, F> #name<'a, #crate_path::boxed::CBox<F>, F> {
                 #[doc = #new_doc]
                 ///
                 /// `instance` will be moved onto heap.
-                pub fn new_owned(instance: F, #optional_vtbl_defs) -> Self
+                pub fn new_boxed(instance: F, #optional_vtbl_defs) -> Self
                     where #vtbl_where_bounds
                 {
                     Self {
@@ -686,33 +566,15 @@ impl TraitGroup {
                         #full_opt_vtbl_list
                     }
                 }
+
+                #new_boxed_impls
             }
 
-            impl<'a, F> #name<'a, &'a F, F> {
-                /// Convert into opaque object.
-                ///
-                /// This is the prerequisite for using underlying trait implementations.
-                pub fn into_opaque(self) -> #name<'a, &'a #c_void, #c_void> {
-                    unsafe { std::mem::transmute(self) }
-                }
-            }
-
-            impl<'a, F> #name<'a, &'a mut F, F> {
-                /// Convert into opaque object.
-                ///
-                /// This is the prerequisite for using underlying trait implementations.
-                pub fn into_opaque(self) -> #name<'a, &'a mut #c_void, #c_void> {
-                    unsafe { std::mem::transmute(self) }
-                }
-            }
-
-            impl<'a, F> #name<'a, #crate_path::boxed::CBox<F>, F> {
-                /// Convert into opaque object.
-                ///
-                /// This is the prerequisite for using underlying trait implementations.
-                pub fn into_opaque(self) -> #name<'a, #crate_path::boxed::CBox<#c_void>, #c_void> {
-                    unsafe { std::mem::transmute(self) }
-                }
+            /// Convert into opaque object.
+            ///
+            /// This is the prerequisite for using underlying trait implementations.
+            unsafe impl<'a, T: #trg_path::Opaquable + ::core::ops::Deref<Target = F>, F> #trg_path::Opaquable for #name<'a, T, F> {
+                type OpaqueTarget = #name<'a, T::OpaqueTarget, #c_void>;
             }
 
             impl<'a, T, F> #name<'a, T, F> {
@@ -739,5 +601,265 @@ impl TraitGroup {
 
             #opt_structs
         }
+    }
+
+    /// Required vtable definitions.
+    ///
+    /// Required means they must be valid - non-Option.
+    ///
+    /// # Arguments
+    ///
+    /// * `iter` - can be any list of traits.
+    ///
+    fn mandatory_vtbl_defs<'a>(&'a self, iter: impl Iterator<Item = &'a TraitInfo>) -> TokenStream {
+        let mut ret = TokenStream::new();
+
+        for TraitInfo {
+            vtbl_name,
+            vtbl_typename,
+            ..
+        } in iter
+        {
+            ret.extend(quote!(#vtbl_name: &'a #vtbl_typename<F>, ));
+        }
+
+        ret
+    }
+
+    /// Get a sequence of `Trait1 + Trait2 + Trait3 ...`
+    ///
+    /// # Arguments
+    ///
+    /// * `traits` - traits to combine.
+    fn impl_traits<'a>(&'a self, mut traits: impl Iterator<Item = &'a TraitInfo>) -> TokenStream {
+        let first = &traits.next().unwrap().ident;
+
+        let mut ret = quote!(#first);
+
+        for TraitInfo { ident, .. } in traits {
+            ret.extend(quote!(+ #ident));
+        }
+
+        ret
+    }
+
+    /// Optional and vtable definitions.
+    ///
+    /// Optional means they are of type `Option<&'a VTable>`.
+    fn optional_vtbl_defs(&self) -> TokenStream {
+        let mut ret = TokenStream::new();
+
+        for TraitInfo {
+            vtbl_name,
+            vtbl_typename,
+            ..
+        } in &self.optional_vtbl
+        {
+            ret.extend(quote!(#vtbl_name: ::core::option::Option<&'a #vtbl_typename<F>>, ));
+        }
+
+        ret
+    }
+
+    /// Mixed vtable definitoins.
+    ///
+    /// This function goes through optional vtables, and mixes them between `Option`, and
+    /// non-`Option` types for the definitions.
+    ///
+    /// # Arguments
+    ///
+    /// * `iter` - iterator of required/mandatory types. These types will have non-`Option` type
+    /// assigned. It is crucial to have the same order of values!
+    fn mixed_opt_vtbl_defs<'a>(&'a self, iter: impl Iterator<Item = &'a TraitInfo>) -> TokenStream {
+        let mut ret = TokenStream::new();
+
+        let mut iter = iter.peekable();
+
+        for (
+            TraitInfo {
+                vtbl_name,
+                vtbl_typename,
+                ..
+            },
+            mandatory,
+        ) in self.optional_vtbl.iter().map(|v| {
+            if iter.peek() == Some(&v) {
+                iter.next();
+                (v, true)
+            } else {
+                (v, false)
+            }
+        }) {
+            let def = match mandatory {
+                true => quote!(#vtbl_name: &'a #vtbl_typename<F>, ),
+                false => quote!(#vtbl_name: ::core::option::Option<&'a #vtbl_typename<F>>, ),
+            };
+            ret.extend(def);
+        }
+
+        ret
+    }
+
+    fn mixed_default_vtbl_args<'a>(
+        &'a self,
+        iter: impl Iterator<Item = &'a TraitInfo>,
+    ) -> TokenStream {
+        let mut ret = TokenStream::new();
+
+        let mut iter = iter.peekable();
+
+        for implemented in self.optional_vtbl.iter().map(|v| {
+            if iter.peek() == Some(&v) {
+                iter.next();
+                true
+            } else {
+                false
+            }
+        }) {
+            let def = match implemented {
+                true => quote!(Some(Default::default()),),
+                false => quote!(None,),
+            };
+            ret.extend(def);
+        }
+
+        ret
+    }
+
+    /// `AsRef<Vtable>` implementations for mandatory vtables.
+    fn mandatory_as_ref_impls(&self) -> TokenStream {
+        self.as_ref_impls(&self.name, self.mandatory_vtbl.iter())
+    }
+
+    /// `AsRef<Vtable>` implementations for arbitrary type and list of tables.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - type name to implement the conversion for.
+    /// * `traits` - vtable types to implement the conversion to.
+    fn as_ref_impls<'a>(
+        &'a self,
+        name: &Ident,
+        traits: impl Iterator<Item = &'a TraitInfo>,
+    ) -> TokenStream {
+        let mut ret = TokenStream::new();
+
+        for TraitInfo {
+            vtbl_name,
+            vtbl_typename,
+            ..
+        } in traits
+        {
+            ret.extend(quote! {
+                impl<T, F> AsRef<#vtbl_typename<F>> for #name<'_, T, F>
+                {
+                    fn as_ref(&self) -> &#vtbl_typename<F> {
+                        &self.#vtbl_name
+                    }
+                }
+            });
+        }
+
+        ret
+    }
+
+    /// List of `vtbl: Default::default(), ` for all mandatory vtables.
+    fn mandatory_vtbl_defaults(&self) -> TokenStream {
+        let mut ret = TokenStream::new();
+
+        for TraitInfo { vtbl_name, .. } in &self.mandatory_vtbl {
+            ret.extend(quote!(#vtbl_name: Default::default(),));
+        }
+
+        ret
+    }
+
+    /// Simple identifier list.
+    fn vtbl_list<'a>(&'a self, iter: impl Iterator<Item = &'a TraitInfo>) -> TokenStream {
+        let mut ret = TokenStream::new();
+
+        for TraitInfo { vtbl_name, .. } in iter {
+            ret.extend(quote!(#vtbl_name,));
+        }
+
+        ret
+    }
+
+    /// Try-unwrapping assignment list `vtbl: vtbl?, `.
+    ///
+    /// # Arguments
+    ///
+    /// * `iter` - vtable identifiers to list and try-unwrap.
+    fn vtbl_unwrap_list<'a>(&'a self, iter: impl Iterator<Item = &'a TraitInfo>) -> TokenStream {
+        let mut ret = TokenStream::new();
+
+        for TraitInfo { vtbl_name, .. } in iter {
+            ret.extend(quote!(#vtbl_name: #vtbl_name?,));
+        }
+
+        ret
+    }
+
+    /// Mixed try-unwrap list for vtables.
+    ///
+    /// This function goes through optional vtables, unwraps the ones in `iter`, leaves others
+    /// bare.
+    ///
+    /// # Arguments
+    ///
+    /// * `iter` - list of vtables to try-unwrap. Must be ordered the same way!
+    fn mixed_opt_vtbl_unwrap_list<'a>(
+        &'a self,
+        iter: impl Iterator<Item = &'a TraitInfo>,
+    ) -> TokenStream {
+        let mut ret = TokenStream::new();
+
+        let mut iter = iter.peekable();
+
+        for (TraitInfo { vtbl_name, .. }, mandatory) in self.optional_vtbl.iter().map(|v| {
+            if iter.peek() == Some(&v) {
+                iter.next();
+                (v, true)
+            } else {
+                (v, false)
+            }
+        }) {
+            let def = match mandatory {
+                true => quote!(#vtbl_name: #vtbl_name?, ),
+                false => quote!(#vtbl_name, ),
+            };
+            ret.extend(def);
+        }
+
+        ret
+    }
+
+    /// Try-unwrap a list of vtables without assigning them (`vtbl?,`).
+    ///
+    /// # Arguments
+    ///
+    /// * `iter` - vtables to unwrap.
+    fn vtbl_unwrap_validate<'a>(
+        &'a self,
+        iter: impl Iterator<Item = &'a TraitInfo>,
+    ) -> TokenStream {
+        let mut ret = TokenStream::new();
+
+        for TraitInfo { vtbl_name, .. } in iter {
+            ret.extend(quote!((*#vtbl_name)?,));
+        }
+
+        ret
+    }
+
+    /// Bind `Default` to mandatory vtables.
+    fn vtbl_where_bounds<'a>(&'a self, iter: impl Iterator<Item = &'a TraitInfo>) -> TokenStream {
+        let mut ret = TokenStream::new();
+
+        for TraitInfo { vtbl_typename, .. } in iter {
+            ret.extend(quote!(&'a #vtbl_typename<F>: Default,));
+        }
+
+        ret
     }
 }
