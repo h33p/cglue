@@ -35,7 +35,7 @@
 //!         value: 5
 //!     };
 //!
-//!     let obj = cglue_obj!(&mut info as InfoPrinter);
+//!     let obj = trait_obj!(&mut info as InfoPrinter);
 //!
 //!     use_info_printer(&obj);
 //! }
@@ -43,7 +43,7 @@
 //!
 //! A CGlue object is ABI-safe, meaning it can be used across FFI-boundary - C code, or dynamically loaded Rust libraries. While Rust does not guarantee your code will work with 2 different compiler versions clashing, CGlue glues it all together in a way that works.
 //!
-//! This is done by generating wrapper vtables (virtual function tables) for the specified trait, and creating an opaque object with matching table. Here is what's behind the `cglue_obj` macro:
+//! This is done by generating wrapper vtables (virtual function tables) for the specified trait, and creating an opaque object with matching table. Here is what's behind the `trait_obj` macro:
 //!
 //! ```ignore
 //! let obj = CGlueTraitObjInfoPrinter::from(&mut info).into_opaque();
@@ -122,22 +122,22 @@ pub mod tests {
         let mut b = SB {};
         let c = SB {};
 
-        let obja = cglue_obj!(&a as TA);
-        let objb = cglue_obj!(&mut b as TA);
-        let objc = cglue_obj!(c as TA);
+        let obja = trait_obj!(&a as TA);
+        let objb = trait_obj!(&mut b as TA);
+        let objc = trait_obj!(c as TA);
 
         assert_eq!(obja.ta_1() + objb.ta_1() + objc.ta_1(), 17);
     }
 
     cglue_trait_group!(TestGroup, TA, { TB, TC });
     cglue_impl_group!(SA, TestGroup, { TC });
-    cglue_impl_group_priv!(SB, TestGroup, { TB });
+    cglue_impl_group!(SB, TestGroup, { TB });
 
     #[test]
     fn get_b() {
         let b = SB {};
 
-        let objb = cglue_obj!(b as TB);
+        let objb = trait_obj!(b as TB);
 
         assert_eq!(objb.tb_2(objb.tb_1(10)), 400);
     }
@@ -146,34 +146,36 @@ pub mod tests {
     fn test_group() {
         let a = SA {};
 
-        let group = TestGroup::from(a);
+        let _ = group_obj!(&a as TestGroup);
+
+        let group = group_obj!(a as TestGroup);
 
         {
-            let group = group.as_ref_with_tc().unwrap();
+            let group = as_ref!(group impl TC).unwrap();
             group.tc_1();
         }
 
-        assert!(!group.check_with_tb());
+        assert!(!check!(group impl TB));
 
-        let cast = group.cast_with_tc().unwrap();
+        let cast = cast!(group impl TC).unwrap();
 
         let mut group = TestGroup::from(cast);
 
-        assert!(group.as_mut_with_tb().is_none());
+        assert!(as_mut!(group impl TB).is_none());
     }
 
     #[test]
     fn test_group_2() {
         let mut b = SB {};
 
-        let group = TestGroup::from(&mut b);
-        assert!(group.check_with_tb());
+        let group = group_obj!(&mut b as TestGroup);
+        assert!(check!(group impl TB));
 
-        let group = TestGroup::from(&b);
-        assert!(group.check_with_tb());
+        let group = group_obj!(&b as TestGroup);
+        assert!(check!(group impl TB));
 
-        let group = TestGroup::from(b);
-        assert!(group.check_with_tb());
+        let group = group_obj!(b as TestGroup);
+        assert!(check!(group impl TB));
     }
 
     #[no_mangle]
