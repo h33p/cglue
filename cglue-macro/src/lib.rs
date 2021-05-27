@@ -3,15 +3,16 @@ extern crate proc_macro;
 mod gen;
 mod util;
 
+use gen::trait_groups::TraitGroup;
 use proc_macro::TokenStream;
 use quote::ToTokens;
 use quote::{format_ident, quote};
 use syn::*;
 
 #[proc_macro]
-pub fn cglue_trait_group(_args: TokenStream) -> TokenStream {
-    let gen = quote! {};
-    gen.into()
+pub fn cglue_trait_group(args: TokenStream) -> TokenStream {
+    let args = parse_macro_input!(args as TraitGroup);
+    args.create_group().into()
 }
 
 #[proc_macro]

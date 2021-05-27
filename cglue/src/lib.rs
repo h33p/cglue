@@ -58,11 +58,11 @@
 //! ```
 
 pub mod arc;
+pub mod boxed;
 pub mod callback;
 pub mod option;
 pub mod repr_cstring;
 pub mod trait_group;
-pub mod wrap_box;
 
 //#[cfg(test)]
 pub mod tests {
@@ -132,8 +132,8 @@ pub mod tests {
     }
 
     cglue_trait_group!(TestGroup, TA, { TB, TC });
-    //cglue_impl_group!(SA, TestGroup, TA, { TB, TC });
-    //cglue_impl_group!(SB, TestGroup, TA, { TB, TC });
+    //cglue_impl_group!(SA, TestGroup, { TB, TC });
+    //cglue_impl_group!(SB, TestGroup, { TB, TC });
 
     #[test]
     fn get_b() {
@@ -142,6 +142,29 @@ pub mod tests {
         let objb = cglue_obj!(b as TB);
 
         assert_eq!(objb.tb_2(objb.tb_1(10)), 400);
+    }
+
+    #[test]
+    fn test_group() {
+        let mut b = SA {};
+
+        let group = TestGroup::new_owned(b, None, Some(Default::default())).into_opaque();
+
+        //group.tc_1();
+
+        println!("TRY AS REFFF:");
+
+        {
+            let group = group.as_ref_with_tc().unwrap();
+
+            println!("WOAH");
+
+            group.tc_1();
+        }
+
+        println!("TRY AS REFFF:");
+
+        assert!(group.as_ref_with_tb().is_none());
     }
 
     #[no_mangle]

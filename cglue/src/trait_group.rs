@@ -1,6 +1,6 @@
 //! Core definitions for traits, and their groups.
 
-use crate::wrap_box::CBox;
+use crate::boxed::CBox;
 use core::ffi::c_void;
 use core::ops::{Deref, DerefMut};
 
@@ -77,23 +77,11 @@ impl<T: Deref<Target = F> + DerefMut, F, V> CGlueObjMut<F> for CGlueTraitObj<'_,
     }
 }
 
-impl<'a, T, V: CGlueVtbl<T>> From<&'a mut T> for CGlueTraitObj<'a, &'a mut T, V>
+impl<'a, T: Deref<Target = F>, F: 'a, V: CGlueVtbl<F>> From<T> for CGlueTraitObj<'a, T, V>
 where
     &'a V: Default,
 {
-    fn from(instance: &'a mut T) -> Self {
-        Self {
-            instance,
-            vtbl: Default::default(),
-        }
-    }
-}
-
-impl<'a, T, V: CGlueVtbl<T>> From<&'a T> for CGlueTraitObj<'a, &'a T, V>
-where
-    &'a V: Default,
-{
-    fn from(instance: &'a T) -> Self {
+    fn from(instance: T) -> Self {
         Self {
             instance,
             vtbl: Default::default(),
@@ -106,10 +94,7 @@ where
     &'a V: Default,
 {
     fn from(this: T) -> Self {
-        Self {
-            instance: CBox::from(this),
-            vtbl: Default::default(),
-        }
+        Self::from(CBox::from(this))
     }
 }
 

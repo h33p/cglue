@@ -133,7 +133,7 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
         pub type #trait_obj_ident<'a, T, B> = #trg_path::CGlueTraitObj::<'a, B, #vtbl_ident<T>>;
 
         #[doc = #opaque_owned_trait_obj_doc]
-        pub type #opaque_owned_trait_obj_ident<'a> = #trait_obj_ident<'a, #c_void, #crate_path::wrap_box::CBox<#c_void>>;
+        pub type #opaque_owned_trait_obj_ident<'a> = #trait_obj_ident<'a, #c_void, #crate_path::boxed::CBox<#c_void>>;
 
         #[doc = #opaque_mut_trait_obj_doc]
         pub type #opaque_mut_trait_obj_ident<'a> = #trait_obj_ident<'a, #c_void, &'a mut #c_void>;
