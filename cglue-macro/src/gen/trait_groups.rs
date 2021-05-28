@@ -380,22 +380,13 @@ impl TraitGroup {
                     }
                 }
 
-                /// Workaround issue #80899
-                union #transmuter_type<'a, T, F> {
-                    input: ::core::mem::ManuallyDrop<#opt_name<'a, T, F>>,
-                    output: ::core::mem::ManuallyDrop<#name<'a, T, F>>
+                unsafe impl<'a, T, F> #trg_path::Opaquable for #opt_name<'a, T, F> {
+                    type OpaqueTarget = #name<'a, T, F>;
                 }
 
                 impl<'a, T, F> From<#opt_name<'a, T, F>> for #name<'a, T, F> {
                     fn from(input: #opt_name<'a, T, F>) -> Self {
-                        let input = ::core::mem::ManuallyDrop::new(input);
-
-                        let val = #transmuter_type {
-                            input
-                        };
-
-                        // SAFETY: structures have identical layout.
-                        ::core::mem::ManuallyDrop::into_inner(unsafe { val.output })
+                        #trg_path::Opaquable::into_opaque(input)
                     }
                 }
             });
