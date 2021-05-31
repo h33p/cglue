@@ -109,11 +109,15 @@ pub mod tests {
     pub trait TC {
         fn tc_1(&self);
         extern "C" fn tc_2(&mut self);
+        fn tc_3(&mut self, slc: &[usize]);
+        fn tc_4(&self, _npo_opt: Option<&usize>) {}
+        fn tc_5(&self, _opt: Option<usize>) {}
     }
 
     impl TC for SA {
         fn tc_1(&self) {}
         extern "C" fn tc_2(&mut self) {}
+        fn tc_3(&mut self, _slc: &[usize]) {}
     }
 
     #[test]

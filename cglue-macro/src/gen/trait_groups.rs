@@ -249,11 +249,11 @@ impl TraitGroup {
         let impl_traits =
             self.impl_traits(self.mandatory_vtbl.iter().chain(self.optional_vtbl.iter()));
         let base_doc = format!(
-            "Trait group potentially implementing `{}` traits.",
+            " Trait group potentially implementing `{}` traits.",
             impl_traits
         );
         let trback_doc = format!("be transformed back into `{}` without losing data.", name);
-        let new_doc = format!("Create new instance of {}.", name);
+        let new_doc = format!(" Create new instance of {}.", name);
 
         let opaque_name = format_ident!("{}Opaque", name);
         let opaque_name_ref = format_ident!("{}OpaqueRef", name);
@@ -303,22 +303,20 @@ impl TraitGroup {
             let impl_traits =
                 self.impl_traits(self.mandatory_vtbl.iter().chain(traits.iter().copied()));
 
-            let transmuter_type = format_ident!("CGlueTransmute{}", opt_name);
-
             let opt_final_doc = format!(
-                "Final {} variant with `{}` implemented.",
+                " Final {} variant with `{}` implemented.",
                 name, &impl_traits
             );
             let opt_final_doc2 = format!(
-                "Retrieve this type using [`{}`]({}::{}) function.",
+                " Retrieve this type using [`{}`]({}::{}) function.",
                 func_name_final, name, func_name_final
             );
 
             let opt_doc = format!(
-                "Concrete {} variant with `{}` implemented.",
+                " Concrete {} variant with `{}` implemented.",
                 name, &impl_traits
             );
-            let opt_doc2 = format!("Retrieve this type using one of [`{}`]({}::{}), [`{}`]({}::{}), or [`{}`]({}::{}) functions.", func_name, name, func_name, func_name_mut, name, func_name_mut, func_name_ref, name, func_name_ref);
+            let opt_doc2 = format!(" Retrieve this type using one of [`{}`]({}::{}), [`{}`]({}::{}), or [`{}`]({}::{}) functions.", func_name, name, func_name, func_name_mut, name, func_name_mut, func_name_ref, name, func_name_ref);
 
             opt_structs.extend(quote! {
 
@@ -392,31 +390,31 @@ impl TraitGroup {
             });
 
             let func_final_doc1 = format!(
-                "Retrieve a final {} variant that implements `{}`.",
+                " Retrieve a final {} variant that implements `{}`.",
                 name, impl_traits
             );
             let func_final_doc2 = format!(
-                "This consumes the `{}`, and outputs `Some(impl {})`, if all types are present.",
+                " This consumes the `{}`, and outputs `Some(impl {})`, if all types are present.",
                 name, impl_traits
             );
 
             let func_doc1 = format!(
-                "Retrieve a concrete {} variant that implements `{}`.",
+                " Retrieve a concrete {} variant that implements `{}`.",
                 name, impl_traits
             );
-            let func_doc2 = format!("This consumes the `{}`, and outputs `Some(impl {})`, if all types are present. It is possible to cast this type back with the `From` implementation.", name, impl_traits);
+            let func_doc2 = format!(" This consumes the `{}`, and outputs `Some(impl {})`, if all types are present. It is possible to cast this type back with the `From` implementation.", name, impl_traits);
 
-            let func_check_doc1 = format!("Check whether {} implements `{}`.", name, impl_traits);
-            let func_check_doc2 = format!(
-                "If this check returns true, it is safe to run consuming conversion operations."
-            );
+            let func_check_doc1 = format!(" Check whether {} implements `{}`.", name, impl_traits);
+            let func_check_doc2 =
+                " If this check returns true, it is safe to run consuming conversion operations."
+                    .to_string();
 
             let func_mut_doc1 = format!(
-                "Retrieve mutable reference to a concrete {} variant that implements `{}`.",
+                " Retrieve mutable reference to a concrete {} variant that implements `{}`.",
                 name, impl_traits
             );
             let func_ref_doc1 = format!(
-                "Retrieve immutable reference to a concrete {} variant that implements `{}`.",
+                " Retrieve immutable reference to a concrete {} variant that implements `{}`.",
                 name, impl_traits
             );
 

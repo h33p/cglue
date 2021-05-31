@@ -30,7 +30,11 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
     // Parse all functions in the trait
     for item in &tr.items {
         if let TraitItem::Method(m) = item {
-            funcs.push(ParsedFunc::new(m.sig.clone(), trait_name.clone()));
+            funcs.extend(ParsedFunc::new(
+                m.sig.clone(),
+                trait_name.clone(),
+                &crate_path,
+            ));
         }
     }
 
@@ -91,7 +95,7 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
     };
 
     // Glue it all together
-    let gen = quote! {
+    quote! {
         /* Primary vtable definition. */
 
         #[doc = #vtbl_doc]
@@ -150,7 +154,5 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
         impl<T: AsRef<#opaque_vtbl_ident> + #trg_path::#required_mutability<#c_void>> #trait_name for T {
             #trait_impl_fns
         }
-    };
-
-    gen.into()
+    }
 }

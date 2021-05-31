@@ -9,11 +9,9 @@ pub fn crate_path() -> TokenStream {
 
     match found_crate {
         FoundCrate::Itself => {
-            let has_doc_env = std::env::vars()
-                .find(|(k, _)| {
-                    k == "UNSTABLE_RUSTDOC_TEST_LINE" || k == "UNSTABLE_RUSTDOC_TEST_PATH"
-                })
-                .is_some();
+            let has_doc_env = std::env::vars().any(|(k, _)| {
+                k == "UNSTABLE_RUSTDOC_TEST_LINE" || k == "UNSTABLE_RUSTDOC_TEST_PATH"
+            });
 
             if has_doc_env {
                 quote!(::cglue)
@@ -46,4 +44,38 @@ pub fn parse_maybe_braced_idents(input: ParseStream) -> Result<Vec<Ident>> {
     }
 
     Ok(ret)
+}
+
+/// Checks whether the type could be null pointer optimizable.
+///
+/// Note that this is not a foolproof solution, and might have both false positives and negatives.
+///
+/// # Arguments
+///
+/// * `ty` - input type to check against.
+/// * `custom_types` - custom types that are NPO-able.
+pub fn is_null_pointer_optimizable(ty: &Type, custom_types: &[&'static str]) -> bool {
+    match ty {
+        Type::Reference(_) => true,
+        Type::BareFn(_) => true,
+        Type::Path(path) => {
+            let last = path.path.segments.last();
+
+            matches!(
+                last.map(|l| {
+                    let s = &l.ident.to_string();
+                    ["NonNull", "Box"].contains(&s.as_str())
+                        || custom_types.contains(&s.as_str())
+                        || (s.starts_with("NonZero")
+                            && [
+                                "I8", "U8", "I16", "U16", "I32", "U32", "I64", "U64", "I128",
+                                "U128",
+                            ]
+                            .contains(&s.split_at("NonZero".len()).1))
+                }),
+                Some(true)
+            )
+        }
+        _ => false,
+    }
 }

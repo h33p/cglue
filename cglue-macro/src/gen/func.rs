@@ -2,58 +2,216 @@ use proc_macro2::TokenStream;
 use quote::*;
 use syn::{Type, *};
 
-const FN_PREFIX: &'static str = "cglue_wrapped_";
+const FN_PREFIX: &str = "cglue_wrapped_";
+
+/// TraitArg stores implementations for Unstable-C-Unstable ABI transitions.
+struct TraitArg {
+    arg: FnArg,
+    /// Called in trait impl to define arguments. Useful when need to destruct a tuple/struct.
+    to_c_args: TokenStream,
+    /// Arguments inside the call to the C vtable function.
+    call_c_args: TokenStream,
+    /// C function signature.
+    c_args: TokenStream,
+    /// Arguments inside the call to the trait function.
+    to_trait_arg: TokenStream,
+    /// Whether argument conversion is trivial - 1-1 relationship with no changed types
+    trivial: bool,
+}
+
+impl TraitArg {
+    fn new(arg: FnArg, unsafety: &TokenStream, crate_path: &TokenStream) -> Self {
+        let (to_c_args, call_c_args, c_args, to_trait_arg, trivial) = match &arg {
+            FnArg::Receiver(r) => {
+                if r.mutability.is_some() {
+                    (
+                        quote!(let this = self.cobj_mut();),
+                        quote!(this,),
+                        quote!(this: &mut T,),
+                        quote!(),
+                        true,
+                    )
+                } else {
+                    (
+                        quote!(let this = self.cobj_ref();),
+                        quote!(this,),
+                        quote!(this: &T,),
+                        quote!(),
+                        true,
+                    )
+                }
+            }
+            FnArg::Typed(t) => {
+                let name = &*t.pat;
+                let ty = &*t.ty;
+
+                let ret = match ty {
+                    Type::Reference(r) => {
+                        let is_mut = r.mutability.is_some();
+                        match &*r.elem {
+                            Type::Slice(s) => {
+                                let szname =
+                                    format_ident!("{}_size", name.to_token_stream().to_string());
+                                let ty = &*s.elem;
+                                let (as_ptr, from_raw_parts, ptrt) = if is_mut {
+                                    (
+                                        quote!(as_mut_ptr),
+                                        quote!(from_raw_parts_mut),
+                                        quote!(*mut #ty),
+                                    )
+                                } else {
+                                    (quote!(as_ptr), quote!(from_raw_parts), quote!(*const #ty))
+                                };
+
+                                Some((
+                                    quote!(let (#name, #szname) = (#name.#as_ptr(), #name.len());),
+                                    quote!(#name, #szname,),
+                                    quote!(#name: #ptrt, #szname: usize,),
+                                    quote!(#unsafety { ::core::slice::#from_raw_parts(#name, #szname) },),
+                                    false,
+                                ))
+                            }
+                            _ => None,
+                        }
+                    }
+                    // TODO: Warn if Box is being used.
+                    Type::Path(p) => {
+                        // Here we check for any Option types, and wrap them to COption if they can
+                        // not be NPOd.
+                        let last = p.path.segments.last();
+                        if let Some((PathArguments::AngleBracketed(args), last)) =
+                            last.map(|l| (&l.arguments, l))
+                        {
+                            match last.ident.to_string().as_str() {
+                                "Option" => {
+                                    if let Some(GenericArgument::Type(a)) = args.args.first() {
+                                        if crate::util::is_null_pointer_optimizable(a, &[]) {
+                                            None
+                                        } else {
+                                            Some((
+                                                quote!(let #name = #name.into();),
+                                                quote!(#name,),
+                                                quote!(#name: #crate_path::option::COption<#a>,),
+                                                quote!(#name.into(),),
+                                                false,
+                                            ))
+                                        }
+                                    } else {
+                                        None
+                                    }
+                                }
+                                "Result" => {
+                                    let mut args = args.args.iter();
+
+                                    match (args.next(), args.next(), args.next(), false) {
+                                        (Some(GenericArgument::Type(_)), _, None, true) => {
+                                            // TODO: Wrap Result<T> alias to use int values if it is marked
+                                            // to implement IntResult
+                                            None
+                                        }
+                                        (
+                                            Some(GenericArgument::Type(a)),
+                                            Some(GenericArgument::Type(b)),
+                                            None,
+                                            _,
+                                        ) => Some((
+                                            quote!(let #name = #name.into();),
+                                            quote!(#name,),
+                                            quote!(#name: #crate_path::result::CResult<#a, #b>,),
+                                            quote!(#name.into(),),
+                                            false,
+                                        )),
+                                        _ => None,
+                                    }
+                                }
+                                _ => None,
+                            }
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None,
+                };
+
+                ret.unwrap_or_else(|| {
+                    (
+                        quote!(let #name = #name;),
+                        quote!(#name,),
+                        quote!(#name: #ty,),
+                        quote!(#name,),
+                        true,
+                    )
+                })
+            }
+        };
+
+        Self {
+            arg,
+            to_c_args,
+            call_c_args,
+            c_args,
+            to_trait_arg,
+            trivial,
+        }
+    }
+}
 
 pub struct ParsedFunc {
     name: Ident,
     trait_name: Ident,
     safe: bool,
     abi: FuncAbi,
-    receiver: Option<Receiver>,
-    args: Vec<ParsedArg>,
+    has_nontrivial: bool,
+    receiver: Receiver,
+    args: Vec<TraitArg>,
     out: ParsedReturnType,
 }
 
 impl ParsedFunc {
-    pub fn new(sig: Signature, trait_name: Ident) -> Self {
+    pub fn new(sig: Signature, trait_name: Ident, crate_path: &TokenStream) -> Option<Self> {
         let name = sig.ident;
         let safe = sig.unsafety.is_none();
         let abi = From::from(sig.abi);
-        let mut args: Vec<ParsedArg> = vec![];
+        let mut args: Vec<TraitArg> = vec![];
 
         let mut receiver = None;
+        let mut has_nontrivial = false;
+
+        let unsafety = if safe { quote!(unsafe) } else { quote!() };
 
         for input in sig.inputs.into_iter() {
-            if let FnArg::Receiver(r) = input {
+            if let FnArg::Receiver(r) = &input {
                 receiver = Some(r.clone());
-            } else {
-                args.push(input.into());
             }
+
+            let func = TraitArg::new(input, &unsafety, crate_path);
+
+            has_nontrivial = has_nontrivial || !func.trivial;
+
+            args.push(func);
         }
+
+        let receiver = receiver?;
 
         let out = From::from(sig.output);
 
-        Self {
+        Some(Self {
             name,
             trait_name,
             safe,
             abi,
+            has_nontrivial,
             receiver,
             args,
             out,
-        }
+        })
     }
 
     pub fn vtbl_args(&self) -> TokenStream {
         let mut ret = TokenStream::new();
 
-        if let Some(recv) = &self.receiver {
-            let pa = ParsedArg::from_receiver(recv.clone(), "T");
-            pa.to_tokens(&mut ret);
-        }
-
         for arg in &self.args {
-            arg.to_tokens(&mut ret);
+            arg.c_args.to_tokens(&mut ret);
         }
 
         ret
@@ -62,24 +220,41 @@ impl ParsedFunc {
     pub fn trait_args(&self) -> TokenStream {
         let mut ret = TokenStream::new();
 
-        if let Some(recv) = &self.receiver {
-            ret.extend(quote!(#recv, ));
-        }
-
         for arg in &self.args {
+            let arg = &arg.arg;
+            let arg = quote!(#arg, );
             arg.to_tokens(&mut ret);
         }
 
         ret
     }
 
-    pub fn chained_call_args(&self) -> TokenStream {
+    pub fn to_c_def_args(&self) -> TokenStream {
         let mut ret = TokenStream::new();
 
-        ret.extend(self.args.iter().map(|i| {
-            let name = &i.name;
-            quote!(#name, )
-        }));
+        for arg in &self.args {
+            arg.to_c_args.to_tokens(&mut ret);
+        }
+
+        ret
+    }
+
+    pub fn to_c_call_args(&self) -> TokenStream {
+        let mut ret = TokenStream::new();
+
+        for arg in &self.args {
+            arg.call_c_args.to_tokens(&mut ret);
+        }
+
+        ret
+    }
+
+    pub fn to_trait_call_args(&self) -> TokenStream {
+        let mut ret = TokenStream::new();
+
+        for arg in &self.args {
+            arg.to_trait_arg.to_tokens(&mut ret);
+        }
 
         ret
     }
@@ -98,7 +273,7 @@ impl ParsedFunc {
     }
 
     pub fn is_wrapped(&self) -> bool {
-        self.abi == FuncAbi::Wrapped
+        self.abi == FuncAbi::Wrapped || self.has_nontrivial
     }
 
     /// Create a wrapper implementation body for this function
@@ -112,15 +287,16 @@ impl ParsedFunc {
         let name = &self.name;
         let args = self.vtbl_args();
         let out = &self.out;
-        let call_args = self.chained_call_args();
+        let call_args = self.to_trait_call_args();
 
         let trname = &self.trait_name;
         let fnname = format_ident!("{}{}", FN_PREFIX, name);
+        let safety = self.get_safety();
 
         // TODO: add support for writing Ok result to MaybeUninit
         // TODO: add checks for result wrapping
         let gen = quote! {
-            extern "C" fn #fnname<T: #trname>(#args) -> #out {
+            #safety extern "C" fn #fnname<T: #trname>(#args) -> #out {
                 this.#name(#call_args)
             }
         };
@@ -142,34 +318,35 @@ impl ParsedFunc {
         tokens.extend(quote!(#name: #fnname,));
     }
 
+    pub fn get_safety(&self) -> TokenStream {
+        if self.safe {
+            quote!()
+        } else {
+            quote!(unsafe)
+        }
+    }
+
     pub fn trait_impl(&self, tokens: &mut TokenStream) -> bool {
         let name = &self.name;
         let args = self.trait_args();
         let out = &self.out;
-        let call_args = self.chained_call_args();
-
-        let need_mut = match &self.receiver {
-            Some(x) => x.mutability.is_some(),
-            _ => panic!("No receiver! Should not get to this point!"),
-        };
-
-        let this_arg = match need_mut {
-            true => quote!(self.cobj_mut()),
-            false => quote!(self.cobj_ref()),
-        };
-
+        let def_args = self.to_c_def_args();
+        let call_args = self.to_c_call_args();
+        let safety = self.get_safety();
         let abi = self.abi.prefix();
 
         let gen = quote! {
             #[inline(always)]
-            #abi fn #name (#args) -> #out {
-                (self.as_ref().#name)(#this_arg, #call_args)
+            #safety #abi fn #name (#args) -> #out {
+                let __cglue_vfunc = self.as_ref().#name;
+                #def_args
+                __cglue_vfunc(#call_args)
             }
         };
 
         tokens.extend(gen);
 
-        need_mut
+        self.receiver.mutability.is_some()
     }
 }
 
@@ -205,52 +382,16 @@ impl From<Option<Abi>> for FuncAbi {
     }
 }
 
-enum ParsedType {
-    Slice(Type),
-    SliceMut(Type),
-    Other(Type),
-}
-
-impl ToTokens for ParsedType {
-    fn to_tokens(&self, toks: &mut proc_macro2::TokenStream) {
-        match self {
-            ParsedType::Slice(ty) | ParsedType::SliceMut(ty) | ParsedType::Other(ty) => {
-                ty.to_tokens(toks)
-            }
-        }
-    }
-}
-
-impl From<Type> for ParsedType {
-    fn from(ty: Type) -> Self {
-        match &ty {
-            Type::Reference(ty) => match &*ty.elem {
-                Type::Slice(slc) => {
-                    if ty.mutability.is_none() {
-                        return ParsedType::Slice(*slc.elem.clone());
-                    } else {
-                        return ParsedType::SliceMut(*slc.elem.clone());
-                    }
-                }
-                _ => {}
-            },
-            _ => {}
-        }
-
-        ParsedType::Other(ty)
-    }
-}
-
 enum ParsedReturnType {
     Nothing,
-    Other(Type),
+    Other(Box<Type>),
 }
 
 impl From<ReturnType> for ParsedReturnType {
     fn from(ty: ReturnType) -> Self {
         match ty {
             ReturnType::Default => ParsedReturnType::Nothing,
-            ReturnType::Type(_, ty) => ParsedReturnType::Other((*ty).clone()),
+            ReturnType::Type(_, ty) => ParsedReturnType::Other(ty),
         }
     }
 }
@@ -261,59 +402,5 @@ impl ToTokens for ParsedReturnType {
             ParsedReturnType::Nothing => tokens.extend(quote! { () }),
             ParsedReturnType::Other(x) => x.to_tokens(tokens),
         }
-    }
-}
-
-impl ParsedType {
-    fn from_receiver(ty: Receiver, typename: &str) -> Self {
-        let mut s = String::new();
-
-        if ty.reference.is_some() {
-            s.push_str("&");
-        }
-
-        if ty.mutability.is_some() {
-            s.push_str("mut ");
-        }
-
-        s.push_str(typename);
-
-        let outty = Type::Verbatim(s.parse().unwrap());
-        ParsedType::Other(outty)
-    }
-}
-
-struct ParsedArg {
-    name: Pat,
-    ty: ParsedType,
-}
-
-impl From<FnArg> for ParsedArg {
-    fn from(arg: FnArg) -> Self {
-        match arg {
-            FnArg::Receiver(ty) => ParsedArg::from_receiver(ty, "T"),
-            FnArg::Typed(ty) => Self {
-                name: *ty.pat,
-                ty: (*ty.ty).into(),
-            },
-        }
-    }
-}
-
-impl ParsedArg {
-    fn from_receiver(ty: Receiver, typename: &str) -> Self {
-        Self {
-            name: Pat::Verbatim("this".parse().unwrap()),
-            ty: ParsedType::from_receiver(ty, typename),
-        }
-    }
-}
-
-impl ToTokens for ParsedArg {
-    fn to_tokens(&self, tokens: &mut TokenStream) {
-        let name = &self.name;
-        let ty = &self.ty;
-
-        tokens.extend(quote! { #name: #ty, });
     }
 }
