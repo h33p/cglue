@@ -27,12 +27,25 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
 
     let mut funcs = vec![];
 
+    let int_result = tr
+        .attrs
+        .iter()
+        .any(|a| a.path.to_token_stream().to_string() == "int_result");
+
     // Parse all functions in the trait
     for item in &tr.items {
         if let TraitItem::Method(m) = item {
+            let mut iter = m.attrs.iter().map(|a| a.path.to_token_stream().to_string());
+
+            let int_result = match int_result {
+                true => !iter.any(|i| i == "no_int_result"),
+                false => iter.any(|i| i == "int_result"),
+            };
+
             funcs.extend(ParsedFunc::new(
                 m.sig.clone(),
                 trait_name.clone(),
+                int_result,
                 &crate_path,
             ));
         }

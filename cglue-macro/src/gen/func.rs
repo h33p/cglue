@@ -168,7 +168,12 @@ pub struct ParsedFunc {
 }
 
 impl ParsedFunc {
-    pub fn new(sig: Signature, trait_name: Ident, crate_path: &TokenStream) -> Option<Self> {
+    pub fn new(
+        sig: Signature,
+        trait_name: Ident,
+        int_result: bool,
+        crate_path: &TokenStream,
+    ) -> Option<Self> {
         let name = sig.ident;
         let safe = sig.unsafety.is_none();
         let abi = From::from(sig.abi);
@@ -193,7 +198,7 @@ impl ParsedFunc {
 
         let receiver = receiver?;
 
-        let out = From::from(sig.output);
+        let out = ParsedReturnType::new(sig.output, int_result, &unsafety, crate_path);
 
         Some(Self {
             name,
@@ -263,10 +268,14 @@ impl ParsedFunc {
     pub fn vtbl_def(&self, stream: &mut TokenStream) {
         let name = &self.name;
         let args = self.vtbl_args();
-        let out = &self.out;
+        let ParsedReturnType {
+            c_out,
+            c_ret_params,
+            ..
+        } = &self.out;
 
         let gen = quote! {
-            pub #name: extern "C" fn(#args) -> #out,
+            pub #name: extern "C" fn(#args #c_ret_params) #c_out,
         };
 
         stream.extend(gen);
@@ -286,18 +295,22 @@ impl ParsedFunc {
 
         let name = &self.name;
         let args = self.vtbl_args();
-        let out = &self.out;
+        let ParsedReturnType {
+            c_out,
+            c_ret,
+            c_ret_params,
+            ..
+        } = &self.out;
         let call_args = self.to_trait_call_args();
 
         let trname = &self.trait_name;
         let fnname = format_ident!("{}{}", FN_PREFIX, name);
         let safety = self.get_safety();
 
-        // TODO: add support for writing Ok result to MaybeUninit
-        // TODO: add checks for result wrapping
         let gen = quote! {
-            #safety extern "C" fn #fnname<T: #trname>(#args) -> #out {
-                this.#name(#call_args)
+            #safety extern "C" fn #fnname<T: #trname>(#args #c_ret_params) #c_out {
+                let ret = this.#name(#call_args);
+                #c_ret
             }
         };
 
@@ -329,7 +342,13 @@ impl ParsedFunc {
     pub fn trait_impl(&self, tokens: &mut TokenStream) -> bool {
         let name = &self.name;
         let args = self.trait_args();
-        let out = &self.out;
+        let ParsedReturnType {
+            ty: out,
+            impl_func_ret,
+            c_ret_precall_def,
+            c_call_ret_args,
+            ..
+        } = &self.out;
         let def_args = self.to_c_def_args();
         let call_args = self.to_c_call_args();
         let safety = self.get_safety();
@@ -337,10 +356,12 @@ impl ParsedFunc {
 
         let gen = quote! {
             #[inline(always)]
-            #safety #abi fn #name (#args) -> #out {
+            #safety #abi fn #name (#args) #out {
                 let __cglue_vfunc = self.as_ref().#name;
                 #def_args
-                __cglue_vfunc(#call_args)
+                #c_ret_precall_def
+                let ret = __cglue_vfunc(#call_args #c_call_ret_args);
+                #impl_func_ret
             }
         };
 
@@ -382,25 +403,120 @@ impl From<Option<Abi>> for FuncAbi {
     }
 }
 
-enum ParsedReturnType {
-    Nothing,
-    Other(Box<Type>),
+struct ParsedReturnType {
+    ty: ReturnType,
+    c_out: TokenStream,
+    c_ret_params: TokenStream,
+    c_ret_precall_def: TokenStream,
+    c_call_ret_args: TokenStream,
+    c_ret: TokenStream,
+    impl_func_ret: TokenStream,
 }
 
-impl From<ReturnType> for ParsedReturnType {
-    fn from(ty: ReturnType) -> Self {
-        match ty {
-            ReturnType::Default => ParsedReturnType::Nothing,
-            ReturnType::Type(_, ty) => ParsedReturnType::Other(ty),
-        }
-    }
-}
+impl ParsedReturnType {
+    fn new(
+        ty: ReturnType,
+        int_result: bool,
+        unsafety: &TokenStream,
+        crate_path: &TokenStream,
+    ) -> Self {
+        let (c_out, c_ret_params, c_ret_precall_def, c_call_ret_args, c_ret, impl_func_ret) = {
+            let mut ret = None;
 
-impl ToTokens for ParsedReturnType {
-    fn to_tokens(&self, tokens: &mut TokenStream) {
-        match &self {
-            ParsedReturnType::Nothing => tokens.extend(quote! { () }),
-            ParsedReturnType::Other(x) => x.to_tokens(tokens),
+            if let ReturnType::Type(_, ty) = &ty {
+                if let Type::Path(p) = &**ty {
+                    let last = p.path.segments.last();
+                    if let Some((PathArguments::AngleBracketed(args), last)) =
+                        last.map(|l| (&l.arguments, l))
+                    {
+                        match last.ident.to_string().as_str() {
+                            "Option" => {
+                                if let Some(GenericArgument::Type(a)) = args.args.first() {
+                                    if !crate::util::is_null_pointer_optimizable(a, &[]) {
+                                        ret = Some((
+                                            quote!(-> #crate_path::option::COption<#a>),
+                                            quote!(),
+                                            quote!(),
+                                            quote!(),
+                                            quote!(ret.into()),
+                                            quote!(ret.into()),
+                                        ));
+                                    }
+                                }
+                            }
+                            "Result" => {
+                                let mut args = args.args.iter();
+
+                                ret = match (args.next(), args.next(), args.next(), int_result) {
+                                    (Some(GenericArgument::Type(a)), _, None, true) => {
+                                        let ret = loop {
+                                            if let Type::Tuple(tup) = a {
+                                                if tup.elems.is_empty() {
+                                                    break (
+                                                        quote!(-> i32),
+                                                        quote!(),
+                                                        quote!(),
+                                                        quote!(),
+                                                        quote!(#crate_path::result::into_int_result(ret)),
+                                                        quote!(#crate_path::result::from_int_result_empty(ret)),
+                                                    );
+                                                }
+                                            }
+
+                                            break (
+                                                quote!(-> i32),
+                                                quote!(ok_out: &mut ::core::mem::MaybeUninit<#a>),
+                                                quote!(let mut ok_out = ::core::mem::MaybeUninit::uninit();),
+                                                quote!(&mut ok_out,),
+                                                quote!(#crate_path::result::into_int_out_result(ret, ok_out)),
+                                                quote!(#unsafety { #crate_path::result::from_int_result(ret, ok_out) }),
+                                            );
+                                        };
+
+                                        Some(ret)
+                                    }
+                                    (
+                                        Some(GenericArgument::Type(a)),
+                                        Some(GenericArgument::Type(b)),
+                                        None,
+                                        _,
+                                    ) => Some((
+                                        quote!(-> #crate_path::result::CResult<#a, #b>),
+                                        quote!(),
+                                        quote!(),
+                                        quote!(),
+                                        quote!(ret.into()),
+                                        quote!(ret.into()),
+                                    )),
+                                    _ => None,
+                                };
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+
+            ret.unwrap_or_else(|| {
+                (
+                    ty.to_token_stream(),
+                    quote!(),
+                    quote!(),
+                    quote!(),
+                    quote!(ret),
+                    quote!(ret),
+                )
+            })
+        };
+
+        Self {
+            ty,
+            c_out,
+            c_ret_params,
+            c_ret_precall_def,
+            c_call_ret_args,
+            c_ret,
+            impl_func_ret,
         }
     }
 }

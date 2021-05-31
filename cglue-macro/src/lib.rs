@@ -9,6 +9,16 @@ use quote::ToTokens;
 use quote::{format_ident, quote};
 use syn::*;
 
+#[proc_macro_attribute]
+pub fn int_result(_: TokenStream, input: TokenStream) -> TokenStream {
+    input
+}
+
+#[proc_macro_attribute]
+pub fn no_int_result(_: TokenStream, input: TokenStream) -> TokenStream {
+    input
+}
+
 #[proc_macro]
 pub fn cglue_trait_group(args: TokenStream) -> TokenStream {
     let args = parse_macro_input!(args as TraitGroup);

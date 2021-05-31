@@ -1,4 +1,9 @@
 /// Describes a FFI safe option
+///
+/// This type is not really meant for general use, but rather as a last-resort conversion for type
+/// wrapping.
+///
+/// Typical workflow would include temporarily converting into/from COption.
 #[repr(C)]
 pub enum COption<T> {
     None,

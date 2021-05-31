@@ -62,6 +62,7 @@ pub mod boxed;
 pub mod callback;
 pub mod option;
 pub mod repr_cstring;
+pub mod result;
 pub mod trait_group;
 
 //#[cfg(test)]
@@ -106,18 +107,23 @@ pub mod tests {
     }
 
     #[cglue_trait]
+    #[int_result]
     pub trait TC {
         fn tc_1(&self);
         extern "C" fn tc_2(&mut self);
-        fn tc_3(&mut self, slc: &[usize]);
+        fn tc_3(&mut self, slc: &[usize], npo_option: Option<&u128>, wrap_option: Option<u128>);
         fn tc_4(&self, _npo_opt: Option<&usize>) {}
         fn tc_5(&self, _opt: Option<usize>) {}
+        fn tc_6(&self, val: usize) -> Result<usize, ()> {
+            Ok(val)
+        }
     }
 
     impl TC for SA {
         fn tc_1(&self) {}
         extern "C" fn tc_2(&mut self) {}
-        fn tc_3(&mut self, _slc: &[usize]) {}
+        fn tc_3(&mut self, _slc: &[usize], _npo_option: Option<&u128>, _wrap_option: Option<u128>) {
+        }
     }
 
     #[test]
