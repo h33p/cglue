@@ -60,10 +60,8 @@ pub fn split_path_ident(in_path: Path) -> Result<(TokenStream, Ident)> {
         }
     }
 
-    let ident = ident.ok_or(Error::new(
-        proc_macro2::Span::call_site(),
-        "Ident not found!",
-    ))?;
+    let ident =
+        ident.ok_or_else(|| Error::new(proc_macro2::Span::call_site(), "Ident not found!"))?;
 
     Ok((path, ident))
 }

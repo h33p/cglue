@@ -414,6 +414,7 @@ struct ParsedReturnType {
 }
 
 impl ParsedReturnType {
+    #[allow(clippy::never_loop)]
     fn new(
         ty: ReturnType,
         int_result: bool,

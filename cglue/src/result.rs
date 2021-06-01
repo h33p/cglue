@@ -104,9 +104,7 @@ impl IntError for () {
         NonZeroI32::new(1).unwrap()
     }
 
-    fn from_int_err(_err: NonZeroI32) -> Self {
-        ()
-    }
+    fn from_int_err(_err: NonZeroI32) -> Self {}
 }
 
 /// Convert result into an integer error value.
