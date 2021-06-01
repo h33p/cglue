@@ -6,20 +6,45 @@ use syn::parse::{Parse, ParseStream};
 use syn::*;
 
 /// Describes information about a single trait.
-#[derive(PartialEq, Eq, Ord, PartialOrd)]
 pub struct TraitInfo {
+    path: TokenStream,
     ident: Ident,
     vtbl_name: Ident,
+    enable_vtbl_name: Ident,
     lc_name: Ident,
     vtbl_typename: Ident,
 }
 
-impl From<Ident> for TraitInfo {
-    fn from(ident: Ident) -> Self {
+impl PartialEq for TraitInfo {
+    fn eq(&self, o: &Self) -> bool {
+        self.ident == o.ident
+    }
+}
+
+impl Eq for TraitInfo {}
+
+impl Ord for TraitInfo {
+    fn cmp(&self, o: &Self) -> std::cmp::Ordering {
+        self.ident.cmp(&o.ident)
+    }
+}
+
+impl PartialOrd for TraitInfo {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl From<Path> for TraitInfo {
+    fn from(in_path: Path) -> Self {
+        let (path, ident) = split_path_ident(in_path).unwrap();
+
         Self {
             vtbl_name: format_ident!("vtbl_{}", ident.to_string().to_lowercase()),
             lc_name: format_ident!("{}", ident.to_string().to_lowercase()),
             vtbl_typename: format_ident!("CGlueVtbl{}", ident),
+            enable_vtbl_name: format_ident!("enable_{}", ident.to_string().to_lowercase()),
+            path,
             ident,
         }
     }
@@ -37,10 +62,10 @@ impl Parse for TraitGroup {
         let name = input.parse()?;
 
         input.parse::<Token![,]>()?;
-        let mandatory_traits = parse_maybe_braced_idents(input)?;
+        let mandatory_traits = parse_maybe_braced::<Path>(input)?;
 
         input.parse::<Token![,]>()?;
-        let optional_traits = parse_maybe_braced_idents(input)?;
+        let optional_traits = parse_maybe_braced::<Path>(input)?;
 
         let mut mandatory_vtbl: Vec<TraitInfo> =
             mandatory_traits.into_iter().map(TraitInfo::from).collect();
@@ -60,20 +85,23 @@ impl Parse for TraitGroup {
 
 /// Describes trait group to be implemented on a type.
 pub struct TraitGroupImpl {
-    name: Ident,
+    path: Path,
+    group_path: TokenStream,
     group: Ident,
     implemented_vtbl: Vec<TraitInfo>,
 }
 
 impl Parse for TraitGroupImpl {
     fn parse(input: ParseStream) -> Result<Self> {
-        let name = input.parse()?;
+        let path = input.parse()?;
         input.parse::<Token![,]>()?;
 
         let group = input.parse()?;
 
+        let (group_path, group) = split_path_ident(group)?;
+
         input.parse::<Token![,]>()?;
-        let implemented_traits = parse_maybe_braced_idents(input)?;
+        let implemented_traits = parse_maybe_braced::<Path>(input)?;
 
         let mut implemented_vtbl: Vec<TraitInfo> =
             implemented_traits.into_iter().map(From::from).collect();
@@ -81,7 +109,8 @@ impl Parse for TraitGroupImpl {
         implemented_vtbl.sort();
 
         Ok(Self {
-            name,
+            path,
+            group_path,
             group,
             implemented_vtbl,
         })
@@ -93,21 +122,19 @@ impl TraitGroupImpl {
     ///
     /// The type will have specified vtables implemented as a conversion function.
     pub fn implement_group(&self) -> TokenStream {
-        let name = &self.name;
+        let path = &self.path;
         let group = &self.group;
+        let group_path = &self.group_path;
 
         let filler_trait = format_ident!("{}VtableFiller", group);
         let vtable_type = format_ident!("{}Vtables", group);
 
-        let implemented_tables = TraitGroup::some_default_vtbl_defs(self.implemented_vtbl.iter());
+        let implemented_tables = TraitGroup::enable_opt_vtbls(self.implemented_vtbl.iter());
 
         quote! {
-            impl<'a> #filler_trait<'a> for #name {
-                fn fill_table(table: #vtable_type<'a, Self>) -> #vtable_type<'a, Self> {
-                    #vtable_type {
-                        #implemented_tables
-                        ..table
-                    }
+            impl<'a> #group_path #filler_trait<'a> for #path {
+                fn fill_table(table: #group_path #vtable_type<'a, Self>) -> #group_path #vtable_type<'a, Self> {
+                    table #implemented_tables
                 }
             }
         }
@@ -136,7 +163,10 @@ impl Parse for TraitCastGroup {
         let mut needed_vtbls: Vec<TraitInfo> = implemented_traits
             .bounds
             .into_iter()
-            .map(|b| format_ident!("{}", b.to_token_stream().to_string()))
+            .filter_map(|b| match b {
+                TypeParamBound::Trait(tr) => Some(tr.path),
+                _ => None,
+            })
             .map(From::from)
             .collect();
 
@@ -241,6 +271,26 @@ impl TraitGroup {
         let mand_vtbl_list = self.vtbl_list(self.mandatory_vtbl.iter());
         let full_opt_vtbl_list = self.vtbl_list(self.optional_vtbl.iter());
         let vtbl_where_bounds = self.vtbl_where_bounds(self.mandatory_vtbl.iter());
+
+        let mut enable_funcs = TokenStream::new();
+
+        for TraitInfo {
+            enable_vtbl_name,
+            vtbl_typename,
+            vtbl_name,
+            ..
+        } in &self.optional_vtbl
+        {
+            enable_funcs.extend(quote! {
+                pub fn #enable_vtbl_name (self) -> Self
+                    where &'a #vtbl_typename<F>: Default {
+                    Self {
+                        #vtbl_name: Some(Default::default()),
+                        ..self
+                    }
+                }
+            });
+        }
 
         let mut trait_funcs = TokenStream::new();
 
@@ -597,6 +647,10 @@ impl TraitGroup {
                 }
             }
 
+            impl<'a, F> #vtable_type<'a, F> {
+                #enable_funcs
+            }
+
             pub trait #filler_trait<'a>: Sized {
                 fn fill_table(table: #vtable_type<'a, Self>) -> #vtable_type<'a, Self>;
             }
@@ -710,11 +764,12 @@ impl TraitGroup {
 
         for TraitInfo {
             vtbl_name,
+            path,
             vtbl_typename,
             ..
         } in iter
         {
-            ret.extend(quote!(#vtbl_name: &'a #vtbl_typename<F>, ));
+            ret.extend(quote!(#vtbl_name: &'a #path #vtbl_typename<F>, ));
         }
 
         ret
@@ -726,12 +781,12 @@ impl TraitGroup {
     ///
     /// * `traits` - traits to combine.
     fn impl_traits<'a>(&'a self, mut traits: impl Iterator<Item = &'a TraitInfo>) -> TokenStream {
-        let first = &traits.next().unwrap().ident;
+        let TraitInfo { path, ident, .. } = traits.next().unwrap();
 
-        let mut ret = quote!(#first);
+        let mut ret = quote!(#path #ident);
 
-        for TraitInfo { ident, .. } in traits {
-            ret.extend(quote!(+ #ident));
+        for TraitInfo { path, ident, .. } in traits {
+            ret.extend(quote!(+ #path #ident));
         }
 
         ret
@@ -745,11 +800,12 @@ impl TraitGroup {
 
         for TraitInfo {
             vtbl_name,
+            path,
             vtbl_typename,
             ..
         } in &self.optional_vtbl
         {
-            ret.extend(quote!(#vtbl_name: ::core::option::Option<&'a #vtbl_typename<F>>, ));
+            ret.extend(quote!(#vtbl_name: ::core::option::Option<&'a #path #vtbl_typename<F>>, ));
         }
 
         ret
@@ -772,6 +828,7 @@ impl TraitGroup {
         for (
             TraitInfo {
                 vtbl_name,
+                path,
                 vtbl_typename,
                 ..
             },
@@ -785,8 +842,8 @@ impl TraitGroup {
             }
         }) {
             let def = match mandatory {
-                true => quote!(#vtbl_name: &'a #vtbl_typename<F>, ),
-                false => quote!(#vtbl_name: ::core::option::Option<&'a #vtbl_typename<F>>, ),
+                true => quote!(#vtbl_name: &'a #path #vtbl_typename<F>, ),
+                false => quote!(#vtbl_name: ::core::option::Option<&'a #path #vtbl_typename<F>>, ),
             };
             ret.extend(def);
         }
@@ -794,11 +851,14 @@ impl TraitGroup {
         ret
     }
 
-    pub fn some_default_vtbl_defs<'a>(iter: impl Iterator<Item = &'a TraitInfo>) -> TokenStream {
+    pub fn enable_opt_vtbls<'a>(iter: impl Iterator<Item = &'a TraitInfo>) -> TokenStream {
         let mut ret = TokenStream::new();
 
-        for TraitInfo { vtbl_name, .. } in iter {
-            ret.extend(quote!(#vtbl_name: Some(Default::default()),));
+        for TraitInfo {
+            enable_vtbl_name, ..
+        } in iter
+        {
+            ret.extend(quote!(.#enable_vtbl_name()));
         }
 
         ret
@@ -824,14 +884,15 @@ impl TraitGroup {
 
         for TraitInfo {
             vtbl_name,
+            path,
             vtbl_typename,
             ..
         } in traits
         {
             ret.extend(quote! {
-                impl<T, F> AsRef<#vtbl_typename<F>> for #name<'_, T, F>
+                impl<T, F> AsRef<#path #vtbl_typename<F>> for #name<'_, T, F>
                 {
-                    fn as_ref(&self) -> &#vtbl_typename<F> {
+                    fn as_ref(&self) -> &#path #vtbl_typename<F> {
                         &self.#vtbl_name
                     }
                 }
@@ -945,8 +1006,13 @@ impl TraitGroup {
     fn vtbl_where_bounds<'a>(&'a self, iter: impl Iterator<Item = &'a TraitInfo>) -> TokenStream {
         let mut ret = TokenStream::new();
 
-        for TraitInfo { vtbl_typename, .. } in iter {
-            ret.extend(quote!(&'a #vtbl_typename<F>: Default,));
+        for TraitInfo {
+            path,
+            vtbl_typename,
+            ..
+        } in iter
+        {
+            ret.extend(quote!(&'a #path #vtbl_typename<F>: Default,));
         }
 
         ret

@@ -1,7 +1,7 @@
 use proc_macro2::TokenStream;
 use proc_macro_crate::{crate_name, FoundCrate};
-use quote::quote;
-use syn::parse::ParseStream;
+use quote::{format_ident, quote, ToTokens};
+use syn::parse::{Parse, ParseStream};
 use syn::*;
 
 pub fn crate_path() -> TokenStream {
@@ -24,16 +24,16 @@ pub fn crate_path() -> TokenStream {
 }
 
 /// Parse an input stream that is either a single Ident, or a list of Idents surrounded by braces.
-pub fn parse_maybe_braced_idents(input: ParseStream) -> Result<Vec<Ident>> {
+pub fn parse_maybe_braced<T: Parse>(input: ParseStream) -> Result<Vec<T>> {
     let mut ret = vec![];
 
     if let Ok(braces) = syn::group::parse_braces(&input) {
         let content = braces.content;
 
         while !content.is_empty() {
-            let ident = content.parse()?;
+            let val = content.parse()?;
 
-            ret.push(ident);
+            ret.push(val);
 
             if !content.is_empty() {
                 content.parse::<Token![,]>()?;
@@ -44,6 +44,28 @@ pub fn parse_maybe_braced_idents(input: ParseStream) -> Result<Vec<Ident>> {
     }
 
     Ok(ret)
+}
+
+pub fn split_path_ident(in_path: Path) -> Result<(TokenStream, Ident)> {
+    let mut path = in_path.leading_colon.to_token_stream();
+
+    let mut ident = None;
+
+    for part in in_path.segments.into_pairs() {
+        match part {
+            punctuated::Pair::Punctuated(p, punc) => path.extend(quote!(#p #punc)),
+            punctuated::Pair::End(p) => {
+                ident = Some(format_ident!("{}", p.to_token_stream().to_string()))
+            }
+        }
+    }
+
+    let ident = ident.ok_or(Error::new(
+        proc_macro2::Span::call_site(),
+        "Ident not found!",
+    ))?;
+
+    Ok((path, ident))
 }
 
 /// Checks whether the type could be null pointer optimizable.
