@@ -142,7 +142,7 @@ impl TraitGroupImpl {
 }
 
 pub struct TraitCastGroup {
-    name: Ident,
+    name: TokenStream,
     needed_vtbls: Vec<TraitInfo>,
 }
 
@@ -156,7 +156,16 @@ pub enum CastType {
 
 impl Parse for TraitCastGroup {
     fn parse(input: ParseStream) -> Result<Self> {
-        let name = input.parse()?;
+        let name;
+
+        if let Ok(ExprReference {
+            mutability, expr, ..
+        }) = input.parse::<ExprReference>()
+        {
+            name = quote!(&#mutability #expr);
+        } else {
+            name = input.parse::<Ident>()?.into_token_stream();
+        }
 
         let implemented_traits = input.parse::<TypeImplTrait>()?;
 
