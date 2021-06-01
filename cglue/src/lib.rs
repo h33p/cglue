@@ -55,16 +55,14 @@
 //!
 //! ```
 //! use cglue_macro::*;
-//! #
+//! # // Previous definitions
 //! # #[cglue_trait]
 //! # pub trait InfoPrinter {
 //! #     fn print_info(&self);
 //! # }
-//! #
 //! # struct Info {
 //! #     value: usize
 //! # }
-//! #
 //! # impl InfoPrinter for Info {
 //! #     fn print_info(&self) {
 //! #         println!("Info struct: {}", self.value);

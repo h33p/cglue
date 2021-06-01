@@ -81,7 +81,7 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
         need_mut = func.trait_impl(&mut trait_impl_fns) || need_mut;
     }
 
-    // If the trait has funcs with mutable self, disallow &T objects.
+    // If the trait has funcs with mutable self, disallow &CGlueT objects.
     let required_mutability = match need_mut {
         true => quote!(CGlueObjMut),
         _ => quote!(CGlueObjRef),
@@ -115,14 +115,14 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
         ///
         /// This virtual function table contains ABI-safe interface for the given trait.
         #[repr(C)]
-        #vis struct #vtbl_ident<T> {
+        #vis struct #vtbl_ident<CGlueT> {
             #vtbl_func_defintions
         }
 
         /* Default implementation. */
 
         /// Default vtable reference creation.
-        impl<'a, T: #trait_name> Default for &'a #vtbl_ident<T> {
+        impl<'a, CGlueT: #trait_name> Default for &'a #vtbl_ident<CGlueT> {
             /// Create a static vtable for the given type.
             fn default() -> Self {
                 &#vtbl_ident {
@@ -140,14 +140,14 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
 
         #vis type #opaque_vtbl_ident = #vtbl_ident<#c_void>;
 
-        unsafe impl<T: #trait_name> #trg_path::CGlueBaseVtbl for #vtbl_ident<T> {
+        unsafe impl<CGlueT: #trait_name> #trg_path::CGlueBaseVtbl for #vtbl_ident<CGlueT> {
             type OpaqueVtbl = #opaque_vtbl_ident;
         }
 
-        impl<T: #trait_name> #trg_path::CGlueVtbl<T> for #vtbl_ident<T> {}
+        impl<CGlueT: #trait_name> #trg_path::CGlueVtbl<CGlueT> for #vtbl_ident<CGlueT> {}
 
         #[doc = #trait_obj_doc]
-        pub type #trait_obj_ident<'a, T, B> = #trg_path::CGlueTraitObj::<'a, B, #vtbl_ident<T>>;
+        pub type #trait_obj_ident<'a, CGlueT, B> = #trg_path::CGlueTraitObj::<'a, B, #vtbl_ident<CGlueT>>;
 
         #[doc = #opaque_owned_trait_obj_doc]
         pub type #opaque_owned_trait_obj_ident<'a> = #trait_obj_ident<'a, #c_void, #crate_path::boxed::CBox<#c_void>>;
@@ -164,7 +164,7 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
         /* Trait implementation. */
 
         /// Implement the traits for any CGlue object.
-        impl<T: AsRef<#opaque_vtbl_ident> + #trg_path::#required_mutability<#c_void>> #trait_name for T {
+        impl<CGlueT: AsRef<#opaque_vtbl_ident> + #trg_path::#required_mutability<#c_void>> #trait_name for CGlueT {
             #trait_impl_fns
         }
     }

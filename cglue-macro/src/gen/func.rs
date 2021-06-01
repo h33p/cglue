@@ -27,7 +27,7 @@ impl TraitArg {
                     (
                         quote!(let this = self.cobj_mut();),
                         quote!(this,),
-                        quote!(this: &mut T,),
+                        quote!(this: &mut CGlueT,),
                         quote!(),
                         true,
                     )
@@ -35,7 +35,7 @@ impl TraitArg {
                     (
                         quote!(let this = self.cobj_ref();),
                         quote!(this,),
-                        quote!(this: &T,),
+                        quote!(this: &CGlueT,),
                         quote!(),
                         true,
                     )
@@ -308,7 +308,7 @@ impl ParsedFunc {
         let safety = self.get_safety();
 
         let gen = quote! {
-            #safety extern "C" fn #fnname<T: #trname>(#args #c_ret_params) #c_out {
+            #safety extern "C" fn #fnname<CGlueT: #trname>(#args #c_ret_params) #c_out {
                 let ret = this.#name(#call_args);
                 #c_ret
             }
@@ -323,7 +323,7 @@ impl ParsedFunc {
         let fnname: TokenStream = if self.is_wrapped() {
             format!("{}{}", FN_PREFIX, name)
         } else {
-            format!("T::{}", name)
+            format!("CGlueT::{}", name)
         }
         .parse()
         .unwrap();

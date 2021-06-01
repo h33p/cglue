@@ -292,7 +292,7 @@ impl TraitGroup {
         {
             enable_funcs.extend(quote! {
                 pub fn #enable_vtbl_name (self) -> Self
-                    where &'a #vtbl_typename<F>: Default {
+                    where &'a #vtbl_typename<CGlueF>: Default {
                     Self {
                         #vtbl_name: Some(Default::default()),
                         ..self
@@ -385,24 +385,24 @@ impl TraitGroup {
                 ///
                 #[doc = #opt_final_doc2]
                 #[repr(C)]
-                pub struct #opt_final_name<'a, T, F> {
-                    instance: T,
+                pub struct #opt_final_name<'a, CGlueT, CGlueF> {
+                    instance: CGlueT,
                     #mandatory_vtbl_defs
                     #opt_vtbl_defs
                 }
 
-                impl<T: ::core::ops::Deref<Target = F>, F>
-                    #trg_path::CGlueObjRef<F> for #opt_final_name<'_, T, F>
+                impl<CGlueT: ::core::ops::Deref<Target = CGlueF>, CGlueF>
+                    #trg_path::CGlueObjRef<CGlueF> for #opt_final_name<'_, CGlueT, CGlueF>
                 {
-                    fn cobj_ref(&self) -> &F {
+                    fn cobj_ref(&self) -> &CGlueF {
                         self.instance.deref()
                     }
                 }
 
-                impl<T: ::core::ops::Deref<Target = F> + ::core::ops::DerefMut, F>
-                    #trg_path::CGlueObjMut<F> for #opt_final_name<'_, T, F>
+                impl<CGlueT: ::core::ops::Deref<Target = CGlueF> + ::core::ops::DerefMut, CGlueF>
+                    #trg_path::CGlueObjMut<CGlueF> for #opt_final_name<'_, CGlueT, CGlueF>
                 {
-                    fn cobj_mut(&mut self) -> &mut F {
+                    fn cobj_mut(&mut self) -> &mut CGlueF {
                         self.instance.deref_mut()
                     }
                 }
@@ -415,34 +415,34 @@ impl TraitGroup {
                 ///
                 #[doc = #opt_doc2]
                 #[repr(C)]
-                pub struct #opt_name<'a, T, F> {
-                    instance: T,
+                pub struct #opt_name<'a, CGlueT, CGlueF> {
+                    instance: CGlueT,
                     #mandatory_vtbl_defs
                     #opt_mixed_vtbl_defs
                 }
 
-                impl<T: ::core::ops::Deref<Target = F>, F>
-                    #trg_path::CGlueObjRef<F> for #opt_name<'_, T, F>
+                impl<CGlueT: ::core::ops::Deref<Target = CGlueF>, CGlueF>
+                    #trg_path::CGlueObjRef<CGlueF> for #opt_name<'_, CGlueT, CGlueF>
                 {
-                    fn cobj_ref(&self) -> &F {
+                    fn cobj_ref(&self) -> &CGlueF {
                         self.instance.deref()
                     }
                 }
 
-                impl<T: ::core::ops::Deref<Target = F> + ::core::ops::DerefMut, F>
-                    #trg_path::CGlueObjMut<F> for #opt_name<'_, T, F>
+                impl<CGlueT: ::core::ops::Deref<Target = CGlueF> + ::core::ops::DerefMut, CGlueF>
+                    #trg_path::CGlueObjMut<CGlueF> for #opt_name<'_, CGlueT, CGlueF>
                 {
-                    fn cobj_mut(&mut self) -> &mut F {
+                    fn cobj_mut(&mut self) -> &mut CGlueF {
                         self.instance.deref_mut()
                     }
                 }
 
-                unsafe impl<'a, T, F> #trg_path::Opaquable for #opt_name<'a, T, F> {
-                    type OpaqueTarget = #name<'a, T, F>;
+                unsafe impl<'a, CGlueT, CGlueF> #trg_path::Opaquable for #opt_name<'a, CGlueT, CGlueF> {
+                    type OpaqueTarget = #name<'a, CGlueT, CGlueF>;
                 }
 
-                impl<'a, T, F> From<#opt_name<'a, T, F>> for #name<'a, T, F> {
-                    fn from(input: #opt_name<'a, T, F>) -> Self {
+                impl<'a, CGlueT, CGlueF> From<#opt_name<'a, CGlueT, CGlueF>> for #name<'a, CGlueT, CGlueF> {
+                    fn from(input: #opt_name<'a, CGlueT, CGlueF>) -> Self {
                         #trg_path::Opaquable::into_opaque(input)
                     }
                 }
@@ -482,7 +482,7 @@ impl TraitGroup {
                 ///
                 #[doc = #func_check_doc2]
                 pub fn #func_name_check(&self) -> bool
-                    where #opt_name<'a, T, F>: 'a + #impl_traits
+                    where #opt_name<'a, CGlueT, CGlueF>: 'a + #impl_traits
                 {
                     self.#func_name_ref().is_some()
                 }
@@ -491,7 +491,7 @@ impl TraitGroup {
                 ///
                 #[doc = #func_check_doc2]
                 pub fn #func_name_check_with_mand(&self) -> bool
-                    where #opt_name<'a, T, F>: 'a + #impl_traits
+                    where #opt_name<'a, CGlueT, CGlueF>: 'a + #impl_traits
                 {
                     self.#func_name_check()
                 }
@@ -500,7 +500,7 @@ impl TraitGroup {
                 ///
                 #[doc = #func_final_doc2]
                 pub fn #func_name_final(self) -> ::core::option::Option<impl 'a + #impl_traits>
-                    where #opt_final_name<'a, T, F>: 'a + #impl_traits
+                    where #opt_final_name<'a, CGlueT, CGlueF>: 'a + #impl_traits
                 {
                     let #name {
                         instance,
@@ -520,7 +520,7 @@ impl TraitGroup {
                 ///
                 #[doc = #func_final_doc2]
                 pub fn #func_name_final_with_mand(self) -> ::core::option::Option<impl 'a + #impl_traits>
-                    where #opt_final_name<'a, T, F>: 'a + #impl_traits
+                    where #opt_final_name<'a, CGlueT, CGlueF>: 'a + #impl_traits
                 {
                     self.#func_name_final()
                 }
@@ -528,8 +528,8 @@ impl TraitGroup {
                 #[doc = #func_doc1]
                 ///
                 #[doc = #func_doc2]
-                pub fn #func_name(self) -> ::core::option::Option<#opt_name<'a, T, F>>
-                    where #opt_name<'a, T, F>: 'a + #impl_traits
+                pub fn #func_name(self) -> ::core::option::Option<#opt_name<'a, CGlueT, CGlueF>>
+                    where #opt_name<'a, CGlueT, CGlueF>: 'a + #impl_traits
                 {
                     let #name {
                         instance,
@@ -547,15 +547,15 @@ impl TraitGroup {
                 #[doc = #func_doc1]
                 ///
                 #[doc = #func_doc2]
-                pub fn #func_name_with_mand(self) -> ::core::option::Option<#opt_name<'a, T, F>>
-                    where #opt_name<'a, T, F>: 'a + #impl_traits
+                pub fn #func_name_with_mand(self) -> ::core::option::Option<#opt_name<'a, CGlueT, CGlueF>>
+                    where #opt_name<'a, CGlueT, CGlueF>: 'a + #impl_traits
                 {
                     self.#func_name()
                 }
 
                 #[doc = #func_mut_doc1]
                 pub fn #func_name_mut<'b>(&'b mut self) -> ::core::option::Option<&'b mut (impl 'a + #impl_traits)>
-                    where #opt_name<'a, T, F>: 'a + #impl_traits
+                    where #opt_name<'a, CGlueT, CGlueF>: 'a + #impl_traits
                 {
                     let #name {
                         instance,
@@ -572,20 +572,20 @@ impl TraitGroup {
                     // optional reference validity was checked beforehand
 
                     unsafe {
-                        (self as *mut Self as *mut #opt_name<T, F>).as_mut()
+                        (self as *mut Self as *mut #opt_name<CGlueT, CGlueF>).as_mut()
                     }
                 }
 
                 #[doc = #func_mut_doc1]
                 pub fn #func_name_mut_with_mand<'b>(&'b mut self) -> ::core::option::Option<&'b mut (impl 'a + #impl_traits)>
-                    where #opt_name<'a, T, F>: 'a + #impl_traits
+                    where #opt_name<'a, CGlueT, CGlueF>: 'a + #impl_traits
                 {
                     self.#func_name_mut()
                 }
 
                 #[doc = #func_ref_doc1]
                 pub fn #func_name_ref<'b>(&'b self) -> ::core::option::Option<&'b (impl 'a + #impl_traits)>
-                    where #opt_name<'a, T, F>: 'a + #impl_traits
+                    where #opt_name<'a, CGlueT, CGlueF>: 'a + #impl_traits
                 {
                     let #name {
                         instance,
@@ -602,13 +602,13 @@ impl TraitGroup {
                     // optional reference validity was checked beforehand
 
                     unsafe {
-                        (self as *const Self as *const #opt_name<T, F>).as_ref()
+                        (self as *const Self as *const #opt_name<CGlueT, CGlueF>).as_ref()
                     }
                 }
 
                 #[doc = #func_ref_doc1]
                 pub fn #func_name_ref_with_mand<'b>(&'b self) -> ::core::option::Option<&'b (impl 'a + #impl_traits)>
-                    where #opt_name<'a, T, F>: 'a + #impl_traits
+                    where #opt_name<'a, CGlueT, CGlueF>: 'a + #impl_traits
                 {
                     self.#func_name_ref()
                 }
@@ -633,19 +633,19 @@ impl TraitGroup {
             /// `as_ref_`, and `as_mut_` functions obtain references to safe objects, but do not
             /// perform any memory transformations either. They are the safest to use, because
             /// there is no risk of accidentally consuming the whole object.
-            pub struct #name<'a, T, F> {
-                instance: T,
+            pub struct #name<'a, CGlueT, CGlueF> {
+                instance: CGlueT,
                 #mandatory_vtbl_defs
                 #optional_vtbl_defs
             }
 
             #[repr(C)]
-            pub struct #vtable_type<'a, F> {
+            pub struct #vtable_type<'a, CGlueF> {
                 #mandatory_vtbl_defs
                 #optional_vtbl_defs
             }
 
-            impl<'a, F> Default for #vtable_type<'a, F>
+            impl<'a, CGlueF> Default for #vtable_type<'a, CGlueF>
                 where #vtbl_where_bounds
             {
                 fn default() -> Self {
@@ -656,7 +656,7 @@ impl TraitGroup {
                 }
             }
 
-            impl<'a, F> #vtable_type<'a, F> {
+            impl<'a, CGlueF> #vtable_type<'a, CGlueF> {
                 #enable_funcs
             }
 
@@ -664,15 +664,15 @@ impl TraitGroup {
                 fn fill_table(table: #vtable_type<'a, Self>) -> #vtable_type<'a, Self>;
             }
 
-            pub type #opaque_name<'a, T: ::core::ops::Deref<Target = #c_void>> = #name<'a, T, T::Target>;
+            pub type #opaque_name<'a, CGlueT: ::core::ops::Deref<Target = #c_void>> = #name<'a, CGlueT, CGlueT::Target>;
             pub type #opaque_name_ref<'a> = #name<'a, &'a #c_void, #c_void>;
             pub type #opaque_name_mut<'a> = #name<'a, &'a mut #c_void, #c_void>;
             pub type #opaque_name_boxed<'a> = #name<'a, #crate_path::boxed::CBox<#c_void>, #c_void>;
 
-            impl<'a, T: ::core::ops::Deref<Target = F>, F: #filler_trait<'a>> From<T> for #name<'a, T, F>
+            impl<'a, CGlueT: ::core::ops::Deref<Target = CGlueF>, CGlueF: #filler_trait<'a>> From<CGlueT> for #name<'a, CGlueT, CGlueF>
                 where #vtbl_where_bounds
             {
-                fn from(instance: T) -> Self {
+                fn from(instance: CGlueT) -> Self {
                     let vtbl = #filler_trait::fill_table(Default::default());
 
                     let #vtable_type {
@@ -688,20 +688,20 @@ impl TraitGroup {
                 }
             }
 
-            impl<'a, F: #filler_trait<'a>> From<F> for #name<'a, #crate_path::boxed::CBox<F>, F>
+            impl<'a, CGlueF: #filler_trait<'a>> From<CGlueF> for #name<'a, #crate_path::boxed::CBox<CGlueF>, CGlueF>
                 where #vtbl_where_bounds
             {
-                fn from(instance: F) -> Self {
+                fn from(instance: CGlueF) -> Self {
                     #name::from(#crate_path::boxed::CBox::from(instance))
                 }
             }
 
-            impl<'a, T: ::core::ops::Deref<Target = F>, F: 'a> #name<'a, T, F>
+            impl<'a, CGlueT: ::core::ops::Deref<Target = CGlueF>, CGlueF: 'a> #name<'a, CGlueT, CGlueF>
 
                 where #vtbl_where_bounds
             {
                 #[doc = #new_doc]
-                pub fn new(instance: T, #optional_vtbl_defs) -> Self
+                pub fn new(instance: CGlueT, #optional_vtbl_defs) -> Self
                     where #vtbl_where_bounds
                 {
                     Self {
@@ -712,11 +712,11 @@ impl TraitGroup {
                 }
             }
 
-            impl<'a, F> #name<'a, #crate_path::boxed::CBox<F>, F> {
+            impl<'a, CGlueF> #name<'a, #crate_path::boxed::CBox<CGlueF>, CGlueF> {
                 #[doc = #new_doc]
                 ///
                 /// `instance` will be moved onto heap.
-                pub fn new_boxed(instance: F, #optional_vtbl_defs) -> Self
+                pub fn new_boxed(instance: CGlueF, #optional_vtbl_defs) -> Self
                     where #vtbl_where_bounds
                 {
                     Self {
@@ -730,26 +730,26 @@ impl TraitGroup {
             /// Convert into opaque object.
             ///
             /// This is the prerequisite for using underlying trait implementations.
-            unsafe impl<'a, T: #trg_path::Opaquable + ::core::ops::Deref<Target = F>, F> #trg_path::Opaquable for #name<'a, T, F> {
-                type OpaqueTarget = #name<'a, T::OpaqueTarget, #c_void>;
+            unsafe impl<'a, CGlueT: #trg_path::Opaquable + ::core::ops::Deref<Target = CGlueF>, CGlueF> #trg_path::Opaquable for #name<'a, CGlueT, CGlueF> {
+                type OpaqueTarget = #name<'a, CGlueT::OpaqueTarget, #c_void>;
             }
 
-            impl<'a, T, F> #name<'a, T, F> {
+            impl<'a, CGlueT, CGlueF> #name<'a, CGlueT, CGlueF> {
                 #trait_funcs
             }
 
-            impl<T: ::core::ops::Deref<Target = F>, F>
-                #trg_path::CGlueObjRef<F> for #name<'_, T, F>
+            impl<CGlueT: ::core::ops::Deref<Target = CGlueF>, CGlueF>
+                #trg_path::CGlueObjRef<CGlueF> for #name<'_, CGlueT, CGlueF>
             {
-                fn cobj_ref(&self) -> &F {
+                fn cobj_ref(&self) -> &CGlueF {
                     self.instance.deref()
                 }
             }
 
-            impl<T: ::core::ops::Deref<Target = F> + ::core::ops::DerefMut, F>
-                #trg_path::CGlueObjMut<F> for #name<'_, T, F>
+            impl<CGlueT: ::core::ops::Deref<Target = CGlueF> + ::core::ops::DerefMut, CGlueF>
+                #trg_path::CGlueObjMut<CGlueF> for #name<'_, CGlueT, CGlueF>
             {
-                fn cobj_mut(&mut self) -> &mut F {
+                fn cobj_mut(&mut self) -> &mut CGlueF {
                     self.instance.deref_mut()
                 }
             }
@@ -778,7 +778,7 @@ impl TraitGroup {
             ..
         } in iter
         {
-            ret.extend(quote!(#vtbl_name: &'a #path #vtbl_typename<F>, ));
+            ret.extend(quote!(#vtbl_name: &'a #path #vtbl_typename<CGlueF>, ));
         }
 
         ret
@@ -814,7 +814,9 @@ impl TraitGroup {
             ..
         } in &self.optional_vtbl
         {
-            ret.extend(quote!(#vtbl_name: ::core::option::Option<&'a #path #vtbl_typename<F>>, ));
+            ret.extend(
+                quote!(#vtbl_name: ::core::option::Option<&'a #path #vtbl_typename<CGlueF>>, ),
+            );
         }
 
         ret
@@ -851,8 +853,10 @@ impl TraitGroup {
             }
         }) {
             let def = match mandatory {
-                true => quote!(#vtbl_name: &'a #path #vtbl_typename<F>, ),
-                false => quote!(#vtbl_name: ::core::option::Option<&'a #path #vtbl_typename<F>>, ),
+                true => quote!(#vtbl_name: &'a #path #vtbl_typename<CGlueF>, ),
+                false => {
+                    quote!(#vtbl_name: ::core::option::Option<&'a #path #vtbl_typename<CGlueF>>, )
+                }
             };
             ret.extend(def);
         }
@@ -899,9 +903,9 @@ impl TraitGroup {
         } in traits
         {
             ret.extend(quote! {
-                impl<T, F> AsRef<#path #vtbl_typename<F>> for #name<'_, T, F>
+                impl<CGlueT, CGlueF> AsRef<#path #vtbl_typename<CGlueF>> for #name<'_, CGlueT, CGlueF>
                 {
-                    fn as_ref(&self) -> &#path #vtbl_typename<F> {
+                    fn as_ref(&self) -> &#path #vtbl_typename<CGlueF> {
                         &self.#vtbl_name
                     }
                 }
@@ -1021,7 +1025,7 @@ impl TraitGroup {
             ..
         } in iter
         {
-            ret.extend(quote!(&'a #path #vtbl_typename<F>: Default,));
+            ret.extend(quote!(&'a #path #vtbl_typename<CGlueF>: Default,));
         }
 
         ret
