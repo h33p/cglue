@@ -1,7 +1,9 @@
 use proc_macro2::TokenStream;
 use proc_macro_crate::{crate_name, FoundCrate};
-use quote::{format_ident, quote, ToTokens};
+use quote::{quote, ToTokens};
 use syn::parse::{Parse, ParseStream};
+use syn::punctuated::Punctuated;
+use syn::token::Comma;
 use syn::*;
 
 pub fn crate_path() -> TokenStream {
@@ -46,16 +48,23 @@ pub fn parse_maybe_braced<T: Parse>(input: ParseStream) -> Result<Vec<T>> {
     Ok(ret)
 }
 
-pub fn split_path_ident(in_path: Path) -> Result<(TokenStream, Ident)> {
+pub type GenericsOut = Option<Punctuated<GenericArgument, Comma>>;
+
+pub fn split_path_ident(in_path: Path) -> Result<(TokenStream, Ident, GenericsOut)> {
     let mut path = in_path.leading_colon.to_token_stream();
 
     let mut ident = None;
+
+    let mut generics = None;
 
     for part in in_path.segments.into_pairs() {
         match part {
             punctuated::Pair::Punctuated(p, punc) => path.extend(quote!(#p #punc)),
             punctuated::Pair::End(p) => {
-                ident = Some(format_ident!("{}", p.to_token_stream().to_string()))
+                if let PathArguments::AngleBracketed(arg) = p.arguments {
+                    generics = Some(arg.args);
+                }
+                ident = Some(p.ident);
             }
         }
     }
@@ -63,7 +72,7 @@ pub fn split_path_ident(in_path: Path) -> Result<(TokenStream, Ident)> {
     let ident =
         ident.ok_or_else(|| Error::new(proc_macro2::Span::call_site(), "Ident not found!"))?;
 
-    Ok((path, ident))
+    Ok((path, ident, generics))
 }
 
 /// Checks whether the type could be null pointer optimizable.

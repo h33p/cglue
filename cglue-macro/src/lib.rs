@@ -86,10 +86,24 @@ pub fn trait_obj(args: TokenStream) -> TokenStream {
     let ident = cast.expr;
     let target = cast.ty;
 
+    let (path, target, generics) = match *target {
+        Type::Path(ty) => {
+            let (path, target, generics) = util::split_path_ident(ty.path).unwrap();
+            (quote!(#path), quote!(#target), generics)
+        }
+        x => (quote!(), quote!(#x), None),
+    };
+
+    let generics = if let Some(generics) = generics {
+        quote!(::<_, _, #generics>)
+    } else {
+        quote!()
+    };
+
     let target = format_ident!("CGlueTraitObj{}", target.to_token_stream().to_string());
 
     let gen = quote! {
-        #crate_path::trait_group::Opaquable::into_opaque(#target::from(#ident))
+        #crate_path::trait_group::Opaquable::into_opaque(#path #target #generics::from(#ident))
     };
 
     gen.into()

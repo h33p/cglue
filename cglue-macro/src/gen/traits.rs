@@ -1,6 +1,6 @@
 use proc_macro2::TokenStream;
 
-use super::func::ParsedFunc;
+use super::func::{ParsedFunc, ParsedGenerics};
 
 use quote::*;
 use syn::*;
@@ -14,6 +14,15 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
     let vis = tr.vis.to_token_stream();
 
     let trait_name = &tr.ident;
+
+    let generics = ParsedGenerics::from(&tr.generics);
+
+    let ParsedGenerics {
+        gen_left,
+        gen_right,
+        gen_where,
+        ..
+    } = &generics;
 
     let c_void = quote!(::core::ffi::c_void);
 
@@ -45,6 +54,7 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
             funcs.extend(ParsedFunc::new(
                 m.sig.clone(),
                 trait_name.clone(),
+                &generics,
                 int_result,
                 &crate_path,
             ));
@@ -103,7 +113,7 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
         true => quote!(),
         false => quote! {
             #[doc = #opaque_ref_trait_obj_doc]
-            pub type #opaque_ref_trait_obj_ident<'a> = #trait_obj_ident<'a, #c_void, &'a #c_void>;
+            pub type #opaque_ref_trait_obj_ident<'a, #gen_right> = #trait_obj_ident<'a, #c_void, &'a #c_void, #gen_right>;
         },
     };
 
@@ -115,14 +125,14 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
         ///
         /// This virtual function table contains ABI-safe interface for the given trait.
         #[repr(C)]
-        #vis struct #vtbl_ident<CGlueT> {
+        #vis struct #vtbl_ident<CGlueT, #gen_right> #gen_where {
             #vtbl_func_defintions
         }
 
         /* Default implementation. */
 
         /// Default vtable reference creation.
-        impl<'a, CGlueT: #trait_name> Default for &'a #vtbl_ident<CGlueT> {
+        impl<'a, CGlueT: #trait_name<#gen_right>, #gen_left> Default for &'a #vtbl_ident<CGlueT, #gen_right> #gen_where {
             /// Create a static vtable for the given type.
             fn default() -> Self {
                 &#vtbl_ident {
@@ -138,22 +148,22 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
         /// This virtual function table has type information destroyed, is used in CGlue objects
         /// and trait groups.
 
-        #vis type #opaque_vtbl_ident = #vtbl_ident<#c_void>;
+        #vis type #opaque_vtbl_ident<#gen_right> = #vtbl_ident<#c_void, #gen_right>;
 
-        unsafe impl<CGlueT: #trait_name> #trg_path::CGlueBaseVtbl for #vtbl_ident<CGlueT> {
-            type OpaqueVtbl = #opaque_vtbl_ident;
+        unsafe impl<CGlueT: #trait_name<#gen_right>, #gen_left> #trg_path::CGlueBaseVtbl for #vtbl_ident<CGlueT, #gen_right> #gen_where {
+            type OpaqueVtbl = #opaque_vtbl_ident<#gen_right>;
         }
 
-        impl<CGlueT: #trait_name> #trg_path::CGlueVtbl<CGlueT> for #vtbl_ident<CGlueT> {}
+        impl<CGlueT: #trait_name<#gen_right>, #gen_left> #trg_path::CGlueVtbl<CGlueT> for #vtbl_ident<CGlueT, #gen_right> #gen_where {}
 
         #[doc = #trait_obj_doc]
-        pub type #trait_obj_ident<'a, CGlueT, B> = #trg_path::CGlueTraitObj::<'a, B, #vtbl_ident<CGlueT>>;
+        pub type #trait_obj_ident<'a, CGlueT, B, #gen_right> = #trg_path::CGlueTraitObj::<'a, B, #vtbl_ident<CGlueT, #gen_right>>;
 
         #[doc = #opaque_owned_trait_obj_doc]
-        pub type #opaque_owned_trait_obj_ident<'a> = #trait_obj_ident<'a, #c_void, #crate_path::boxed::CBox<#c_void>>;
+        pub type #opaque_owned_trait_obj_ident<'a, #gen_right> = #trait_obj_ident<'a, #c_void, #crate_path::boxed::CBox<#c_void>, #gen_right>;
 
         #[doc = #opaque_mut_trait_obj_doc]
-        pub type #opaque_mut_trait_obj_ident<'a> = #trait_obj_ident<'a, #c_void, &'a mut #c_void>;
+        pub type #opaque_mut_trait_obj_ident<'a, #gen_right> = #trait_obj_ident<'a, #c_void, &'a mut #c_void, #gen_right>;
 
         #opaque_ref_trait_obj
 
@@ -164,7 +174,7 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
         /* Trait implementation. */
 
         /// Implement the traits for any CGlue object.
-        impl<CGlueT: AsRef<#opaque_vtbl_ident> + #trg_path::#required_mutability<#c_void>> #trait_name for CGlueT {
+        impl<CGlueT: AsRef<#opaque_vtbl_ident<#gen_right>> + #trg_path::#required_mutability<#c_void>, #gen_left> #trait_name<#gen_right> for CGlueT #gen_where {
             #trait_impl_fns
         }
     }

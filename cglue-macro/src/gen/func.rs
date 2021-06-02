@@ -156,6 +156,39 @@ impl TraitArg {
     }
 }
 
+#[derive(Clone)]
+pub struct ParsedGenerics {
+    // TODO: parse lifetimes separately
+    pub gen_left: TokenStream,
+    pub gen_right: TokenStream,
+    pub gen_where: TokenStream,
+    pub gen_where_bounds: TokenStream,
+}
+
+impl From<&Generics> for ParsedGenerics {
+    fn from(input: &Generics) -> Self {
+        let gen_left = &input.params;
+        let gen_where = &input.where_clause;
+        let gen_where_bounds = gen_where.as_ref().map(|w| &w.predicates);
+
+        let mut gen_right = TokenStream::new();
+
+        for param in input.params.iter() {
+            if let GenericParam::Type(ty) = param {
+                let ident = &ty.ident;
+                gen_right.extend(quote!(#ident, ));
+            }
+        }
+
+        Self {
+            gen_left: quote!(#gen_left),
+            gen_right,
+            gen_where: quote!(#gen_where),
+            gen_where_bounds: quote!(#gen_where_bounds),
+        }
+    }
+}
+
 pub struct ParsedFunc {
     name: Ident,
     trait_name: Ident,
@@ -165,12 +198,14 @@ pub struct ParsedFunc {
     receiver: Receiver,
     args: Vec<TraitArg>,
     out: ParsedReturnType,
+    generics: ParsedGenerics,
 }
 
 impl ParsedFunc {
     pub fn new(
         sig: Signature,
         trait_name: Ident,
+        generics: &ParsedGenerics,
         int_result: bool,
         crate_path: &TokenStream,
     ) -> Option<Self> {
@@ -200,6 +235,8 @@ impl ParsedFunc {
 
         let out = ParsedReturnType::new(sig.output, int_result, &unsafety, crate_path);
 
+        let generics = generics.clone();
+
         Some(Self {
             name,
             trait_name,
@@ -209,6 +246,7 @@ impl ParsedFunc {
             receiver,
             args,
             out,
+            generics,
         })
     }
 
@@ -307,8 +345,15 @@ impl ParsedFunc {
         let fnname = format_ident!("{}{}", FN_PREFIX, name);
         let safety = self.get_safety();
 
+        let ParsedGenerics {
+            gen_left,
+            gen_right,
+            gen_where,
+            ..
+        } = &self.generics;
+
         let gen = quote! {
-            #safety extern "C" fn #fnname<CGlueT: #trname>(#args #c_ret_params) #c_out {
+            #safety extern "C" fn #fnname<CGlueT: #trname<#gen_right>, #gen_left>(#args #c_ret_params) #c_out #gen_where {
                 let ret = this.#name(#call_args);
                 #c_ret
             }
