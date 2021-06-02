@@ -1,5 +1,6 @@
 use proc_macro2::TokenStream;
 use quote::*;
+use std::collections::HashSet;
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::token::{Comma, Gt, Lt};
@@ -10,31 +11,104 @@ pub struct ParsedGenerics {
     /// Lifetime declarations on the left side of the type/trait.
     ///
     /// This may include any bounds it contains, for instance: `'a: 'b,`.
-    pub life_declare: TokenStream,
+    pub life_declare: Punctuated<LifetimeDef, Comma>,
     /// Declarations "using" the lifetimes i.e. has bounds stripped.
     ///
     /// For instance: `'a: 'b,` becomes just `'a,`.
-    pub life_use: TokenStream,
+    pub life_use: Punctuated<Lifetime, Comma>,
     /// Type declarations on the left side of the type/trait.
     ///
     /// This may include any trait bounds it contains, for instance: `T: Clone,`.
-    pub gen_declare: TokenStream,
+    pub gen_declare: Punctuated<TypeParam, Comma>,
     /// Declarations that "use" the traits i.e. has bounds stripped.
     ///
     /// For instance: `T: Clone,` becomes just `T,`.
-    pub gen_use: TokenStream,
+    pub gen_use: Punctuated<Ident, Comma>,
     /// Full `where Bounds` declaration.
     pub gen_where: TokenStream,
     /// All where predicates, without the `where` keyword.
     pub gen_where_bounds: TokenStream,
 }
 
+impl ParsedGenerics {
+    /// This function cross references input lifetimes and returns a new Self
+    /// that only contains generic type information about those types.
+    ///
+    /// TODO: also cleanup the where clause, but we currently don't use it like that
+    pub fn cross_ref<'a>(&self, input: impl IntoIterator<Item = &'a ParsedGenerics>) -> Self {
+        let mut applied_lifetimes = HashSet::<&Ident>::new();
+        let mut applied_typenames = HashSet::<&Ident>::new();
+
+        let mut life_declare = Punctuated::new();
+        let mut life_use = Punctuated::new();
+        let mut gen_declare = Punctuated::new();
+        let mut gen_use = Punctuated::new();
+        let gen_where_bounds = self.gen_where_bounds.clone();
+        let gen_where = self.gen_where.clone();
+
+        for ParsedGenerics {
+            life_use: in_lu,
+            gen_use: in_gu,
+            ..
+        } in input
+        {
+            for lt in in_lu.iter() {
+                if applied_lifetimes.contains(&lt.ident) {
+                    continue;
+                }
+
+                let decl = self
+                    .life_declare
+                    .iter()
+                    .find(|ld| ld.lifetime.ident == lt.ident)
+                    .unwrap();
+
+                life_declare.push_value(decl.clone());
+                life_declare.push_punct(Default::default());
+                life_use.push_value(decl.lifetime.clone());
+                life_use.push_punct(Default::default());
+
+                applied_lifetimes.insert(&lt.ident);
+            }
+
+            for ty in in_gu.iter() {
+                if applied_typenames.contains(&ty) {
+                    continue;
+                }
+
+                let (decl, ident) = self
+                    .gen_declare
+                    .iter()
+                    .zip(self.gen_use.iter())
+                    .find(|(_, ident)| *ident == ty)
+                    .unwrap();
+
+                gen_declare.push_value(decl.clone());
+                gen_declare.push_punct(Default::default());
+                gen_use.push_value(decl.ident.clone());
+                gen_use.push_punct(Default::default());
+
+                applied_typenames.insert(&ident);
+            }
+        }
+
+        Self {
+            life_declare,
+            life_use,
+            gen_declare,
+            gen_use,
+            gen_where,
+            gen_where_bounds,
+        }
+    }
+}
+
 impl<'a> std::iter::FromIterator<&'a ParsedGenerics> for ParsedGenerics {
     fn from_iter<I: IntoIterator<Item = &'a ParsedGenerics>>(input: I) -> Self {
-        let mut life_declare = TokenStream::new();
-        let mut life_use = TokenStream::new();
-        let mut gen_declare = TokenStream::new();
-        let mut gen_use = TokenStream::new();
+        let mut life_declare = Punctuated::new();
+        let mut life_use = Punctuated::new();
+        let mut gen_declare = Punctuated::new();
+        let mut gen_use = Punctuated::new();
         let mut gen_where_bounds = TokenStream::new();
 
         for val in input {
@@ -61,10 +135,10 @@ impl From<Option<&Punctuated<GenericArgument, Comma>>> for ParsedGenerics {
         match input {
             Some(input) => Self::from(input),
             _ => Self {
-                life_declare: quote!(),
-                life_use: quote!(),
-                gen_declare: quote!(),
-                gen_use: quote!(),
+                life_declare: Punctuated::new(),
+                life_use: Punctuated::new(),
+                gen_declare: Punctuated::new(),
+                gen_use: Punctuated::new(),
                 gen_where: quote!(),
                 gen_where_bounds: quote!(),
             },
@@ -74,29 +148,50 @@ impl From<Option<&Punctuated<GenericArgument, Comma>>> for ParsedGenerics {
 
 impl From<&Punctuated<GenericArgument, Comma>> for ParsedGenerics {
     fn from(input: &Punctuated<GenericArgument, Comma>) -> Self {
-        let mut life = TokenStream::new();
-        let mut gen = TokenStream::new();
+        let mut life_declare = Punctuated::new();
+        let mut life_use = Punctuated::new();
+        let mut gen_declare = Punctuated::new();
+        let mut gen_use = Punctuated::new();
 
         for param in input {
             match param {
                 GenericArgument::Type(ty) => {
-                    gen.extend(quote!(#ty, ));
+                    let ident = format_ident!("{}", ty.to_token_stream().to_string());
+                    gen_use.push_value(ident.clone());
+                    gen_use.push_punct(Default::default());
+                    gen_declare.push_value(TypeParam {
+                        attrs: vec![],
+                        ident,
+                        colon_token: None,
+                        bounds: Punctuated::new(),
+                        eq_token: None,
+                        default: None,
+                    });
+                    gen_declare.push_punct(Default::default());
                 }
                 GenericArgument::Const(_cn) => {
                     // TODO
                 }
                 GenericArgument::Lifetime(lifetime) => {
-                    life.extend(quote!(#lifetime, ));
+                    life_use.push_value(lifetime.clone());
+                    life_use.push_punct(Default::default());
+                    life_declare.push_value(LifetimeDef {
+                        attrs: vec![],
+                        lifetime: lifetime.clone(),
+                        colon_token: None,
+                        bounds: Punctuated::new(),
+                    });
+                    life_declare.push_punct(Default::default());
                 }
                 _ => {}
             }
         }
 
         Self {
-            life_declare: life.clone(),
-            life_use: life,
-            gen_declare: gen.clone(),
-            gen_use: gen,
+            life_declare,
+            life_use,
+            gen_declare,
+            gen_use,
             gen_where: quote!(),
             gen_where_bounds: quote!(),
         }
@@ -109,25 +204,28 @@ impl From<&Generics> for ParsedGenerics {
         let gen_where = &input.where_clause;
         let gen_where_bounds = gen_where.as_ref().map(|w| &w.predicates);
 
-        let mut life_declare = TokenStream::new();
-        let mut life_use = TokenStream::new();
-        let mut gen_declare = TokenStream::new();
-        let mut gen_use = TokenStream::new();
+        let mut life_declare = Punctuated::new();
+        let mut life_use = Punctuated::new();
+        let mut gen_declare = Punctuated::new();
+        let mut gen_use = Punctuated::new();
 
         for param in input.params.iter() {
             match param {
                 GenericParam::Type(ty) => {
-                    let ident = &ty.ident;
-                    gen_use.extend(quote!(#ident, ));
-                    gen_declare.extend(quote!(#ty, ));
+                    gen_use.push_value(ty.ident.clone());
+                    gen_use.push_punct(Default::default());
+                    gen_declare.push_value(ty.clone());
+                    gen_declare.push_punct(Default::default());
                 }
                 GenericParam::Const(_cn) => {
                     // TODO
                 }
                 GenericParam::Lifetime(lt) => {
                     let lifetime = &lt.lifetime;
-                    life_use.extend(quote!(#lifetime, ));
-                    life_declare.extend(quote!(#lt, ));
+                    life_use.push_value(lifetime.clone());
+                    life_use.push_punct(Default::default());
+                    life_declare.push_value(lt.clone());
+                    life_declare.push_punct(Default::default());
                 }
             }
         }

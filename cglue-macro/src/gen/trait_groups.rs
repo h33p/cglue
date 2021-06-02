@@ -300,6 +300,24 @@ impl TraitGroup {
         ident
     }
 
+    /// Generate function calls that enable individual functional vtables.
+    ///
+    /// # Arguments
+    ///
+    /// * `iter` - iterator of optional traits to enable
+    pub fn enable_opt_vtbls<'a>(iter: impl Iterator<Item = &'a TraitInfo>) -> TokenStream {
+        let mut ret = TokenStream::new();
+
+        for TraitInfo {
+            enable_vtbl_name, ..
+        } in iter
+        {
+            ret.extend(quote!(.#enable_vtbl_name()));
+        }
+
+        ret
+    }
+
     /// Generate full code for the trait group.
     ///
     /// This trait group will have all variants generated for converting, building, and
@@ -405,7 +423,22 @@ impl TraitGroup {
             let opt_as_ref_impls = self.as_ref_impls(
                 &opt_name,
                 self.mandatory_vtbl.iter().chain(traits.iter().copied()),
+                &self.generics,
             );
+
+            let sub_generics = self.used_generics(traits.iter().copied());
+
+            let opt_final_as_ref_impls = self.as_ref_impls(
+                &opt_final_name,
+                self.mandatory_vtbl.iter().chain(traits.iter().copied()),
+                &sub_generics,
+            );
+
+            let ParsedGenerics {
+                life_use: sub_life_use,
+                gen_use: sub_gen_use,
+                ..
+            } = sub_generics;
 
             let opt_vtbl_list = self.vtbl_list(traits.iter().copied());
             let opt_vtbl_unwrap = self.vtbl_unwrap_list(traits.iter().copied());
@@ -441,29 +474,29 @@ impl TraitGroup {
                 ///
                 #[doc = #opt_final_doc2]
                 #[repr(C)]
-                pub struct #opt_final_name<'cglue_a #life_use, CGlueT, CGlueF, #gen_use> {
+                pub struct #opt_final_name<'cglue_a #sub_life_use, CGlueT, CGlueF, #sub_gen_use> {
                     instance: CGlueT,
                     #mandatory_vtbl_defs
                     #opt_vtbl_defs
                 }
 
-                impl<#life_use CGlueT: ::core::ops::Deref<Target = CGlueF>, CGlueF, #gen_use>
-                    #trg_path::CGlueObjRef<CGlueF> for #opt_final_name<'_, #life_use CGlueT, CGlueF, #gen_use>
+                impl<#sub_life_use CGlueT: ::core::ops::Deref<Target = CGlueF>, CGlueF, #sub_gen_use>
+                    #trg_path::CGlueObjRef<CGlueF> for #opt_final_name<'_, #sub_life_use CGlueT, CGlueF, #sub_gen_use>
                 {
                     fn cobj_ref(&self) -> &CGlueF {
                         self.instance.deref()
                     }
                 }
 
-                impl<#life_use CGlueT: ::core::ops::Deref<Target = CGlueF> + ::core::ops::DerefMut, CGlueF, #gen_use>
-                    #trg_path::CGlueObjMut<CGlueF> for #opt_final_name<'_, #life_use CGlueT, CGlueF, #gen_use>
+                impl<#sub_life_use CGlueT: ::core::ops::Deref<Target = CGlueF> + ::core::ops::DerefMut, CGlueF, #sub_gen_use>
+                    #trg_path::CGlueObjMut<CGlueF> for #opt_final_name<'_, #sub_life_use CGlueT, CGlueF, #sub_gen_use>
                 {
                     fn cobj_mut(&mut self) -> &mut CGlueF {
                         self.instance.deref_mut()
                     }
                 }
 
-                #opt_as_ref_impls
+                #opt_final_as_ref_impls
 
                 // Non-final implementation. Has the same layout as the base struct.
 
@@ -502,6 +535,9 @@ impl TraitGroup {
                         #trg_path::Opaquable::into_opaque(input)
                     }
                 }
+
+                #opt_as_ref_impls
+
             });
 
             let func_final_doc1 = format!(
@@ -556,7 +592,7 @@ impl TraitGroup {
                 ///
                 #[doc = #func_final_doc2]
                 pub fn #func_name_final(self) -> ::core::option::Option<impl 'cglue_a + #impl_traits>
-                    where #opt_final_name<'cglue_a, #life_use CGlueT, CGlueF, #gen_use>: 'cglue_a + #impl_traits
+                    where #opt_final_name<'cglue_a, #sub_life_use CGlueT, CGlueF, #sub_gen_use>: 'cglue_a + #impl_traits
                 {
                     let #name {
                         instance,
@@ -576,7 +612,7 @@ impl TraitGroup {
                 ///
                 #[doc = #func_final_doc2]
                 pub fn #func_name_final_with_mand(self) -> ::core::option::Option<impl 'cglue_a + #impl_traits>
-                    where #opt_final_name<'cglue_a, #life_use CGlueT, CGlueF, #gen_use>: 'cglue_a + #impl_traits
+                    where #opt_final_name<'cglue_a, #sub_life_use CGlueT, CGlueF, #sub_gen_use>: 'cglue_a + #impl_traits
                 {
                     self.#func_name_final()
                 }
@@ -825,6 +861,23 @@ impl TraitGroup {
         }
     }
 
+    /// Used generics by the vtable group.
+    ///
+    /// This will create a new instance of `ParsedGenerics` that will only contain used generic
+    /// types.
+    ///
+    /// # Arguments
+    ///
+    /// * `iter` - iterator of types to use. This will be layered on top of mandatory types.
+    fn used_generics<'a>(&'a self, iter: impl Iterator<Item = &'a TraitInfo>) -> ParsedGenerics {
+        self.generics.cross_ref(
+            self.mandatory_vtbl
+                .iter()
+                .map(|i| &i.generics)
+                .chain(iter.map(|i| &i.generics)),
+        )
+    }
+
     /// Required vtable definitions.
     ///
     /// Required means they must be valid - non-Option.
@@ -871,7 +924,15 @@ impl TraitGroup {
 
         let mut ret = quote!(#path #ident <#life_use #gen_use>);
 
-        for TraitInfo { path, ident, .. } in traits {
+        for TraitInfo {
+            path,
+            ident,
+            generics: ParsedGenerics {
+                life_use, gen_use, ..
+            },
+            ..
+        } in traits
+        {
             ret.extend(quote!(+ #path #ident <#life_use #gen_use>));
         }
 
@@ -950,22 +1011,9 @@ impl TraitGroup {
         ret
     }
 
-    pub fn enable_opt_vtbls<'a>(iter: impl Iterator<Item = &'a TraitInfo>) -> TokenStream {
-        let mut ret = TokenStream::new();
-
-        for TraitInfo {
-            enable_vtbl_name, ..
-        } in iter
-        {
-            ret.extend(quote!(.#enable_vtbl_name()));
-        }
-
-        ret
-    }
-
     /// `AsRef<Vtable>` implementations for mandatory vtables.
     fn mandatory_as_ref_impls(&self) -> TokenStream {
-        self.as_ref_impls(&self.name, self.mandatory_vtbl.iter())
+        self.as_ref_impls(&self.name, self.mandatory_vtbl.iter(), &self.generics)
     }
 
     /// `AsRef<Vtable>` implementations for arbitrary type and list of tables.
@@ -978,8 +1026,14 @@ impl TraitGroup {
         &'a self,
         name: &Ident,
         traits: impl Iterator<Item = &'a TraitInfo>,
+        all_generics: &ParsedGenerics,
     ) -> TokenStream {
         let mut ret = TokenStream::new();
+
+        let all_life_declare = &all_generics.life_declare;
+        let all_gen_declare = &all_generics.gen_declare;
+        let all_life_use = &all_generics.life_use;
+        let all_gen_use = &all_generics.gen_use;
 
         for TraitInfo {
             vtbl_name,
@@ -987,9 +1041,7 @@ impl TraitGroup {
             vtbl_typename,
             generics:
                 ParsedGenerics {
-                    life_declare,
                     life_use,
-                    gen_declare,
                     gen_use,
                     gen_where,
                     ..
@@ -998,7 +1050,8 @@ impl TraitGroup {
         } in traits
         {
             ret.extend(quote! {
-                impl<#life_declare CGlueT, CGlueF, #gen_declare> AsRef<#path #vtbl_typename<#life_use CGlueF, #gen_use>> for #name<'_, #life_use CGlueT, CGlueF, #gen_use>
+                impl<#all_life_declare CGlueT, CGlueF, #all_gen_declare> AsRef<#path #vtbl_typename<#life_use CGlueF, #gen_use>>
+                    for #name<'_, #all_life_use CGlueT, CGlueF, #all_gen_use>
                     #gen_where
                 {
                     fn as_ref(&self) -> &#path #vtbl_typename<#life_use CGlueF, #gen_use> {
