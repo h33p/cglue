@@ -94,8 +94,13 @@ pub fn trait_obj(args: TokenStream) -> TokenStream {
         x => (quote!(), quote!(#x), None),
     };
 
-    let generics = if let Some(generics) = generics {
-        quote!(::<_, _, #generics>)
+    let generics = if let Some(params) = generics {
+        let pg = gen::func::ParsedGenerics::from(&params);
+
+        let life = &pg.life_use;
+        let gen = &pg.gen_use;
+
+        quote!(::<#life _, _, #gen>)
     } else {
         quote!()
     };

@@ -37,6 +37,18 @@ impl GenWithInlineClause<usize> for SA {
     }
 }
 
+#[cglue_trait]
+pub trait GenWithLifetime<'a, T: Eq + 'a> {
+    fn gwl_1(&self) -> &'a T;
+    fn gwl_2(&self) {}
+}
+
+impl<'a> GenWithLifetime<'a, usize> for SA {
+    fn gwl_1(&self) -> &'a usize {
+        &60
+    }
+}
+
 #[test]
 fn use_gen_infer() {
     let sa = SA {};
@@ -55,12 +67,29 @@ fn use_gen_explicit() {
     println!("{}", obj.gt_1());
 }
 
-#[no_mangle]
-pub extern "C" fn get_gen() -> CGlueOpaqueTraitObjGenericTrait<'static, usize> {
-    trait_obj!(SA {} as GenericTrait<usize>)
+#[test]
+fn use_lifetime() {
+    let sa = SA {};
+
+    let obj = trait_obj!(sa as GenWithLifetime);
+
+    println!("{}", obj.gwl_1());
 }
 
-use crate::tests::simple::trait_groups::*;
+#[test]
+fn use_lifetime_explicit_t() {
+    let sa = SA {};
 
-#[no_mangle]
-pub extern "C" fn use_groups(a: TestGroupOpaqueMut, b: TestGroupOpaqueBox, c: TestGroupOpaqueRef) {}
+    let obj = trait_obj!(sa as GenWithLifetime<usize>);
+
+    println!("{}", obj.gwl_1());
+}
+
+#[test]
+fn use_lifetime_explicit() {
+    let sa = SA {};
+
+    let obj = trait_obj!(sa as GenWithLifetime<'static, 'static, usize>);
+
+    println!("{}", obj.gwl_1());
+}

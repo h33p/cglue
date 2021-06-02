@@ -18,8 +18,10 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
     let generics = ParsedGenerics::from(&tr.generics);
 
     let ParsedGenerics {
-        gen_left,
-        gen_right,
+        life_declare,
+        life_use,
+        gen_declare,
+        gen_use,
         gen_where,
         ..
     } = &generics;
@@ -117,7 +119,7 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
         true => quote!(),
         false => quote! {
             #[doc = #opaque_ref_trait_obj_doc]
-            pub type #opaque_ref_trait_obj_ident<'a, #gen_right> = #trait_obj_ident<'a, #c_void, &'a #c_void, #gen_right>;
+            pub type #opaque_ref_trait_obj_ident<'cglue_a, #life_use #gen_use> = #trait_obj_ident<'cglue_a, #life_use #c_void, &'cglue_a #c_void, #gen_use>;
         },
     };
 
@@ -129,14 +131,14 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
         ///
         /// This virtual function table contains ABI-safe interface for the given trait.
         #[repr(C)]
-        #vis struct #vtbl_ident<CGlueT, #gen_right> #gen_where {
+        #vis struct #vtbl_ident<#life_use CGlueT, #gen_use> #gen_where {
             #vtbl_func_defintions
         }
 
         /* Default implementation. */
 
         /// Default vtable reference creation.
-        impl<'a, CGlueT: #trait_name<#gen_right>, #gen_left> Default for &'a #vtbl_ident<CGlueT, #gen_right> #gen_where {
+        impl<'cglue_a, #life_declare CGlueT: #trait_name<#life_use #gen_use>, #gen_declare> Default for &'cglue_a #vtbl_ident<#life_use CGlueT, #gen_use> #gen_where {
             /// Create a static vtable for the given type.
             fn default() -> Self {
                 &#vtbl_ident {
@@ -151,23 +153,22 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
         ///
         /// This virtual function table has type information destroyed, is used in CGlue objects
         /// and trait groups.
+        #vis type #opaque_vtbl_ident<#life_use #gen_use> = #vtbl_ident<#life_use #c_void, #gen_use>;
 
-        #vis type #opaque_vtbl_ident<#gen_right> = #vtbl_ident<#c_void, #gen_right>;
-
-        unsafe impl<CGlueT: #trait_name<#gen_right>, #gen_left> #trg_path::CGlueBaseVtbl for #vtbl_ident<CGlueT, #gen_right> #gen_where {
-            type OpaqueVtbl = #opaque_vtbl_ident<#gen_right>;
+        unsafe impl<#life_declare CGlueT: #trait_name<#life_use #gen_use>, #gen_declare> #trg_path::CGlueBaseVtbl for #vtbl_ident<#life_use CGlueT, #gen_use> #gen_where {
+            type OpaqueVtbl = #opaque_vtbl_ident<#life_use #gen_use>;
         }
 
-        impl<CGlueT: #trait_name<#gen_right>, #gen_left> #trg_path::CGlueVtbl<CGlueT> for #vtbl_ident<CGlueT, #gen_right> #gen_where {}
+        impl<#life_declare CGlueT: #trait_name<#life_use #gen_use>, #gen_declare> #trg_path::CGlueVtbl<CGlueT> for #vtbl_ident<#life_use CGlueT, #gen_use> #gen_where {}
 
         #[doc = #trait_obj_doc]
-        pub type #trait_obj_ident<'a, CGlueT, B, #gen_right> = #trg_path::CGlueTraitObj::<'a, B, #vtbl_ident<CGlueT, #gen_right>>;
+        pub type #trait_obj_ident<'cglue_a, #life_use CGlueT, B, #gen_use> = #trg_path::CGlueTraitObj::<'cglue_a, B, #vtbl_ident<#life_use CGlueT, #gen_use>>;
 
         #[doc = #opaque_owned_trait_obj_doc]
-        pub type #opaque_owned_trait_obj_ident<'a, #gen_right> = #trait_obj_ident<'a, #c_void, #crate_path::boxed::CBox<#c_void>, #gen_right>;
+        pub type #opaque_owned_trait_obj_ident<'cglue_a, #life_use #gen_use> = #trait_obj_ident<'cglue_a, #life_use #c_void, #crate_path::boxed::CBox<#c_void>, #gen_use>;
 
         #[doc = #opaque_mut_trait_obj_doc]
-        pub type #opaque_mut_trait_obj_ident<'a, #gen_right> = #trait_obj_ident<'a, #c_void, &'a mut #c_void, #gen_right>;
+        pub type #opaque_mut_trait_obj_ident<'cglue_a, #life_use #gen_use> = #trait_obj_ident<'cglue_a, #life_use #c_void, &'cglue_a mut #c_void, #gen_use>;
 
         #opaque_ref_trait_obj
 
@@ -178,7 +179,7 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
         /* Trait implementation. */
 
         /// Implement the traits for any CGlue object.
-        impl<CGlueT: AsRef<#opaque_vtbl_ident<#gen_right>> + #trg_path::#required_mutability<#c_void>, #gen_left> #trait_name<#gen_right> for CGlueT #gen_where {
+        impl<#life_declare CGlueT: AsRef<#opaque_vtbl_ident<#life_use #gen_use>> + #trg_path::#required_mutability<#c_void>, #gen_declare> #trait_name<#life_use #gen_use> for CGlueT #gen_where {
             #trait_impl_fns
         }
     }
