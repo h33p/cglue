@@ -3,6 +3,7 @@ extern crate proc_macro;
 mod gen;
 mod util;
 
+use gen::generics::GenericCastType;
 use gen::trait_groups::*;
 use proc_macro::TokenStream;
 use quote::ToTokens;
@@ -35,13 +36,15 @@ pub fn cglue_impl_group(args: TokenStream) -> TokenStream {
 pub fn group_obj(args: TokenStream) -> TokenStream {
     let crate_path = crate::util::crate_path();
 
-    let cast = parse_macro_input!(args as ExprCast);
-
-    let ident = cast.expr;
-    let target = cast.ty;
+    let GenericCastType {
+        path,
+        ident,
+        generics,
+        target,
+    } = parse_macro_input!(args as GenericCastType);
 
     let gen = quote! {
-        #crate_path::trait_group::Opaquable::into_opaque(#target::from(#ident))
+        #crate_path::trait_group::Opaquable::into_opaque(#path #target #generics::from(#ident))
     };
 
     gen.into()
@@ -81,29 +84,12 @@ pub fn check(args: TokenStream) -> TokenStream {
 pub fn trait_obj(args: TokenStream) -> TokenStream {
     let crate_path = crate::util::crate_path();
 
-    let cast = parse_macro_input!(args as ExprCast);
-
-    let ident = cast.expr;
-    let target = cast.ty;
-
-    let (path, target, generics) = match *target {
-        Type::Path(ty) => {
-            let (path, target, generics) = util::split_path_ident(ty.path).unwrap();
-            (quote!(#path), quote!(#target), generics)
-        }
-        x => (quote!(), quote!(#x), None),
-    };
-
-    let generics = if let Some(params) = generics {
-        let pg = gen::generics::ParsedGenerics::from(&params);
-
-        let life = &pg.life_use;
-        let gen = &pg.gen_use;
-
-        quote!(::<#life _, _, #gen>)
-    } else {
-        quote!()
-    };
+    let GenericCastType {
+        path,
+        ident,
+        generics,
+        target,
+    } = parse_macro_input!(args as GenericCastType);
 
     let target = format_ident!("CGlueTraitObj{}", target.to_token_stream().to_string());
 

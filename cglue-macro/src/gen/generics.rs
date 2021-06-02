@@ -194,3 +194,45 @@ impl Parse for ParsedGenerics {
         }
     }
 }
+
+pub struct GenericCastType {
+    pub path: TokenStream,
+    pub ident: Box<Expr>,
+    pub generics: TokenStream,
+    pub target: TokenStream,
+}
+
+impl Parse for GenericCastType {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let cast: ExprCast = input.parse()?;
+
+        let ident = cast.expr;
+        let target = cast.ty;
+
+        let (path, target, generics) = match *target {
+            Type::Path(ty) => {
+                let (path, target, generics) = crate::util::split_path_ident(ty.path).unwrap();
+                (quote!(#path), quote!(#target), generics)
+            }
+            x => (quote!(), quote!(#x), None),
+        };
+
+        let generics = if let Some(params) = generics {
+            let pg = ParsedGenerics::from(&params);
+
+            let life = &pg.life_use;
+            let gen = &pg.gen_use;
+
+            quote!(::<#life _, _, #gen>)
+        } else {
+            quote!()
+        };
+
+        Ok(Self {
+            path,
+            ident,
+            generics,
+            target,
+        })
+    }
+}
