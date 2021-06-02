@@ -98,16 +98,20 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
     };
 
     // Formatted documentation strings
-    let vtbl_doc = format!("CGlue vtable for trait {}.", trait_name);
-    let vtbl_opaque_doc = format!("Opaque CGlue vtable for trait {}.", trait_name);
-    let trait_obj_doc = format!("CGlue Trait Object type for trait {}.", trait_name);
+    let vtbl_doc = format!(" CGlue vtable for trait {}.", trait_name);
+    let vtbl_opaque_doc = format!(" Opaque CGlue vtable for trait {}.", trait_name);
+    let trait_obj_doc = format!(" CGlue Trait Object type for trait {}.", trait_name);
 
     let opaque_owned_trait_obj_doc =
-        format!("Owned Opaque CGlue Trait Object for trait {}.", trait_name);
-    let opaque_ref_trait_obj_doc =
-        format!("By-Ref Opaque CGlue Trait Object for trait {}.", trait_name);
-    let opaque_mut_trait_obj_doc =
-        format!("By-Mut Opaque CGlue Trait Object for trait {}.", trait_name);
+        format!(" Owned Opaque CGlue Trait Object for trait {}.", trait_name);
+    let opaque_ref_trait_obj_doc = format!(
+        " By-Ref Opaque CGlue Trait Object for trait {}.",
+        trait_name
+    );
+    let opaque_mut_trait_obj_doc = format!(
+        " By-Mut Opaque CGlue Trait Object for trait {}.",
+        trait_name
+    );
 
     let opaque_ref_trait_obj = match need_mut {
         true => quote!(),

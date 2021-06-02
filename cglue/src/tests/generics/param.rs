@@ -54,3 +54,13 @@ fn use_gen_explicit() {
 
     println!("{}", obj.gt_1());
 }
+
+#[no_mangle]
+pub extern "C" fn get_gen() -> CGlueOpaqueTraitObjGenericTrait<'static, usize> {
+    trait_obj!(SA {} as GenericTrait<usize>)
+}
+
+use crate::tests::simple::trait_groups::*;
+
+#[no_mangle]
+pub extern "C" fn use_groups(a: TestGroupOpaqueMut, b: TestGroupOpaqueBox, c: TestGroupOpaqueRef) {}

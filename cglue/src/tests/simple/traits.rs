@@ -20,7 +20,7 @@ pub trait WithIntResult {
         Ok(val)
     }
     #[no_int_result]
-    fn wint_2(&self, val: usize) -> Result<usize, ()> {
+    fn wint_2(&self, val: usize) -> Result<usize, usize> {
         Ok(val)
     }
 }
@@ -66,5 +66,5 @@ fn int_result() {
 #[test]
 fn no_int_result() {
     let vtbl = <&CGlueVtblWithIntResult<Implementor>>::default();
-    let _: extern "C" fn(&Implementor, usize) -> crate::result::CResult<usize, ()> = vtbl.wint_2;
+    let _: extern "C" fn(&Implementor, usize) -> crate::result::CResult<usize, usize> = vtbl.wint_2;
 }
