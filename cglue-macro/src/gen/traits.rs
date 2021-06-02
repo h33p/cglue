@@ -1,6 +1,7 @@
 use proc_macro2::TokenStream;
 
-use super::func::{ParsedFunc, ParsedGenerics};
+use super::func::ParsedFunc;
+use super::generics::ParsedGenerics;
 
 use quote::*;
 use syn::*;
@@ -131,7 +132,7 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
         ///
         /// This virtual function table contains ABI-safe interface for the given trait.
         #[repr(C)]
-        #vis struct #vtbl_ident<#life_use CGlueT, #gen_use> #gen_where {
+        #vis struct #vtbl_ident<#life_use CGlueT, #gen_use> {
             #vtbl_func_defintions
         }
 

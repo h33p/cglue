@@ -16,7 +16,7 @@ pub trait WithOptions {
 #[cglue_trait]
 #[int_result]
 pub trait WithIntResult {
-    fn wint_1(&self, val: usize) -> Result<usize, ()> {
+    fn wint_1(&self, val: usize) -> Result<usize, std::io::Error> {
         Ok(val)
     }
     #[no_int_result]

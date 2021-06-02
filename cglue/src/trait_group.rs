@@ -23,6 +23,16 @@ union Opaquifier<T: Opaquable> {
     output: ManuallyDrop<T::OpaqueTarget>,
 }
 
+/// Describes an opaquable object.
+///
+/// This trait provides a safe many-traits-to-one conversion. For instance, concrete vtable types
+/// get converted to `c_void` types, and so on.
+///
+/// # Safety
+///
+/// Implementor of this trait must ensure the same layout of regular and opaque data. Generally,
+/// this means using the same structure, but taking type T and converting it to c_void, but it is
+/// not limited to that.
 pub unsafe trait Opaquable: Sized {
     type OpaqueTarget;
 
@@ -34,6 +44,12 @@ pub unsafe trait Opaquable: Sized {
         let val = Opaquifier {
             input: ManuallyDrop::new(self),
         };
+
+        // Implementors should ensure the same size.
+        debug_assert_eq!(
+            core::mem::size_of::<Self>(),
+            core::mem::size_of::<Self::OpaqueTarget>()
+        );
 
         unsafe { ManuallyDrop::into_inner(val.output) }
     }

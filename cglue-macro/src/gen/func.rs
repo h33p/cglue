@@ -1,3 +1,4 @@
+use super::generics::ParsedGenerics;
 use proc_macro2::TokenStream;
 use quote::*;
 use syn::{Type, *};
@@ -152,104 +153,6 @@ impl TraitArg {
             c_args,
             to_trait_arg,
             trivial,
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct ParsedGenerics {
-    /// Lifetime declarations on the left side of the type/trait.
-    ///
-    /// This may include any bounds it contains, for instance: `'a: 'b,`.
-    pub life_declare: TokenStream,
-    /// Declarations "using" the lifetimes i.e. has bounds stripped.
-    ///
-    /// For instance: `'a: 'b,` becomes just `'a,`.
-    pub life_use: TokenStream,
-    /// Type declarations on the left side of the type/trait.
-    ///
-    /// This may include any trait bounds it contains, for instance: `T: Clone,`.
-    pub gen_declare: TokenStream,
-    /// Declarations that "use" the traits i.e. has bounds stripped.
-    ///
-    /// For instance: `T: Clone,` becomes just `T,`.
-    pub gen_use: TokenStream,
-    /// Full `where Bounds` declaration.
-    pub gen_where: TokenStream,
-    /// All where predicates, without the `where` keyword.
-    pub gen_where_bounds: TokenStream,
-}
-
-use syn::punctuated::Punctuated;
-use syn::token::Comma;
-
-impl From<&Punctuated<GenericArgument, Comma>> for ParsedGenerics {
-    fn from(input: &Punctuated<GenericArgument, Comma>) -> Self {
-        let mut life = TokenStream::new();
-        let mut gen = TokenStream::new();
-
-        for param in input {
-            match param {
-                GenericArgument::Type(ty) => {
-                    gen.extend(quote!(#ty, ));
-                }
-                GenericArgument::Const(_cn) => {
-                    // TODO
-                }
-                GenericArgument::Lifetime(lifetime) => {
-                    life.extend(quote!(#lifetime, ));
-                }
-                _ => {}
-            }
-        }
-
-        Self {
-            life_declare: life.clone(),
-            life_use: life,
-            gen_declare: gen.clone(),
-            gen_use: gen,
-            gen_where: quote!(),
-            gen_where_bounds: quote!(),
-        }
-    }
-}
-
-impl From<&Generics> for ParsedGenerics {
-    fn from(input: &Generics) -> Self {
-        //let gen_declare = &input.params;
-        let gen_where = &input.where_clause;
-        let gen_where_bounds = gen_where.as_ref().map(|w| &w.predicates);
-
-        let mut life_declare = TokenStream::new();
-        let mut life_use = TokenStream::new();
-        let mut gen_declare = TokenStream::new();
-        let mut gen_use = TokenStream::new();
-
-        for param in input.params.iter() {
-            match param {
-                GenericParam::Type(ty) => {
-                    let ident = &ty.ident;
-                    gen_use.extend(quote!(#ident, ));
-                    gen_declare.extend(quote!(#ty, ));
-                }
-                GenericParam::Const(_cn) => {
-                    // TODO
-                }
-                GenericParam::Lifetime(lt) => {
-                    let lifetime = &lt.lifetime;
-                    life_use.extend(quote!(#lifetime, ));
-                    life_declare.extend(quote!(#lt, ));
-                }
-            }
-        }
-
-        Self {
-            life_declare,
-            life_use,
-            gen_declare,
-            gen_use,
-            gen_where: quote!(#gen_where),
-            gen_where_bounds: quote!(#gen_where_bounds),
         }
     }
 }

@@ -95,7 +95,7 @@ pub fn trait_obj(args: TokenStream) -> TokenStream {
     };
 
     let generics = if let Some(params) = generics {
-        let pg = gen::func::ParsedGenerics::from(&params);
+        let pg = gen::generics::ParsedGenerics::from(&params);
 
         let life = &pg.life_use;
         let gen = &pg.gen_use;
