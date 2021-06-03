@@ -248,22 +248,27 @@ impl From<&Generics> for ParsedGenerics {
     }
 }
 
+fn parse_generic_arguments(input: ParseStream) -> Punctuated<GenericArgument, Comma> {
+    let mut punct = Punctuated::new();
+
+    while let Ok(arg) = input.parse::<GenericArgument>() {
+        punct.push_value(arg);
+
+        if let Ok(comma) = input.parse::<Comma>() {
+            punct.push_punct(comma);
+        } else {
+            break;
+        }
+    }
+
+    punct
+}
+
 impl Parse for ParsedGenerics {
     fn parse(input: ParseStream) -> Result<Self> {
         let gens = match input.parse::<Lt>() {
             Ok(_) => {
-                let mut punct = Punctuated::new();
-
-                while let Ok(arg) = input.parse::<GenericArgument>() {
-                    punct.push_value(arg);
-
-                    if let Ok(comma) = input.parse::<Comma>() {
-                        punct.push_punct(comma);
-                    } else {
-                        break;
-                    }
-                }
-
+                let punct = parse_generic_arguments(input);
                 input.parse::<Gt>()?;
                 Some(punct)
             }
@@ -317,6 +322,19 @@ impl GenericType {
     pub fn push_lifetime_start(&mut self, lifetime: &Lifetime) {
         let gen = &self.generics;
         self.generics = quote!(#lifetime, #gen);
+    }
+
+    pub fn push_types_start(&mut self, types: TokenStream) {
+        let generics = std::mem::replace(&mut self.generics, TokenStream::new());
+
+        let ParsedGenerics {
+            life_declare,
+            gen_declare,
+            ..
+        } = parse2::<ParsedGenerics>(quote!(<#generics>)).unwrap();
+
+        self.generics
+            .extend(quote!(#life_declare #types #gen_declare));
     }
 
     fn from_type(target: &Type, cast_to_group: bool) -> Result<Self> {

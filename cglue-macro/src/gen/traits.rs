@@ -87,6 +87,7 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
                                     ty: new_ty,
                                     return_conv: None,
                                     lifetime_bound: None,
+                                    other_bounds: None,
                                 },
                             );
                         }
@@ -120,14 +121,53 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
                                             .expect("Internal closure parsing fail"),
                                     ),
                                     lifetime_bound: Some(lifetime.clone()),
+                                    other_bounds: None,
                                 },
                             );
                         }
-                        /*"wrap_with_group" => {
-                            wrap_with(&mut types, &ty, &mut trait_type_defs, attr);
-                            let WrappedType { ty, return_conv } = types.get_mut(&ty.ident).unwrap();
-                            *return_conv = Some(quote!(group_obj!(ret as #ty)));
-                        }*/
+                        "wrap_with_group" => {
+                            let mut new_ty = attr
+                                .parse_args::<GenericType>()
+                                .expect("Invalid type in wrap_with.");
+
+                            let target = new_ty.target.clone();
+
+                            let lifetime = lifetime_bound.unwrap_or(&static_lifetime);
+
+                            // Insert the object lifetime at the start
+                            new_ty.push_lifetime_start(lifetime);
+                            new_ty.push_types_start(
+                                quote!(#crate_path::boxed::CBox<#c_void>, #c_void,),
+                            );
+
+                            let ty_ident = &ty.ident;
+
+                            trait_type_defs.extend(quote!(type #ty_ident = #new_ty;));
+
+                            let filler_trait =
+                                format_ident!("{}VtableFiller", new_ty.target.to_string());
+
+                            let path = &new_ty.path;
+
+                            let type_bounds =
+                                quote!(CGlueT::#ty_ident: #path #filler_trait<#lifetime, T>,);
+
+                            trait_type_bounds
+                                .extend(quote!(CGlueT::#ty_ident: #lifetime, #type_bounds));
+
+                            types.insert(
+                                ty_ident.clone(),
+                                WrappedType {
+                                    ty: new_ty,
+                                    return_conv: Some(
+                                        parse2(quote!(|ret| group_obj!(ret as #target)))
+                                            .expect("Internal closure parsing fail"),
+                                    ),
+                                    lifetime_bound: Some(lifetime.clone()),
+                                    other_bounds: Some(type_bounds),
+                                },
+                            );
+                        }
                         "return_wrap" => {
                             let closure = attr.parse_args::<ExprClosure>().expect(
                                 "A valid closure must be supplied accepting the wrapped type!",

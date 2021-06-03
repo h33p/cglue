@@ -9,6 +9,7 @@ const FN_PREFIX: &str = "cglue_wrapped_";
 pub struct WrappedType {
     pub ty: GenericType,
     pub lifetime_bound: Option<Lifetime>,
+    pub other_bounds: Option<TokenStream>,
     pub return_conv: Option<ExprClosure>,
 }
 
@@ -514,6 +515,7 @@ impl ParsedReturnType {
                     WrappedType {
                         return_conv,
                         lifetime_bound,
+                        other_bounds,
                         ..
                     },
                 )) = wrap_type(&mut *ty, targets)
@@ -527,8 +529,8 @@ impl ParsedReturnType {
                     };
 
                     let where_bound = match lifetime_bound {
-                        Some(bound) => quote!(CGlueT::#trait_ty: #bound,),
-                        _ => quote!(),
+                        Some(bound) => quote!(CGlueT::#trait_ty: #bound, #other_bounds),
+                        _ => quote!(#other_bounds),
                     };
 
                     ret = Some((

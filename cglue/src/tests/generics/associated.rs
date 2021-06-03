@@ -1,5 +1,6 @@
 use super::super::simple::structs::*;
 use super::super::simple::trait_defs::*;
+use super::groups::*;
 use super::param::*;
 use cglue_macro::*;
 use core::ffi::c_void;
@@ -71,6 +72,22 @@ impl GenericReturn<usize> for SA {
 
 // TODO: generic return where T gets automatically bounded by cglue_trait
 
+#[cglue_trait]
+pub trait GenericGroupReturn<T: 'static + Eq> {
+    #[wrap_with_group(GenericGroup<T>)]
+    type ReturnType: GenericTrait<T>;
+
+    fn ggr_1(&self) -> Self::ReturnType;
+}
+
+impl GenericGroupReturn<usize> for SA {
+    type ReturnType = SA;
+
+    fn ggr_1(&self) -> SA {
+        SA {}
+    }
+}
+
 #[test]
 fn use_assoc_return() {
     let sa = SA {};
@@ -104,4 +121,18 @@ fn use_gen_return() {
     let ta = obj.gr_1();
 
     assert_eq!(ta.gt_1(), 27);
+}
+
+#[test]
+fn use_group_return() {
+    let sa = SA {};
+
+    let obj = trait_obj!(sa as GenericGroupReturn);
+
+    let group = obj.ggr_1();
+
+    let cast = cast!(group impl GenWithInlineClause).unwrap();
+
+    assert!(cast.gwi_1(&cast.gt_1()));
+    assert!(!cast.gwi_1(&(cast.gt_1() + 1)));
 }
