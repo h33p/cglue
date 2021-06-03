@@ -1,5 +1,6 @@
 use super::super::simple::structs::*;
 use super::super::simple::trait_defs::*;
+use super::param::*;
 use cglue_macro::*;
 use core::ffi::c_void;
 
@@ -52,6 +53,24 @@ impl ObjUnboundedReturn for SA {
     }
 }
 
+#[cglue_trait]
+pub trait GenericReturn<T: 'static> {
+    #[wrap_with_obj(GenericTrait<T>)]
+    type ReturnType: GenericTrait<T>;
+
+    fn gr_1(&self) -> Self::ReturnType;
+}
+
+impl GenericReturn<usize> for SA {
+    type ReturnType = SA;
+
+    fn gr_1(&self) -> SA {
+        SA {}
+    }
+}
+
+// TODO: generic return where T gets automatically bounded by cglue_trait
+
 #[test]
 fn use_assoc_return() {
     let sa = SA {};
@@ -74,4 +93,15 @@ fn use_obj_return() {
     let ta = obj.or_1();
 
     assert_eq!(ta.ta_1(), 5);
+}
+
+#[test]
+fn use_gen_return() {
+    let sa = SA {};
+
+    let obj = trait_obj!(sa as GenericReturn);
+
+    let ta = obj.gr_1();
+
+    assert_eq!(ta.gt_1(), 27);
 }

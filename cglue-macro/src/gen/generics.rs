@@ -24,17 +24,13 @@ pub struct ParsedGenerics {
     ///
     /// For instance: `T: Clone,` becomes just `T,`.
     pub gen_use: Punctuated<Ident, Comma>,
-    /// Full `where Bounds` declaration.
-    pub gen_where: TokenStream,
     /// All where predicates, without the `where` keyword.
-    pub gen_where_bounds: TokenStream,
+    pub gen_where_bounds: Punctuated<WherePredicate, Comma>,
 }
 
 impl ParsedGenerics {
     /// This function cross references input lifetimes and returns a new Self
     /// that only contains generic type information about those types.
-    ///
-    /// TODO: also cleanup the where clause, but we currently don't use it like that
     pub fn cross_ref<'a>(&self, input: impl IntoIterator<Item = &'a ParsedGenerics>) -> Self {
         let mut applied_lifetimes = HashSet::<&Ident>::new();
         let mut applied_typenames = HashSet::<&Ident>::new();
@@ -43,8 +39,7 @@ impl ParsedGenerics {
         let mut life_use = Punctuated::new();
         let mut gen_declare = Punctuated::new();
         let mut gen_use = Punctuated::new();
-        let gen_where_bounds = self.gen_where_bounds.clone();
-        let gen_where = self.gen_where.clone();
+        let mut gen_where_bounds = Punctuated::new();
 
         for ParsedGenerics {
             life_use: in_lu,
@@ -92,12 +87,29 @@ impl ParsedGenerics {
             }
         }
 
+        for wb in self.gen_where_bounds.iter() {
+            if match wb {
+                WherePredicate::Type(ty) => {
+                    if let Ok(ident) = parse2::<Ident>(ty.bounded_ty.to_token_stream()) {
+                        applied_typenames.contains(&ident)
+                    } else {
+                        // TODO: What to do with other bounds?
+                        false
+                    }
+                }
+                WherePredicate::Lifetime(lt) => applied_lifetimes.contains(&lt.lifetime.ident),
+                _ => false,
+            } {
+                gen_where_bounds.push_value(wb.clone());
+                gen_where_bounds.push_punct(Default::default());
+            }
+        }
+
         Self {
             life_declare,
             life_use,
             gen_declare,
             gen_use,
-            gen_where,
             gen_where_bounds,
         }
     }
@@ -109,7 +121,7 @@ impl<'a> std::iter::FromIterator<&'a ParsedGenerics> for ParsedGenerics {
         let mut life_use = Punctuated::new();
         let mut gen_declare = Punctuated::new();
         let mut gen_use = Punctuated::new();
-        let mut gen_where_bounds = TokenStream::new();
+        let mut gen_where_bounds = Punctuated::new();
 
         for val in input {
             life_declare.extend(val.life_declare.clone());
@@ -124,7 +136,6 @@ impl<'a> std::iter::FromIterator<&'a ParsedGenerics> for ParsedGenerics {
             life_use,
             gen_declare,
             gen_use,
-            gen_where: quote!(where #gen_where_bounds),
             gen_where_bounds,
         }
     }
@@ -139,8 +150,7 @@ impl From<Option<&Punctuated<GenericArgument, Comma>>> for ParsedGenerics {
                 life_use: Punctuated::new(),
                 gen_declare: Punctuated::new(),
                 gen_use: Punctuated::new(),
-                gen_where: quote!(),
-                gen_where_bounds: quote!(),
+                gen_where_bounds: Punctuated::new(),
             },
         }
     }
@@ -192,15 +202,13 @@ impl From<&Punctuated<GenericArgument, Comma>> for ParsedGenerics {
             life_use,
             gen_declare,
             gen_use,
-            gen_where: quote!(),
-            gen_where_bounds: quote!(),
+            gen_where_bounds: Punctuated::new(),
         }
     }
 }
 
 impl From<&Generics> for ParsedGenerics {
     fn from(input: &Generics) -> Self {
-        //let gen_declare = &input.params;
         let gen_where = &input.where_clause;
         let gen_where_bounds = gen_where.as_ref().map(|w| &w.predicates);
 
@@ -230,24 +238,12 @@ impl From<&Generics> for ParsedGenerics {
             }
         }
 
-        let gen_where = match gen_where {
-            Some(clause) => {
-                if clause.predicates.trailing_punct() {
-                    Some(quote!(#clause))
-                } else {
-                    Some(quote!(#clause,))
-                }
-            }
-            _ => None,
-        };
-
         Self {
             life_declare,
             life_use,
             gen_declare,
             gen_use,
-            gen_where: quote!(#gen_where),
-            gen_where_bounds: quote!(#gen_where_bounds),
+            gen_where_bounds: gen_where_bounds.cloned().unwrap_or_else(Punctuated::new),
         }
     }
 }
@@ -282,9 +278,9 @@ impl Parse for ParsedGenerics {
             }
 
             let predicates = &clause.predicates;
+
             Ok(Self {
-                gen_where_bounds: quote!(#predicates),
-                gen_where: quote!(#clause),
+                gen_where_bounds: predicates.clone(),
                 ..ret
             })
         } else {

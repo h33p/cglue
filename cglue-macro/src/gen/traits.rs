@@ -25,7 +25,6 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
         life_use,
         gen_declare,
         gen_use,
-        gen_where,
         gen_where_bounds,
         ..
     } = &generics;
@@ -232,7 +231,7 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
         ///
         /// This virtual function table contains ABI-safe interface for the given trait.
         #[repr(C)]
-        #vis struct #vtbl_ident<#life_use CGlueT, #gen_use> {
+        #vis struct #vtbl_ident<#life_declare CGlueT, #gen_declare> where #gen_where_bounds {
             #vtbl_func_defintions
         }
 
@@ -256,11 +255,11 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
         /// and trait groups.
         #vis type #opaque_vtbl_ident<#life_use #gen_use> = #vtbl_ident<#life_use #c_void, #gen_use>;
 
-        unsafe impl<#life_declare CGlueT: #trait_name<#life_use #gen_use>, #gen_declare> #trg_path::CGlueBaseVtbl for #vtbl_ident<#life_use CGlueT, #gen_use> #gen_where {
+        unsafe impl<#life_declare CGlueT: #trait_name<#life_use #gen_use>, #gen_declare> #trg_path::CGlueBaseVtbl for #vtbl_ident<#life_use CGlueT, #gen_use> where #gen_where_bounds {
             type OpaqueVtbl = #opaque_vtbl_ident<#life_use #gen_use>;
         }
 
-        impl<#life_declare CGlueT: #trait_name<#life_use #gen_use>, #gen_declare> #trg_path::CGlueVtbl<CGlueT> for #vtbl_ident<#life_use CGlueT, #gen_use> #gen_where {}
+        impl<#life_declare CGlueT: #trait_name<#life_use #gen_use>, #gen_declare> #trg_path::CGlueVtbl<CGlueT> for #vtbl_ident<#life_use CGlueT, #gen_use> where #gen_where_bounds {}
 
         #[doc = #trait_obj_doc]
         pub type #trait_obj_ident<'cglue_a, #life_use CGlueT, B, #gen_use> = #trg_path::CGlueTraitObj::<'cglue_a, B, #vtbl_ident<#life_use CGlueT, #gen_use>>;
@@ -280,7 +279,7 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
         /* Trait implementation. */
 
         /// Implement the traits for any CGlue object.
-        impl<#life_declare CGlueT: AsRef<#opaque_vtbl_ident<#life_use #gen_use>> + #trg_path::#required_mutability<#c_void>, #gen_declare> #trait_name<#life_use #gen_use> for CGlueT #gen_where {
+        impl<#life_declare CGlueT: AsRef<#opaque_vtbl_ident<#life_use #gen_use>> + #trg_path::#required_mutability<#c_void>, #gen_declare> #trait_name<#life_use #gen_use> for CGlueT where #gen_where_bounds {
             #trait_type_defs
             #trait_impl_fns
         }
