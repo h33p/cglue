@@ -50,21 +50,21 @@ pub fn parse_maybe_braced<T: Parse>(input: ParseStream) -> Result<Vec<T>> {
 
 pub type GenericsOut = Option<Punctuated<GenericArgument, Comma>>;
 
-pub fn split_path_ident(in_path: Path) -> Result<(TokenStream, Ident, GenericsOut)> {
+pub fn split_path_ident(in_path: &Path) -> Result<(TokenStream, Ident, GenericsOut)> {
     let mut path = in_path.leading_colon.to_token_stream();
 
     let mut ident = None;
 
     let mut generics = None;
 
-    for part in in_path.segments.into_pairs() {
+    for part in in_path.segments.pairs() {
         match part {
             punctuated::Pair::Punctuated(p, punc) => path.extend(quote!(#p #punc)),
             punctuated::Pair::End(p) => {
-                if let PathArguments::AngleBracketed(arg) = p.arguments {
-                    generics = Some(arg.args);
+                if let PathArguments::AngleBracketed(arg) = &p.arguments {
+                    generics = Some(arg.args.clone());
                 }
-                ident = Some(p.ident);
+                ident = Some(p.ident.clone());
             }
         }
     }

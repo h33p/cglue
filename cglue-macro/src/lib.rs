@@ -3,7 +3,7 @@ extern crate proc_macro;
 mod gen;
 mod util;
 
-use gen::generics::GenericCastType;
+use gen::generics::{GenericCastType, GenericType};
 use gen::trait_groups::*;
 use proc_macro::TokenStream;
 use quote::ToTokens;
@@ -17,6 +17,26 @@ pub fn int_result(_: TokenStream, input: TokenStream) -> TokenStream {
 
 #[proc_macro_attribute]
 pub fn no_int_result(_: TokenStream, input: TokenStream) -> TokenStream {
+    input
+}
+
+#[proc_macro_attribute]
+pub fn wrap_with(_: TokenStream, input: TokenStream) -> TokenStream {
+    input
+}
+
+#[proc_macro_attribute]
+pub fn wrap_with_obj(_: TokenStream, input: TokenStream) -> TokenStream {
+    input
+}
+
+#[proc_macro_attribute]
+pub fn wrap_with_group(_: TokenStream, input: TokenStream) -> TokenStream {
+    input
+}
+
+#[proc_macro_attribute]
+pub fn return_wrap(_: TokenStream, input: TokenStream) -> TokenStream {
     input
 }
 
@@ -37,14 +57,18 @@ pub fn group_obj(args: TokenStream) -> TokenStream {
     let crate_path = crate::util::crate_path();
 
     let GenericCastType {
-        path,
         ident,
-        generics,
-        target,
+        target:
+            GenericType {
+                path,
+                target,
+                generics,
+                ..
+            },
     } = parse_macro_input!(args as GenericCastType);
 
     let gen = quote! {
-        #crate_path::trait_group::Opaquable::into_opaque(#path #target #generics::from(#ident))
+        #crate_path::trait_group::Opaquable::into_opaque(#path #target :: <#generics>::from(#ident))
     };
 
     gen.into()
@@ -85,16 +109,20 @@ pub fn trait_obj(args: TokenStream) -> TokenStream {
     let crate_path = crate::util::crate_path();
 
     let GenericCastType {
-        path,
         ident,
-        generics,
-        target,
+        target:
+            GenericType {
+                path,
+                target,
+                generics,
+                ..
+            },
     } = parse_macro_input!(args as GenericCastType);
 
-    let target = format_ident!("CGlueTraitObj{}", target.to_token_stream().to_string());
+    let target = format_ident!("CGlueBase{}", target.to_token_stream().to_string());
 
     let gen = quote! {
-        #crate_path::trait_group::Opaquable::into_opaque(#path #target #generics::from(#ident))
+        #crate_path::trait_group::Opaquable::into_opaque(#path #target :: <#generics>::from(#ident))
     };
 
     gen.into()

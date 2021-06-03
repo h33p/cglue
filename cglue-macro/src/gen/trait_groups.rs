@@ -39,7 +39,7 @@ impl PartialOrd for TraitInfo {
 
 impl From<Path> for TraitInfo {
     fn from(in_path: Path) -> Self {
-        let (path, ident, gens) = split_path_ident(in_path).unwrap();
+        let (path, ident, gens) = split_path_ident(&in_path).unwrap();
 
         Self {
             vtbl_name: format_ident!("vtbl_{}", ident.to_string().to_lowercase()),
@@ -110,7 +110,7 @@ impl Parse for TraitGroupImpl {
 
         let group = input.parse()?;
 
-        let (group_path, group, gens) = split_path_ident(group)?;
+        let (group_path, group, gens) = split_path_ident(&group)?;
 
         let generics = ParsedGenerics::from(gens.as_ref());
 

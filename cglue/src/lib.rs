@@ -164,5 +164,5 @@ pub mod repr_cstring;
 pub mod result;
 pub mod trait_group;
 
-//#[cfg(test)]
+#[cfg(test)]
 pub mod tests;

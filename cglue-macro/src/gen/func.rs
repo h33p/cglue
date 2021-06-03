@@ -1,9 +1,16 @@
-use super::generics::ParsedGenerics;
+use super::generics::{GenericType, ParsedGenerics};
 use proc_macro2::TokenStream;
 use quote::*;
+use std::collections::BTreeMap;
 use syn::{Type, *};
 
 const FN_PREFIX: &str = "cglue_wrapped_";
+
+pub struct WrappedType {
+    pub ty: GenericType,
+    pub lifetime_bound: Option<Lifetime>,
+    pub return_conv: Option<ExprClosure>,
+}
 
 /// TraitArg stores implementations for Unstable-C-Unstable ABI transitions.
 struct TraitArg {
@@ -20,9 +27,58 @@ struct TraitArg {
     trivial: bool,
 }
 
+fn wrap_type<'a>(
+    ty: &mut Type,
+    targets: &'a BTreeMap<Ident, WrappedType>,
+) -> Option<(Type, Ident, &'a WrappedType)> {
+    match ty {
+        Type::Reference(r) => wrap_type(&mut *r.elem, targets),
+        Type::Slice(s) => wrap_type(&mut *s.elem, targets),
+        Type::Path(p) => {
+            let mut iter = p.path.segments.iter();
+            if let (None, None, Some(p1), Some(p2)) =
+                (&p.qself, p.path.leading_colon, iter.next(), iter.next())
+            {
+                if p1.ident == "Self" {
+                    if let Some(wrapped) = targets.get(&p2.ident) {
+                        let WrappedType { ty: new_ty, .. } = wrapped;
+
+                        std::mem::drop(iter);
+
+                        let ident = p2.ident.clone();
+
+                        let ret = std::mem::replace(
+                            ty,
+                            syn::parse2(new_ty.to_token_stream())
+                                .expect("Failed to parse wrap_type"),
+                        );
+
+                        return Some((ret, ident, wrapped));
+                    }
+                }
+            }
+
+            None
+        }
+        Type::Ptr(ptr) => wrap_type(&mut *ptr.elem, targets),
+        Type::Tuple(tup) => tup
+            .elems
+            .iter_mut()
+            .filter_map(|e| wrap_type(e, targets))
+            .next(),
+        // TODO: Other types
+        _ => None,
+    }
+}
+
 impl TraitArg {
-    fn new(arg: FnArg, unsafety: &TokenStream, crate_path: &TokenStream) -> Self {
-        let (to_c_args, call_c_args, c_args, to_trait_arg, trivial) = match &arg {
+    fn new(
+        mut arg: FnArg,
+        targets: &BTreeMap<Ident, WrappedType>,
+        unsafety: &TokenStream,
+        crate_path: &TokenStream,
+    ) -> Self {
+        let (to_c_args, call_c_args, c_args, to_trait_arg, trivial) = match &mut arg {
             FnArg::Receiver(r) => {
                 if r.mutability.is_some() {
                     (
@@ -43,36 +99,41 @@ impl TraitArg {
                 }
             }
             FnArg::Typed(t) => {
+                let _old = wrap_type(&mut *t.ty, targets);
+
                 let name = &*t.pat;
                 let ty = &*t.ty;
 
-                let ret = match ty {
+                let mut ret = None;
+
+                // TODO: deal with nested conversion
+                //if let (Some(old), Type::Path(p)) = {
+                //}
+
+                match ty {
                     Type::Reference(r) => {
                         let is_mut = r.mutability.is_some();
-                        match &*r.elem {
-                            Type::Slice(s) => {
-                                let szname =
-                                    format_ident!("{}_size", name.to_token_stream().to_string());
-                                let ty = &*s.elem;
-                                let (as_ptr, from_raw_parts, ptrt) = if is_mut {
-                                    (
-                                        quote!(as_mut_ptr),
-                                        quote!(from_raw_parts_mut),
-                                        quote!(*mut #ty),
-                                    )
-                                } else {
-                                    (quote!(as_ptr), quote!(from_raw_parts), quote!(*const #ty))
-                                };
+                        if let Type::Slice(s) = &*r.elem {
+                            let szname =
+                                format_ident!("{}_size", name.to_token_stream().to_string());
+                            let ty = &*s.elem;
+                            let (as_ptr, from_raw_parts, ptrt) = if is_mut {
+                                (
+                                    quote!(as_mut_ptr),
+                                    quote!(from_raw_parts_mut),
+                                    quote!(*mut #ty),
+                                )
+                            } else {
+                                (quote!(as_ptr), quote!(from_raw_parts), quote!(*const #ty))
+                            };
 
-                                Some((
-                                    quote!(let (#name, #szname) = (#name.#as_ptr(), #name.len());),
-                                    quote!(#name, #szname,),
-                                    quote!(#name: #ptrt, #szname: usize,),
-                                    quote!(#unsafety { ::core::slice::#from_raw_parts(#name, #szname) },),
-                                    false,
-                                ))
-                            }
-                            _ => None,
+                            ret = Some((
+                                quote!(let (#name, #szname) = (#name.#as_ptr(), #name.len());),
+                                quote!(#name, #szname,),
+                                quote!(#name: #ptrt, #szname: usize,),
+                                quote!(#unsafety { ::core::slice::#from_raw_parts(#name, #szname) },),
+                                false,
+                            ))
                         }
                     }
                     // TODO: Warn if Box is being used.
@@ -86,19 +147,15 @@ impl TraitArg {
                             match last.ident.to_string().as_str() {
                                 "Option" => {
                                     if let Some(GenericArgument::Type(a)) = args.args.first() {
-                                        if crate::util::is_null_pointer_optimizable(a, &[]) {
-                                            None
-                                        } else {
-                                            Some((
+                                        if !crate::util::is_null_pointer_optimizable(a, &[]) {
+                                            ret = Some((
                                                 quote!(let #name = #name.into();),
                                                 quote!(#name,),
                                                 quote!(#name: #crate_path::option::COption<#a>,),
                                                 quote!(#name.into(),),
                                                 false,
-                                            ))
+                                            ));
                                         }
-                                    } else {
-                                        None
                                     }
                                 }
                                 "Result" => {
@@ -108,31 +165,30 @@ impl TraitArg {
                                         (Some(GenericArgument::Type(_)), _, None, true) => {
                                             // TODO: Wrap Result<T> alias to use int values if it is marked
                                             // to implement IntResult
-                                            None
                                         }
                                         (
                                             Some(GenericArgument::Type(a)),
                                             Some(GenericArgument::Type(b)),
                                             None,
                                             _,
-                                        ) => Some((
-                                            quote!(let #name = #name.into();),
-                                            quote!(#name,),
-                                            quote!(#name: #crate_path::result::CResult<#a, #b>,),
-                                            quote!(#name.into(),),
-                                            false,
-                                        )),
-                                        _ => None,
+                                        ) => {
+                                            ret = Some((
+                                                quote!(let #name = #name.into();),
+                                                quote!(#name,),
+                                                quote!(#name: #crate_path::result::CResult<#a, #b>,),
+                                                quote!(#name.into(),),
+                                                false,
+                                            ));
+                                        }
+                                        _ => {}
                                     }
                                 }
-                                _ => None,
+                                _ => {}
                             }
-                        } else {
-                            None
                         }
                     }
-                    _ => None,
-                };
+                    _ => {}
+                }
 
                 ret.unwrap_or_else(|| {
                     (
@@ -174,6 +230,7 @@ impl ParsedFunc {
         sig: Signature,
         trait_name: Ident,
         generics: &ParsedGenerics,
+        wrap_types: &BTreeMap<Ident, WrappedType>,
         int_result: bool,
         crate_path: &TokenStream,
     ) -> Option<Self> {
@@ -192,7 +249,7 @@ impl ParsedFunc {
                 receiver = Some(r.clone());
             }
 
-            let func = TraitArg::new(input, &unsafety, crate_path);
+            let func = TraitArg::new(input, wrap_types, &unsafety, crate_path);
 
             has_nontrivial = has_nontrivial || !func.trivial;
 
@@ -201,7 +258,7 @@ impl ParsedFunc {
 
         let receiver = receiver?;
 
-        let out = ParsedReturnType::new(sig.output, int_result, &unsafety, crate_path);
+        let out = ParsedReturnType::new(sig.output, wrap_types, int_result, &unsafety, crate_path);
 
         let generics = generics.clone();
 
@@ -303,6 +360,7 @@ impl ParsedFunc {
         let args = self.vtbl_args();
         let ParsedReturnType {
             c_out,
+            c_where_bounds,
             c_ret,
             c_ret_params,
             ..
@@ -318,12 +376,12 @@ impl ParsedFunc {
             life_use,
             gen_declare,
             gen_use,
-            gen_where,
+            gen_where_bounds,
             ..
         } = &self.generics;
 
         let gen = quote! {
-            #safety extern "C" fn #fnname<#life_declare CGlueT: #trname<#life_use #gen_use>, #gen_declare>(#args #c_ret_params) #c_out #gen_where {
+            #safety extern "C" fn #fnname<#life_declare CGlueT: #trname<#life_use #gen_use>, #gen_declare>(#args #c_ret_params) #c_out where #gen_where_bounds #c_where_bounds {
                 let ret = this.#name(#call_args);
                 #c_ret
             }
@@ -421,6 +479,7 @@ impl From<Option<Abi>> for FuncAbi {
 struct ParsedReturnType {
     ty: ReturnType,
     c_out: TokenStream,
+    c_where_bounds: TokenStream,
     c_ret_params: TokenStream,
     c_ret_precall_def: TokenStream,
     c_call_ret_args: TokenStream,
@@ -431,16 +490,57 @@ struct ParsedReturnType {
 impl ParsedReturnType {
     #[allow(clippy::never_loop)]
     fn new(
-        ty: ReturnType,
+        mut ty: ReturnType,
+        targets: &BTreeMap<Ident, WrappedType>,
         int_result: bool,
         unsafety: &TokenStream,
         crate_path: &TokenStream,
     ) -> Self {
-        let (c_out, c_ret_params, c_ret_precall_def, c_call_ret_args, c_ret, impl_func_ret) = {
+        let (
+            c_out,
+            c_where_bounds,
+            c_ret_params,
+            c_ret_precall_def,
+            c_call_ret_args,
+            c_ret,
+            impl_func_ret,
+        ) = {
             let mut ret = None;
 
-            if let ReturnType::Type(_, ty) = &ty {
-                if let Type::Path(p) = &**ty {
+            if let ReturnType::Type(_, ty) = &mut ty {
+                if let Some((
+                    _,
+                    trait_ty,
+                    WrappedType {
+                        return_conv,
+                        lifetime_bound,
+                        ..
+                    },
+                )) = wrap_type(&mut *ty, targets)
+                {
+                    let ret_wrap = match return_conv {
+                        Some(conv) => quote! {
+                            let conv = #conv;
+                            conv(ret)
+                        },
+                        _ => quote!(ret.into()),
+                    };
+
+                    let where_bound = match lifetime_bound {
+                        Some(bound) => quote!(CGlueT::#trait_ty: #bound,),
+                        _ => quote!(),
+                    };
+
+                    ret = Some((
+                        quote!(-> #ty),
+                        where_bound,
+                        quote!(),
+                        quote!(),
+                        quote!(),
+                        quote!(#ret_wrap),
+                        quote!(ret),
+                    ));
+                } else if let Type::Path(p) = &**ty {
                     let last = p.path.segments.last();
                     if let Some((PathArguments::AngleBracketed(args), last)) =
                         last.map(|l| (&l.arguments, l))
@@ -451,6 +551,7 @@ impl ParsedReturnType {
                                     if !crate::util::is_null_pointer_optimizable(a, &[]) {
                                         ret = Some((
                                             quote!(-> #crate_path::option::COption<#a>),
+                                            quote!(),
                                             quote!(),
                                             quote!(),
                                             quote!(),
@@ -473,6 +574,7 @@ impl ParsedReturnType {
                                                         quote!(),
                                                         quote!(),
                                                         quote!(),
+                                                        quote!(),
                                                         quote!(#crate_path::result::into_int_result(ret)),
                                                         quote!(#crate_path::result::from_int_result_empty(ret)),
                                                     );
@@ -481,6 +583,7 @@ impl ParsedReturnType {
 
                                             break (
                                                 quote!(-> i32),
+                                                quote!(),
                                                 quote!(ok_out: &mut ::core::mem::MaybeUninit<#a>),
                                                 quote!(let mut ok_out = ::core::mem::MaybeUninit::uninit();),
                                                 quote!(&mut ok_out,),
@@ -498,6 +601,7 @@ impl ParsedReturnType {
                                         _,
                                     ) => Some((
                                         quote!(-> #crate_path::result::CResult<#a, #b>),
+                                        quote!(),
                                         quote!(),
                                         quote!(),
                                         quote!(),
@@ -519,6 +623,7 @@ impl ParsedReturnType {
                     quote!(),
                     quote!(),
                     quote!(),
+                    quote!(),
                     quote!(ret),
                     quote!(ret),
                 )
@@ -528,6 +633,7 @@ impl ParsedReturnType {
         Self {
             ty,
             c_out,
+            c_where_bounds,
             c_ret_params,
             c_ret_precall_def,
             c_call_ret_args,

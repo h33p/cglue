@@ -1,7 +1,9 @@
 use proc_macro2::TokenStream;
 
-use super::func::ParsedFunc;
-use super::generics::ParsedGenerics;
+use std::collections::BTreeMap;
+
+use super::func::{ParsedFunc, WrappedType};
+use super::generics::{GenericType, ParsedGenerics};
 
 use quote::*;
 use syn::*;
@@ -24,6 +26,7 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
         gen_declare,
         gen_use,
         gen_where,
+        gen_where_bounds,
         ..
     } = &generics;
 
@@ -32,35 +35,132 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
     // Additional identifiers
     let vtbl_ident = format_ident!("CGlueVtbl{}", trait_name);
     let opaque_vtbl_ident = format_ident!("Opaque{}", vtbl_ident);
-    let trait_obj_ident = format_ident!("CGlueTraitObj{}", trait_name);
-    let opaque_owned_trait_obj_ident = format_ident!("CGlueOpaqueTraitObj{}", trait_name);
-    let opaque_mut_trait_obj_ident = format_ident!("CGlueMutOpaqueTraitObj{}", trait_name);
-    let opaque_ref_trait_obj_ident = format_ident!("CGlueRefOpaqueTraitObj{}", trait_name);
+    let trait_obj_ident = format_ident!("CGlueBase{}", trait_name);
+    let opaque_owned_trait_obj_ident = format_ident!("CGlueBox{}", trait_name);
+    let opaque_mut_trait_obj_ident = format_ident!("CGlueMut{}", trait_name);
+    let opaque_ref_trait_obj_ident = format_ident!("CGlueRef{}", trait_name);
 
     let mut funcs = vec![];
+    let mut types = BTreeMap::new();
+    let mut trait_type_defs = TokenStream::new();
+    let mut trait_type_bounds = TokenStream::new();
 
     let int_result = tr
         .attrs
         .iter()
         .any(|a| a.path.to_token_stream().to_string() == "int_result");
 
+    let static_lifetime = Lifetime {
+        apostrophe: proc_macro2::Span::call_site(),
+        ident: format_ident!("static"),
+    };
+
     // Parse all functions in the trait
     for item in &tr.items {
-        if let TraitItem::Method(m) = item {
-            let mut iter = m.attrs.iter().map(|a| a.path.to_token_stream().to_string());
+        match item {
+            // We assume types are defined before methods here...
+            TraitItem::Type(ty) => {
+                let mut lifetime_bounds = ty.bounds.iter().filter_map(|b| match b {
+                    TypeParamBound::Lifetime(lt) => Some(lt),
+                    _ => None,
+                });
 
-            let int_result = match int_result {
-                true => !iter.any(|i| i == "no_int_result"),
-                false => iter.any(|i| i == "int_result"),
-            };
+                let lifetime_bound = lifetime_bounds.next();
+                // TODO: warn user if multiple bounds exist, and an object is being created
+                // let multiple_lifetime_bounds = lifetime_bounds.next().is_some();
 
-            funcs.extend(ParsedFunc::new(
-                m.sig.clone(),
-                trait_name.clone(),
-                &generics,
-                int_result,
-                &crate_path,
-            ));
+                for attr in &ty.attrs {
+                    let s = attr.path.to_token_stream().to_string();
+
+                    match s.as_str() {
+                        "wrap_with" => {
+                            let new_ty = attr
+                                .parse_args::<GenericType>()
+                                .expect("Invalid type in wrap_with.");
+
+                            let ty_ident = &ty.ident;
+
+                            trait_type_defs.extend(quote!(type #ty_ident = #new_ty;));
+
+                            types.insert(
+                                ty_ident.clone(),
+                                WrappedType {
+                                    ty: new_ty,
+                                    return_conv: None,
+                                    lifetime_bound: None,
+                                },
+                            );
+                        }
+                        "wrap_with_obj" => {
+                            let mut new_ty = attr
+                                .parse_args::<GenericType>()
+                                .expect("Invalid type in wrap_with.");
+
+                            let target = new_ty.target;
+
+                            new_ty.target =
+                                format_ident!("CGlueBox{}", target.to_string()).to_token_stream();
+
+                            let lifetime = lifetime_bound.unwrap_or(&static_lifetime);
+
+                            // Insert the object lifetime at the start
+                            new_ty.push_lifetime_start(lifetime);
+
+                            let ty_ident = &ty.ident;
+
+                            trait_type_defs.extend(quote!(type #ty_ident = #new_ty;));
+
+                            trait_type_bounds.extend(quote!(CGlueT::#ty_ident: #lifetime, ));
+
+                            types.insert(
+                                ty_ident.clone(),
+                                WrappedType {
+                                    ty: new_ty,
+                                    return_conv: Some(
+                                        parse2(quote!(|ret| trait_obj!(ret as #target)))
+                                            .expect("Internal closure parsing fail"),
+                                    ),
+                                    lifetime_bound: Some(lifetime.clone()),
+                                },
+                            );
+                        }
+                        /*"wrap_with_group" => {
+                            wrap_with(&mut types, &ty, &mut trait_type_defs, attr);
+                            let WrappedType { ty, return_conv } = types.get_mut(&ty.ident).unwrap();
+                            *return_conv = Some(quote!(group_obj!(ret as #ty)));
+                        }*/
+                        "return_wrap" => {
+                            let closure = attr.parse_args::<ExprClosure>().expect(
+                                "A valid closure must be supplied accepting the wrapped type!",
+                            );
+
+                            types
+                                .get_mut(&ty.ident)
+                                .expect("Type must be first wrapped with #[wrap_with(T)] atribute.")
+                                .return_conv = Some(closure);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            TraitItem::Method(m) => {
+                let mut iter = m.attrs.iter().map(|a| a.path.to_token_stream().to_string());
+
+                let int_result = match int_result {
+                    true => !iter.any(|i| i == "no_int_result"),
+                    false => iter.any(|i| i == "int_result"),
+                };
+
+                funcs.extend(ParsedFunc::new(
+                    m.sig.clone(),
+                    trait_name.clone(),
+                    &generics,
+                    &types,
+                    int_result,
+                    &crate_path,
+                ));
+            }
+            _ => {}
         }
     }
 
@@ -139,7 +239,7 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
         /* Default implementation. */
 
         /// Default vtable reference creation.
-        impl<'cglue_a, #life_declare CGlueT: #trait_name<#life_use #gen_use>, #gen_declare> Default for &'cglue_a #vtbl_ident<#life_use CGlueT, #gen_use> #gen_where {
+        impl<'cglue_a, #life_declare CGlueT: #trait_name<#life_use #gen_use>, #gen_declare> Default for &'cglue_a #vtbl_ident<#life_use CGlueT, #gen_use> where #gen_where_bounds #trait_type_bounds {
             /// Create a static vtable for the given type.
             fn default() -> Self {
                 &#vtbl_ident {
@@ -181,6 +281,7 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
 
         /// Implement the traits for any CGlue object.
         impl<#life_declare CGlueT: AsRef<#opaque_vtbl_ident<#life_use #gen_use>> + #trg_path::#required_mutability<#c_void>, #gen_declare> #trait_name<#life_use #gen_use> for CGlueT #gen_where {
+            #trait_type_defs
             #trait_impl_fns
         }
     }

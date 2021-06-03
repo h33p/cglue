@@ -294,10 +294,8 @@ impl Parse for ParsedGenerics {
 }
 
 pub struct GenericCastType {
-    pub path: TokenStream,
     pub ident: Box<Expr>,
-    pub generics: TokenStream,
-    pub target: TokenStream,
+    pub target: GenericType,
 }
 
 impl Parse for GenericCastType {
@@ -305,32 +303,73 @@ impl Parse for GenericCastType {
         let cast: ExprCast = input.parse()?;
 
         let ident = cast.expr;
-        let target = cast.ty;
+        let target = GenericType::from_type(&*cast.ty, true)?;
 
-        let (path, target, generics) = match *target {
+        Ok(Self { ident, target })
+    }
+}
+
+#[derive(Clone)]
+pub struct GenericType {
+    pub path: TokenStream,
+    pub gen_separator: TokenStream,
+    pub generics: TokenStream,
+    pub target: TokenStream,
+}
+
+impl GenericType {
+    pub fn push_lifetime_start(&mut self, lifetime: &Lifetime) {
+        let gen = &self.generics;
+        self.generics = quote!(#lifetime, #gen);
+    }
+
+    fn from_type(target: &Type, cast_to_group: bool) -> Result<Self> {
+        let (path, target, generics) = match target {
             Type::Path(ty) => {
-                let (path, target, generics) = crate::util::split_path_ident(ty.path).unwrap();
+                let (path, target, generics) = crate::util::split_path_ident(&ty.path).unwrap();
                 (quote!(#path), quote!(#target), generics)
             }
             x => (quote!(), quote!(#x), None),
         };
 
-        let generics = if let Some(params) = generics {
-            let pg = ParsedGenerics::from(&params);
+        let (gen_separator, generics) = match (cast_to_group, generics) {
+            (true, Some(params)) => {
+                let pg = ParsedGenerics::from(&params);
 
-            let life = &pg.life_use;
-            let gen = &pg.gen_use;
+                let life = &pg.life_use;
+                let gen = &pg.gen_use;
 
-            quote!(::<#life _, _, #gen>)
-        } else {
-            quote!()
+                (quote!(::), quote!(#life _, _, #gen))
+            }
+            (false, Some(params)) => (quote!(), quote!(#params)),
+            (true, _) => (quote!(::), quote!()),
+            _ => (quote!(), quote!()),
         };
 
         Ok(Self {
             path,
-            ident,
+            gen_separator,
             generics,
             target,
         })
+    }
+}
+
+impl ToTokens for GenericType {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        tokens.extend(self.path.clone());
+        tokens.extend(self.target.clone());
+        let generics = &self.generics;
+        if !generics.is_empty() {
+            tokens.extend(self.gen_separator.clone());
+            tokens.extend(quote!(<#generics>));
+        }
+    }
+}
+
+impl Parse for GenericType {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let target: Type = input.parse()?;
+        Self::from_type(&target, false)
     }
 }
