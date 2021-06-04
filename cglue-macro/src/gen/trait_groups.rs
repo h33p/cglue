@@ -12,6 +12,8 @@ pub struct TraitInfo {
     ident: Ident,
     generics: ParsedGenerics,
     vtbl_name: Ident,
+    ret_tmp_typename: Ident,
+    ret_tmp_name: Ident,
     enable_vtbl_name: Ident,
     lc_name: Ident,
     vtbl_typename: Ident,
@@ -41,10 +43,14 @@ impl From<Path> for TraitInfo {
     fn from(in_path: Path) -> Self {
         let (path, ident, gens) = split_path_ident(&in_path).unwrap();
 
+        let lc_ident = ident.to_string().to_lowercase();
+
         Self {
-            vtbl_name: format_ident!("vtbl_{}", ident.to_string().to_lowercase()),
-            lc_name: format_ident!("{}", ident.to_string().to_lowercase()),
+            vtbl_name: format_ident!("vtbl_{}", lc_ident),
+            lc_name: format_ident!("{}", lc_ident),
             vtbl_typename: format_ident!("CGlueVtbl{}", ident),
+            ret_tmp_typename: format_ident!("CGlueRetTmp{}", ident),
+            ret_tmp_name: format_ident!("ret_tmp_{}", lc_ident),
             enable_vtbl_name: format_ident!("enable_{}", ident.to_string().to_lowercase()),
             path,
             ident,
@@ -340,12 +346,17 @@ impl TraitGroup {
         let mandatory_vtbl_defs = self.mandatory_vtbl_defs(self.mandatory_vtbl.iter());
         let optional_vtbl_defs = self.optional_vtbl_defs();
 
-        let mandatory_as_ref_impls = self.mandatory_as_ref_impls();
+        let mandatory_as_ref_impls = self.mandatory_as_ref_impls(&trg_path);
         let mand_vtbl_default = self.mandatory_vtbl_defaults();
+        let mand_ret_tmp_default = self.mandatory_ret_tmp_defaults();
+        let full_opt_ret_tmp_default = Self::ret_tmp_defaults(self.optional_vtbl.iter());
+        let mand_ret_tmp_list = self.mandatory_ret_tmp_list();
+        let full_opt_ret_tmp_list = Self::ret_tmp_list(self.optional_vtbl.iter());
         let none_opt_vtbl_list = self.none_opt_vtbl_list();
         let mand_vtbl_list = self.vtbl_list(self.mandatory_vtbl.iter());
         let full_opt_vtbl_list = self.vtbl_list(self.optional_vtbl.iter());
         let vtbl_where_bounds = Self::vtbl_where_bounds(self.mandatory_vtbl.iter(), quote!(CGlueF));
+        let ret_tmp_defs = self.ret_tmp_defs(self.optional_vtbl.iter());
 
         let mut enable_funcs = TokenStream::new();
 
@@ -421,6 +432,7 @@ impl TraitGroup {
                 &opt_name,
                 self.mandatory_vtbl.iter().chain(traits.iter().copied()),
                 &self.generics,
+                &trg_path,
             );
 
             let sub_generics = self.used_generics(traits.iter().copied());
@@ -429,6 +441,7 @@ impl TraitGroup {
                 &opt_final_name,
                 self.mandatory_vtbl.iter().chain(traits.iter().copied()),
                 &sub_generics,
+                &trg_path,
             );
 
             let ParsedGenerics {
@@ -443,6 +456,8 @@ impl TraitGroup {
             let opt_vtbl_list = self.vtbl_list(traits.iter().copied());
             let opt_vtbl_unwrap = self.vtbl_unwrap_list(traits.iter().copied());
             let opt_vtbl_unwrap_validate = self.vtbl_unwrap_validate(traits.iter().copied());
+            let opt_ret_tmp_list = Self::ret_tmp_list(traits.iter().copied());
+            let opt_ret_tmp_defs = self.ret_tmp_defs(traits.iter().copied());
 
             let mixed_opt_vtbl_unwrap = self.mixed_opt_vtbl_unwrap_list(traits.iter().copied());
 
@@ -478,22 +493,7 @@ impl TraitGroup {
                     instance: CGlueT,
                     #mandatory_vtbl_defs
                     #opt_vtbl_defs
-                }
-
-                impl<#sub_life_declare CGlueT: ::core::ops::Deref<Target = CGlueF>, CGlueF, #sub_gen_declare>
-                    #trg_path::CGlueObjRef<CGlueF> for #opt_final_name<'_, #sub_life_use CGlueT, CGlueF, #sub_gen_use> where #sub_where_bounds
-                {
-                    fn cobj_ref(&self) -> &CGlueF {
-                        self.instance.deref()
-                    }
-                }
-
-                impl<#sub_life_declare CGlueT: ::core::ops::Deref<Target = CGlueF> + ::core::ops::DerefMut, CGlueF, #sub_gen_declare>
-                    #trg_path::CGlueObjMut<CGlueF> for #opt_final_name<'_, #sub_life_use CGlueT, CGlueF, #sub_gen_use> where #sub_where_bounds
-                {
-                    fn cobj_mut(&mut self) -> &mut CGlueF {
-                        self.instance.deref_mut()
-                    }
+                    #opt_ret_tmp_defs
                 }
 
                 #opt_final_as_ref_impls
@@ -508,22 +508,7 @@ impl TraitGroup {
                     instance: CGlueT,
                     #mandatory_vtbl_defs
                     #opt_mixed_vtbl_defs
-                }
-
-                impl<#life_declare CGlueT: ::core::ops::Deref<Target = CGlueF>, CGlueF, #gen_declare>
-                    #trg_path::CGlueObjRef<CGlueF> for #opt_name<'_, #life_use CGlueT, CGlueF, #gen_use> where #gen_where_bounds
-                {
-                    fn cobj_ref(&self) -> &CGlueF {
-                        self.instance.deref()
-                    }
-                }
-
-                impl<#life_declare CGlueT: ::core::ops::Deref<Target = CGlueF> + ::core::ops::DerefMut, CGlueF, #gen_declare>
-                    #trg_path::CGlueObjMut<CGlueF> for #opt_name<'_, #life_use CGlueT, CGlueF, #gen_use> where #gen_where_bounds
-                {
-                    fn cobj_mut(&mut self) -> &mut CGlueF {
-                        self.instance.deref_mut()
-                    }
+                    #ret_tmp_defs
                 }
 
                 unsafe impl<'cglue_a, #life_declare CGlueT, CGlueF, #gen_declare> #trg_path::Opaquable for #opt_name<'cglue_a, #life_use CGlueT, CGlueF, #gen_use> where #gen_where_bounds {
@@ -598,6 +583,8 @@ impl TraitGroup {
                         instance,
                         #mand_vtbl_list
                         #opt_vtbl_list
+                        #mand_ret_tmp_list
+                        #opt_ret_tmp_list
                         ..
                     } = self;
 
@@ -605,6 +592,8 @@ impl TraitGroup {
                         instance,
                         #mand_vtbl_list
                         #opt_vtbl_unwrap
+                        #mand_ret_tmp_list
+                        #opt_ret_tmp_list
                     })
                 }
 
@@ -627,12 +616,16 @@ impl TraitGroup {
                         instance,
                         #mand_vtbl_list
                         #full_opt_vtbl_list
+                        #mand_ret_tmp_list
+                        #full_opt_ret_tmp_list
                     } = self;
 
                     Some(#opt_name {
                         instance,
                         #mand_vtbl_list
                         #mixed_opt_vtbl_unwrap
+                        #mand_ret_tmp_list
+                        #full_opt_ret_tmp_list
                     })
                 }
 
@@ -729,6 +722,7 @@ impl TraitGroup {
                 instance: CGlueT,
                 #mandatory_vtbl_defs
                 #optional_vtbl_defs
+                #ret_tmp_defs
             }
 
             #[repr(C)]
@@ -777,6 +771,8 @@ impl TraitGroup {
                         instance,
                         #mand_vtbl_list
                         #full_opt_vtbl_list
+                        #mand_ret_tmp_default
+                        #full_opt_ret_tmp_default
                     }
                 }
             }
@@ -801,6 +797,8 @@ impl TraitGroup {
                         instance,
                         #mand_vtbl_default
                         #full_opt_vtbl_list
+                        #mand_ret_tmp_default
+                        #full_opt_ret_tmp_default
                     }
                 }
             }
@@ -818,6 +816,8 @@ impl TraitGroup {
                         instance: From::from(instance),
                         #mand_vtbl_default
                         #full_opt_vtbl_list
+                        #mand_ret_tmp_default
+                        #full_opt_ret_tmp_default
                     }
                 }
             }
@@ -835,24 +835,6 @@ impl TraitGroup {
                 where #gen_where_bounds
             {
                 #trait_funcs
-            }
-
-            impl<#life_declare CGlueT: ::core::ops::Deref<Target = CGlueF>, CGlueF, #gen_declare>
-                #trg_path::CGlueObjRef<CGlueF> for #name<'_, #life_use CGlueT, CGlueF, #gen_use>
-                where #gen_where_bounds
-            {
-                fn cobj_ref(&self) -> &CGlueF {
-                    self.instance.deref()
-                }
-            }
-
-            impl<#life_declare CGlueT: ::core::ops::Deref<Target = CGlueF> + ::core::ops::DerefMut, CGlueF, #gen_declare>
-                #trg_path::CGlueObjMut<CGlueF> for #name<'_, #life_use CGlueT, CGlueF, #gen_use>
-                where #gen_where_bounds
-            {
-                fn cobj_mut(&mut self) -> &mut CGlueF {
-                    self.instance.deref_mut()
-                }
             }
 
             #mandatory_as_ref_impls
@@ -963,6 +945,22 @@ impl TraitGroup {
         ret
     }
 
+    fn ret_tmp_defs<'a>(&'a self, iter: impl Iterator<Item = &'a TraitInfo>) -> TokenStream {
+        let mut ret = TokenStream::new();
+
+        for TraitInfo {
+            ret_tmp_name,
+            path,
+            ret_tmp_typename,
+            ..
+        } in self.mandatory_vtbl.iter().chain(iter)
+        {
+            ret.extend(quote!(#ret_tmp_name: #path #ret_tmp_typename, ));
+        }
+
+        ret
+    }
+
     /// Mixed vtable definitoins.
     ///
     /// This function goes through optional vtables, and mixes them between `Option`, and
@@ -1011,12 +1009,17 @@ impl TraitGroup {
         ret
     }
 
-    /// `AsRef<Vtable>` implementations for mandatory vtables.
-    fn mandatory_as_ref_impls(&self) -> TokenStream {
-        self.as_ref_impls(&self.name, self.mandatory_vtbl.iter(), &self.generics)
+    /// `CGlueObj<Vtable, RetTmp>` implementations for mandatory vtables.
+    fn mandatory_as_ref_impls(&self, trg_path: &TokenStream) -> TokenStream {
+        self.as_ref_impls(
+            &self.name,
+            self.mandatory_vtbl.iter(),
+            &self.generics,
+            trg_path,
+        )
     }
 
-    /// `AsRef<Vtable>` implementations for arbitrary type and list of tables.
+    /// `CGlueObj<Vtable, RetTmp>` implementations for arbitrary type and list of tables.
     ///
     /// # Arguments
     ///
@@ -1027,6 +1030,7 @@ impl TraitGroup {
         name: &Ident,
         traits: impl Iterator<Item = &'a TraitInfo>,
         all_generics: &ParsedGenerics,
+        trg_path: &TokenStream,
     ) -> TokenStream {
         let mut ret = TokenStream::new();
 
@@ -1040,6 +1044,8 @@ impl TraitGroup {
             vtbl_name,
             path,
             vtbl_typename,
+            ret_tmp_typename,
+            ret_tmp_name,
             generics: ParsedGenerics {
                 life_use, gen_use, ..
             },
@@ -1047,12 +1053,36 @@ impl TraitGroup {
         } in traits
         {
             ret.extend(quote! {
-                impl<#all_life_declare CGlueT, CGlueF, #all_gen_declare> AsRef<#path #vtbl_typename<#life_use CGlueF, #gen_use>>
+                impl<#all_life_declare CGlueT: ::core::ops::Deref<Target = CGlueF>, CGlueF, #all_gen_declare>
+                    #trg_path::CGlueObjRef<CGlueF, #path #ret_tmp_typename> for #name<'_, #all_life_use CGlueT, CGlueF, #all_gen_use> where #all_gen_where_bounds
+                {
+                    fn cobj_ref(&self) -> (&CGlueF, &#path #ret_tmp_typename) {
+                        (self.instance.deref(), &self.#ret_tmp_name)
+                    }
+                }
+
+                impl<#all_life_declare CGlueT: ::core::ops::Deref<Target = CGlueF> + ::core::ops::DerefMut, CGlueF, #all_gen_declare>
+                    #trg_path::CGlueObjMut<CGlueF, #path #ret_tmp_typename> for #name<'_, #all_life_use CGlueT, CGlueF, #all_gen_use> where #all_gen_where_bounds
+                {
+                    fn cobj_mut(&mut self) -> (&mut CGlueF, &mut #path #ret_tmp_typename) {
+                        (self.instance.deref_mut(), &mut self.#ret_tmp_name)
+                    }
+                }
+
+                impl<#all_life_declare CGlueT, CGlueF, #all_gen_declare> #trg_path::CGlueObj<#path #vtbl_typename<#life_use CGlueF, #gen_use>, #path #ret_tmp_typename>
                     for #name<'_, #all_life_use CGlueT, CGlueF, #all_gen_use>
                     where #all_gen_where_bounds
                 {
-                    fn as_ref(&self) -> &#path #vtbl_typename<#life_use CGlueF, #gen_use> {
+                    fn vtbl_ref(&self) -> &#path #vtbl_typename<#life_use CGlueF, #gen_use> {
                         &self.#vtbl_name
+                    }
+
+                    fn ret_tmp_ref(&self) -> &#path #ret_tmp_typename {
+                        &self.#ret_tmp_name
+                    }
+
+                    fn ret_tmp_mut(&mut self) -> &mut #path #ret_tmp_typename {
+                        &mut self.#ret_tmp_name
                     }
                 }
             });
@@ -1067,6 +1097,34 @@ impl TraitGroup {
 
         for TraitInfo { vtbl_name, .. } in &self.mandatory_vtbl {
             ret.extend(quote!(#vtbl_name: Default::default(),));
+        }
+
+        ret
+    }
+
+    fn mandatory_ret_tmp_defaults(&self) -> TokenStream {
+        Self::ret_tmp_defaults(self.mandatory_vtbl.iter())
+    }
+
+    fn ret_tmp_defaults<'a>(iter: impl Iterator<Item = &'a TraitInfo>) -> TokenStream {
+        let mut ret = TokenStream::new();
+
+        for TraitInfo { ret_tmp_name, .. } in iter {
+            ret.extend(quote!(#ret_tmp_name: Default::default(),));
+        }
+
+        ret
+    }
+
+    fn mandatory_ret_tmp_list(&self) -> TokenStream {
+        Self::ret_tmp_list(self.mandatory_vtbl.iter())
+    }
+
+    fn ret_tmp_list<'a>(iter: impl Iterator<Item = &'a TraitInfo>) -> TokenStream {
+        let mut ret = TokenStream::new();
+
+        for TraitInfo { ret_tmp_name, .. } in iter {
+            ret.extend(quote!(#ret_tmp_name,));
         }
 
         ret

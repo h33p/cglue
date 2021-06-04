@@ -20,26 +20,6 @@ pub fn no_int_result(_: TokenStream, input: TokenStream) -> TokenStream {
     input
 }
 
-#[proc_macro_attribute]
-pub fn wrap_with(_: TokenStream, input: TokenStream) -> TokenStream {
-    input
-}
-
-#[proc_macro_attribute]
-pub fn wrap_with_obj(_: TokenStream, input: TokenStream) -> TokenStream {
-    input
-}
-
-#[proc_macro_attribute]
-pub fn wrap_with_group(_: TokenStream, input: TokenStream) -> TokenStream {
-    input
-}
-
-#[proc_macro_attribute]
-pub fn return_wrap(_: TokenStream, input: TokenStream) -> TokenStream {
-    input
-}
-
 #[proc_macro]
 pub fn cglue_trait_group(args: TokenStream) -> TokenStream {
     let args = parse_macro_input!(args as TraitGroup);
@@ -140,4 +120,45 @@ pub fn cglue_trait(_args: TokenStream, input: TokenStream) -> TokenStream {
     };
 
     gen.into()
+}
+
+// Marker macros for wrapping
+
+#[proc_macro_attribute]
+pub fn wrap_with(_: TokenStream, input: TokenStream) -> TokenStream {
+    input
+}
+
+#[proc_macro_attribute]
+pub fn wrap_with_obj(_: TokenStream, input: TokenStream) -> TokenStream {
+    input
+}
+
+#[proc_macro_attribute]
+pub fn wrap_with_obj_ref(_: TokenStream, input: TokenStream) -> TokenStream {
+    input
+}
+
+#[proc_macro_attribute]
+pub fn wrap_with_obj_mut(_: TokenStream, input: TokenStream) -> TokenStream {
+    input
+}
+
+#[proc_macro_attribute]
+pub fn wrap_with_group(_: TokenStream, input: TokenStream) -> TokenStream {
+    input
+}
+
+#[proc_macro_attribute]
+pub fn wrap_with_group_ref(_: TokenStream, input: TokenStream) -> TokenStream {
+    input
+}
+
+#[proc_macro_attribute]
+pub fn wrap_with_group_mut(_: TokenStream, input: TokenStream) -> TokenStream {
+    input
+}
+#[proc_macro_attribute]
+pub fn return_wrap(_: TokenStream, input: TokenStream) -> TokenStream {
+    input
 }

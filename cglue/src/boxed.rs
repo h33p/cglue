@@ -38,7 +38,8 @@ impl<T> From<Box<T>> for CBox<T> {
 
 impl<T> From<T> for CBox<T> {
     fn from(this: T) -> Self {
-        CBox::from(Box::new(this))
+        let b = Box::new(this);
+        CBox::from(b)
     }
 }
 

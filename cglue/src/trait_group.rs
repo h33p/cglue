@@ -13,9 +13,10 @@ use core::ops::{Deref, DerefMut};
 /// `instance` value usually is either a reference, or a mutable reference, or a `CBox`, which
 /// contains static reference to the instance, and a dedicated drop function for freeing resources.
 #[repr(C)]
-pub struct CGlueTraitObj<'a, T, V> {
+pub struct CGlueTraitObj<'a, T, V, S> {
     instance: T,
     vtbl: &'a V,
+    ret_tmp: S,
 }
 
 union Opaquifier<T: Opaquable> {
@@ -69,40 +70,63 @@ unsafe impl<'a, T> Opaquable for CBox<T> {
 
 /// Opaque type of the trait object.
 pub type CGlueOpaqueTraitObjOutCBox<'a, V> =
-    CGlueTraitObj<'a, CBox<c_void>, <V as CGlueBaseVtbl>::OpaqueVtbl>;
+    CGlueTraitObj<'a, CBox<c_void>, <V as CGlueBaseVtbl>::OpaqueVtbl, <V as CGlueBaseVtbl>::RetTmp>;
 
 pub type CGlueOpaqueTraitObjOutRef<'a, V> =
-    CGlueTraitObj<'a, &'a c_void, <V as CGlueBaseVtbl>::OpaqueVtbl>;
+    CGlueTraitObj<'a, &'a c_void, <V as CGlueBaseVtbl>::OpaqueVtbl, <V as CGlueBaseVtbl>::RetTmp>;
 
-pub type CGlueOpaqueTraitObjOutMut<'a, V> =
-    CGlueTraitObj<'a, &'a mut c_void, <V as CGlueBaseVtbl>::OpaqueVtbl>;
+pub type CGlueOpaqueTraitObjOutMut<'a, V> = CGlueTraitObj<
+    'a,
+    &'a mut c_void,
+    <V as CGlueBaseVtbl>::OpaqueVtbl,
+    <V as CGlueBaseVtbl>::RetTmp,
+>;
 
-pub type CGlueOpaqueTraitObj<'a, T, V> =
-    CGlueTraitObj<'a, <T as Opaquable>::OpaqueTarget, <V as CGlueBaseVtbl>::OpaqueVtbl>;
+pub type CGlueOpaqueTraitObj<'a, T, V> = CGlueTraitObj<
+    'a,
+    <T as Opaquable>::OpaqueTarget,
+    <V as CGlueBaseVtbl>::OpaqueVtbl,
+    <V as CGlueBaseVtbl>::RetTmp,
+>;
 
-unsafe impl<'a, T: Opaquable, F: CGlueBaseVtbl> Opaquable for CGlueTraitObj<'a, T, F> {
-    type OpaqueTarget = CGlueTraitObj<'a, T::OpaqueTarget, F::OpaqueVtbl>;
+unsafe impl<'a, T: Opaquable, F: CGlueBaseVtbl> Opaquable for CGlueTraitObj<'a, T, F, F::RetTmp> {
+    type OpaqueTarget = CGlueTraitObj<'a, T::OpaqueTarget, F::OpaqueVtbl, F::RetTmp>;
 }
 
-impl<T, V> AsRef<V> for CGlueTraitObj<'_, T, V> {
-    fn as_ref(&self) -> &V {
+pub trait CGlueObj<V, S> {
+    fn vtbl_ref(&self) -> &V;
+    fn ret_tmp_ref(&self) -> &S;
+    fn ret_tmp_mut(&mut self) -> &mut S;
+}
+
+impl<T, V, S> CGlueObj<V, S> for CGlueTraitObj<'_, T, V, S> {
+    fn vtbl_ref(&self) -> &V {
         &self.vtbl
     }
-}
 
-impl<T: Deref<Target = F>, F, V> CGlueObjRef<F> for CGlueTraitObj<'_, T, V> {
-    fn cobj_ref(&self) -> &F {
-        self.instance.deref()
+    fn ret_tmp_ref(&self) -> &S {
+        &self.ret_tmp
+    }
+
+    fn ret_tmp_mut(&mut self) -> &mut S {
+        &mut self.ret_tmp
     }
 }
 
-impl<T: Deref<Target = F> + DerefMut, F, V> CGlueObjMut<F> for CGlueTraitObj<'_, T, V> {
-    fn cobj_mut(&mut self) -> &mut F {
-        self.instance.deref_mut()
+impl<T: Deref<Target = F>, F, V, S> CGlueObjRef<F, S> for CGlueTraitObj<'_, T, V, S> {
+    fn cobj_ref(&self) -> (&F, &S) {
+        (self.instance.deref(), &self.ret_tmp)
     }
 }
 
-impl<'a, T: Deref<Target = F>, F: 'a, V: CGlueVtbl<F>> From<T> for CGlueTraitObj<'a, T, V>
+impl<T: Deref<Target = F> + DerefMut, F, V, S> CGlueObjMut<F, S> for CGlueTraitObj<'_, T, V, S> {
+    fn cobj_mut(&mut self) -> (&mut F, &mut S) {
+        (self.instance.deref_mut(), &mut self.ret_tmp)
+    }
+}
+
+impl<'a, T: Deref<Target = F>, F: 'a, V: CGlueVtbl<F>> From<T>
+    for CGlueTraitObj<'a, T, V, V::RetTmp>
 where
     &'a V: Default,
 {
@@ -110,11 +134,12 @@ where
         Self {
             instance,
             vtbl: Default::default(),
+            ret_tmp: Default::default(),
         }
     }
 }
 
-impl<'a, T, V: CGlueVtbl<T>> From<T> for CGlueTraitObj<'a, CBox<T>, V>
+impl<'a, T, V: CGlueVtbl<T>> From<T> for CGlueTraitObj<'a, CBox<T>, V, V::RetTmp>
 where
     &'a V: Default,
 {
@@ -126,15 +151,15 @@ where
 /// CGlue compatible object.
 ///
 /// This trait allows to retrieve the constant `this` pointer on the structure.
-pub trait CGlueObjRef<T> {
-    fn cobj_ref(&self) -> &T;
+pub trait CGlueObjRef<T, S> {
+    fn cobj_ref(&self) -> (&T, &S);
 }
 
 /// CGlue compatible object.
 ///
 /// This trait allows to retrieve the mutable `this` pointer on the structure.
-pub trait CGlueObjMut<T>: CGlueObjRef<T> {
-    fn cobj_mut(&mut self) -> &mut T;
+pub trait CGlueObjMut<T, S>: CGlueObjRef<T, S> {
+    fn cobj_mut(&mut self) -> (&mut T, &mut S);
 }
 
 /// Trait for CGlue vtables.
@@ -148,6 +173,7 @@ pub trait CGlueVtbl<T>: CGlueBaseVtbl {}
 /// sure that the `OpaqueVtbl` is the exact same type, with the only difference being `this` types.
 pub unsafe trait CGlueBaseVtbl: Sized {
     type OpaqueVtbl: Sized;
+    type RetTmp: Sized + Default;
 
     /// Get the opaque vtable for the type.
     fn as_opaque(&self) -> &Self::OpaqueVtbl {
