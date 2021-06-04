@@ -138,9 +138,9 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
                                     quote!(#crate_path::boxed::CBox<#c_void>, #c_void,),
                                 );
                             } else if x == "wrap_with_group_ref" {
-                                new_ty.push_types_start(quote!(&'cglue_a #c_void, #c_void,));
+                                new_ty.push_types_start(quote!(&#lifetime #c_void, #c_void,));
                             } else if x == "wrap_with_group_mut" {
-                                new_ty.push_types_start(quote!(&'cglue_a mut #c_void, #c_void,));
+                                new_ty.push_types_start(quote!(&#lifetime mut #c_void, #c_void,));
                             }
 
                             let ty_ident = &ty.ident;
@@ -162,8 +162,7 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
 
                                 let path = &new_ty.path;
 
-                                let type_bounds =
-                                    quote!(CGlueT::#ty_ident: #path #filler_trait<#lifetime, T>,);
+                                let type_bounds = quote!(CGlueT::#ty_ident: #path #filler_trait<#lifetime, #life_use #gen_use>,);
 
                                 trait_type_bounds
                                     .extend(quote!(CGlueT::#ty_ident: #lifetime, #type_bounds));
@@ -312,6 +311,13 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
         func.ret_default_def(&mut ret_tmp_default_defs);
     }
 
+    // Define Default calls for temp storage
+    let mut ret_tmp_getter_defs = TokenStream::new();
+
+    for func in funcs.iter() {
+        func.ret_getter_def(&mut ret_tmp_getter_defs);
+    }
+
     // Implement the trait for a type that has CGlueObj<OpaqueCGlueVtblT, RetTmp>
     let mut trait_impl_fns = TokenStream::new();
 
@@ -366,6 +372,10 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
         #[repr(C)]
         #vis struct #ret_tmp_ident {
             #ret_tmp_type_defs
+        }
+
+        impl #ret_tmp_ident {
+            #ret_tmp_getter_defs
         }
 
         impl Default for #ret_tmp_ident {

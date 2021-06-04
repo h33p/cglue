@@ -294,8 +294,8 @@ impl ParsedFunc {
 
     pub fn ret_tmp_def(&self, stream: &mut TokenStream) {
         let name = &self.name;
-        if let Some((ty, mutable)) = &self.out.injected_ret_tmp {
-            let gen = if *mutable {
+        if let Some(ty) = &self.out.injected_ret_tmp {
+            let gen = if self.receiver.mutability.is_some() {
                 quote!(#name: ::core::mem::MaybeUninit<#ty>,)
             } else {
                 quote!(#name: ::core::cell::Cell<::core::mem::MaybeUninit<#ty>>,)
@@ -306,12 +306,40 @@ impl ParsedFunc {
 
     pub fn ret_default_def(&self, stream: &mut TokenStream) {
         let name = &self.name;
-        if let Some((_, mutable)) = &self.out.injected_ret_tmp {
-            let gen = if *mutable {
+        if let Some(_) = &self.out.injected_ret_tmp {
+            let gen = if self.receiver.mutability.is_some() {
                 quote!(#name: ::core::mem::MaybeUninit::uninit(),)
             } else {
                 quote!(#name: ::core::cell::Cell::new(::core::mem::MaybeUninit::uninit()),)
             };
+            stream.extend(gen);
+        }
+    }
+
+    pub fn ret_getter_def(&self, stream: &mut TokenStream) {
+        let name = &self.name;
+
+        if let Some(ty) = &self.out.injected_ret_tmp {
+            let gen = if self.receiver.mutability.is_some() {
+                quote! {
+                    fn #name(&mut self) -> &mut ::core::mem::MaybeUninit<#ty> {
+                        &mut self.#name
+                    }
+                }
+            } else {
+                quote! {
+                    fn #name(&self) -> &mut ::core::mem::MaybeUninit<#ty> {
+                        // SAFETY:
+                        // We mutably alias the underlying cell, which is not very safe, because
+                        // it could already be borrowed immutably. However, for this particular case
+                        // it is somewhat okay, with emphasis on "somewhat". If this function returns
+                        // a constant, this method is safe, because the stack will be overriden with
+                        // the exact same data.
+                        unsafe { self.#name.as_ptr().as_mut().unwrap() }
+                    }
+                }
+            };
+
             stream.extend(gen);
         }
     }
@@ -545,7 +573,7 @@ struct ParsedReturnType {
     /// HRTB is the `for<'cglue_b>` bound to bind `this` lifetime to be the same one as another
     /// argument's, as well as the return type's. This is only relevant when tmp_ret is being
     /// used. In addition to that, generic bounds will be added to the C wrapper for equivalency.
-    injected_ret_tmp: Option<(GenericType, bool)>,
+    injected_ret_tmp: Option<GenericType>,
 }
 
 impl ParsedReturnType {
@@ -607,24 +635,16 @@ impl ParsedReturnType {
                         match (inject_ret_tmp, mutable) {
                             (true, false) => (
                                 quote!(&'cglue_b #new_ty),
-                                Some((new_ty.clone(), false)),
+                                Some(new_ty.clone()),
                                 quote!(ret_tmp: &'cglue_b mut ::core::mem::MaybeUninit<#new_ty>,),
-                                quote!(let ret_tmp = &ret_tmp.#func_name;),
-                                quote! {
-                                    // SAFETY:
-                                    // We mutably alias the underlying cell, which is not very safe, because
-                                    // it could already be borrowed immutably. However, for this particular case
-                                    // it is somewhat okay, with emphasis on "somewhat". If this function returns
-                                    // a constant, this method is safe, because the stack will be overriden with
-                                    // the exact same data.
-                                    unsafe { ret_tmp.as_ptr().as_mut().unwrap() },
-                                },
+                                quote!(let ret_tmp = ret_tmp.#func_name();),
+                                quote!(ret_tmp,),
                             ),
                             (true, true) => (
                                 quote!(&'cglue_b mut #new_ty),
-                                Some((new_ty.clone(), true)),
+                                Some(new_ty.clone()),
                                 quote!(ret_tmp: &mut ::core::mem::MaybeUninit<#new_ty>,),
-                                quote!(let ret_tmp = &mut ret_tmp.#func_name;),
+                                quote!(let ret_tmp = ret_tmp.#func_name();),
                                 quote!(ret_tmp,),
                             ),
                             _ => (quote!(#ty), None, quote!(), quote!(), quote!()),
