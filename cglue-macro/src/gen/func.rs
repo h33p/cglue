@@ -306,7 +306,7 @@ impl ParsedFunc {
 
     pub fn ret_default_def(&self, stream: &mut TokenStream) {
         let name = &self.name;
-        if let Some(_) = &self.out.injected_ret_tmp {
+        if self.out.injected_ret_tmp.is_some() {
             let gen = if self.receiver.mutability.is_some() {
                 quote!(#name: ::core::mem::MaybeUninit::uninit(),)
             } else {
@@ -328,6 +328,7 @@ impl ParsedFunc {
                 }
             } else {
                 quote! {
+                    #[allow(clippy::mut_from_ref)]
                     fn #name(&self) -> &mut ::core::mem::MaybeUninit<#ty> {
                         // SAFETY:
                         // We mutably alias the underlying cell, which is not very safe, because
