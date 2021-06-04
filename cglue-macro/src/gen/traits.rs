@@ -162,12 +162,39 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
 
                                 let path = &new_ty.path;
 
-                                let type_bounds = quote!(CGlueT::#ty_ident: #path #filler_trait<#lifetime, #life_use #gen_use>,);
+                                let type_bounds = if life_use.is_empty() {
+                                    quote!(CGlueT::#ty_ident: #path #filler_trait<#lifetime, #gen_use>,)
+                                } else {
+                                    quote!(CGlueT::#ty_ident: #path #filler_trait<#life_use #gen_use>,)
+                                };
 
                                 trait_type_bounds
                                     .extend(quote!(CGlueT::#ty_ident: #lifetime, #type_bounds));
 
                                 Some(type_bounds)
+                            };
+
+                            let (ret_write, conv_bound) = if lifetime != &static_lifetime {
+                                (
+                                    quote! {
+                                        unsafe {
+                                            ret_tmp.as_mut_ptr().write(ret);
+                                        }
+                                    },
+                                    quote!(#lifetime),
+                                )
+                            } else {
+                                (
+                                    quote! {
+                                        // SAFETY:
+                                        // We cast anon lifetime to static lifetime. It is rather okay, because we are only
+                                        // returning reference to the object.
+                                        unsafe {
+                                            ret_tmp.as_mut_ptr().write(std::mem::transmute(ret));
+                                        }
+                                    },
+                                    quote!(),
+                                )
                             };
 
                             let (return_conv, inject_ret_tmp) = match x {
@@ -182,7 +209,7 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
                                     false,
                                 ),
                                 "wrap_with_obj_ref" => (
-                                    parse2(quote!(|ret: &_| {
+                                    parse2(quote!(|ret: &#conv_bound _| {
                                         let ret = trait_obj!(ret as #target);
                                         // SAFETY:
                                         // We cast anon lifetime to static lifetime. It is rather okay, because we are only
@@ -196,7 +223,7 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
                                     true,
                                 ),
                                 "wrap_with_group_ref" => (
-                                    parse2(quote!(|ret: &_| {
+                                    parse2(quote!(|ret: &#conv_bound _| {
                                         let ret = group_obj!(ret as #target);
                                         // SAFETY:
                                         // We cast anon lifetime to static lifetime. It is rather okay, because we are only
@@ -210,28 +237,18 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
                                     true,
                                 ),
                                 "wrap_with_obj_mut" => (
-                                    parse2(quote!(|ret: &mut _| {
+                                    parse2(quote!(|ret: &#conv_bound mut _| {
                                         let ret = trait_obj!(ret as #target);
-                                        // SAFETY:
-                                        // We cast anon lifetime to static lifetime. It is rather okay, because we are only
-                                        // returning reference to the object.
-                                        unsafe {
-                                            ret_tmp.as_mut_ptr().write(std::mem::transmute(ret))
-                                        };
+                                        #ret_write
                                         unsafe { &mut *ret_tmp.as_mut_ptr() }
                                     }))
                                     .expect("Internal closure parsing fail"),
                                     true,
                                 ),
                                 "wrap_with_group_mut" => (
-                                    parse2(quote!(|ret: &mut _| {
+                                    parse2(quote!(|ret: &#conv_bound mut _| {
                                         let ret = group_obj!(ret as #target);
-                                        // SAFETY:
-                                        // We cast anon lifetime to static lifetime. It is rather okay, because we are only
-                                        // returning reference to the object.
-                                        unsafe {
-                                            ret_tmp.as_mut_ptr().write(std::mem::transmute(ret))
-                                        };
+                                        #ret_write
                                         unsafe { &mut *ret_tmp.as_mut_ptr() }
                                     }))
                                     .expect("Internal closure parsing fail"),
@@ -318,6 +335,12 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
         func.ret_getter_def(&mut ret_tmp_getter_defs);
     }
 
+    // Phantom data for temp storage including all types, because we do not
+    // actually know the types used inside the temp storage.
+    // I mean we could cross filter it but it's a little bit much work.
+    let phantom_data_definitions = generics.phantom_data_definitions();
+    let phantom_data_init = generics.phantom_data_init();
+
     // Implement the trait for a type that has CGlueObj<OpaqueCGlueVtblT, RetTmp>
     let mut trait_impl_fns = TokenStream::new();
 
@@ -370,18 +393,20 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
         }
 
         #[repr(C)]
-        #vis struct #ret_tmp_ident {
+        #vis struct #ret_tmp_ident<#life_use #gen_use> {
             #ret_tmp_type_defs
+            #phantom_data_definitions
         }
 
-        impl #ret_tmp_ident {
+        impl<#life_use #gen_use> #ret_tmp_ident<#life_use #gen_use> {
             #ret_tmp_getter_defs
         }
 
-        impl Default for #ret_tmp_ident {
+        impl<#life_use #gen_use> Default for #ret_tmp_ident<#life_use #gen_use> {
             fn default() -> Self {
                 Self {
                     #ret_tmp_default_defs
+                    #phantom_data_init
                 }
             }
         }
@@ -408,13 +433,13 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
 
         unsafe impl<#life_declare CGlueT: #trait_name<#life_use #gen_use>, #gen_declare> #trg_path::CGlueBaseVtbl for #vtbl_ident<#life_use CGlueT, #gen_use> where #gen_where_bounds {
             type OpaqueVtbl = #opaque_vtbl_ident<#life_use #gen_use>;
-            type RetTmp = #ret_tmp_ident;
+            type RetTmp = #ret_tmp_ident<#life_use #gen_use>;
         }
 
         impl<#life_declare CGlueT: #trait_name<#life_use #gen_use>, #gen_declare> #trg_path::CGlueVtbl<CGlueT> for #vtbl_ident<#life_use CGlueT, #gen_use> where #gen_where_bounds {}
 
         #[doc = #trait_obj_doc]
-        pub type #trait_obj_ident<'cglue_a, #life_use CGlueT, B, #gen_use> = #trg_path::CGlueTraitObj::<'cglue_a, B, #vtbl_ident<#life_use CGlueT, #gen_use>, #ret_tmp_ident>;
+        pub type #trait_obj_ident<'cglue_a, #life_use CGlueT, B, #gen_use> = #trg_path::CGlueTraitObj::<'cglue_a, B, #vtbl_ident<#life_use CGlueT, #gen_use>, #ret_tmp_ident<#life_use #gen_use>>;
 
         #[doc = #opaque_owned_trait_obj_doc]
         pub type #opaque_owned_trait_obj_ident<'cglue_a, #life_use #gen_use> = #trait_obj_ident<'cglue_a, #life_use #c_void, #crate_path::boxed::CBox<#c_void>, #gen_use>;
@@ -431,7 +456,7 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
         /* Trait implementation. */
 
         /// Implement the traits for any CGlue object.
-        impl<#life_declare CGlueT: #trg_path::CGlueObj<#opaque_vtbl_ident<#life_use #gen_use>, #ret_tmp_ident> + #trg_path::#required_mutability<#c_void, #ret_tmp_ident>, #gen_declare> #trait_name<#life_use #gen_use> for CGlueT where #gen_where_bounds {
+        impl<#life_declare CGlueT: AsRef<#opaque_vtbl_ident<#life_use #gen_use>> + #trg_path::#required_mutability<#c_void, #ret_tmp_ident<#life_use #gen_use>>, #gen_declare> #trait_name<#life_use #gen_use> for CGlueT where #gen_where_bounds {
             #trait_type_defs
             #trait_impl_fns
         }

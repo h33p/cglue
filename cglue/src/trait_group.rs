@@ -93,23 +93,9 @@ unsafe impl<'a, T: Opaquable, F: CGlueBaseVtbl> Opaquable for CGlueTraitObj<'a, 
     type OpaqueTarget = CGlueTraitObj<'a, T::OpaqueTarget, F::OpaqueVtbl, F::RetTmp>;
 }
 
-pub trait CGlueObj<V, S> {
-    fn vtbl_ref(&self) -> &V;
-    fn ret_tmp_ref(&self) -> &S;
-    fn ret_tmp_mut(&mut self) -> &mut S;
-}
-
-impl<T, V, S> CGlueObj<V, S> for CGlueTraitObj<'_, T, V, S> {
-    fn vtbl_ref(&self) -> &V {
+impl<T, V, S> AsRef<V> for CGlueTraitObj<'_, T, V, S> {
+    fn as_ref(&self) -> &V {
         &self.vtbl
-    }
-
-    fn ret_tmp_ref(&self) -> &S {
-        &self.ret_tmp
-    }
-
-    fn ret_tmp_mut(&mut self) -> &mut S {
-        &mut self.ret_tmp
     }
 }
 

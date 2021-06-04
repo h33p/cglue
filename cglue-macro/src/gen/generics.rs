@@ -113,6 +113,40 @@ impl ParsedGenerics {
             gen_where_bounds,
         }
     }
+
+    /// Generate phantom data definitions for all lifetimes and types used.
+    pub fn phantom_data_definitions(&self) -> TokenStream {
+        let mut stream = TokenStream::new();
+
+        for lt in self.life_use.iter() {
+            let lt_ident = format_ident!("_lt_{}", lt.ident);
+            stream.extend(quote!(#lt_ident: ::core::marker::PhantomData<&#lt ()>,));
+        }
+
+        for ty in self.gen_use.iter() {
+            let ty_ident = format_ident!("_ty_{}", ty.to_string().to_lowercase());
+            stream.extend(quote!(#ty_ident: ::core::marker::PhantomData<#ty>,));
+        }
+
+        stream
+    }
+
+    /// Generate phantom data initializations for all lifetimes and types used.
+    pub fn phantom_data_init(&self) -> TokenStream {
+        let mut stream = TokenStream::new();
+
+        for lt in self.life_use.iter() {
+            let lt_ident = format_ident!("_lt_{}", lt.ident);
+            stream.extend(quote!(#lt_ident: ::core::marker::PhantomData{},));
+        }
+
+        for ty in self.gen_use.iter() {
+            let ty_ident = format_ident!("_ty_{}", ty.to_string().to_lowercase());
+            stream.extend(quote!(#ty_ident: ::core::marker::PhantomData{},));
+        }
+
+        stream
+    }
 }
 
 impl<'a> std::iter::FromIterator<&'a ParsedGenerics> for ParsedGenerics {

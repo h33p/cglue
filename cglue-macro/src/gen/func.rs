@@ -86,7 +86,7 @@ impl TraitArg {
                 let lifetime = if inject_hrtb {
                     quote!('cglue_b )
                 } else {
-                    quote!()
+                    r.lifetime().to_token_stream()
                 };
 
                 if r.mutability.is_some() {
@@ -262,13 +262,7 @@ impl ParsedFunc {
                 receiver = Some(r.clone());
             }
 
-            let func = TraitArg::new(
-                input,
-                wrap_types,
-                &unsafety,
-                crate_path,
-                out.injected_ret_tmp.is_some(),
-            );
+            let func = TraitArg::new(input, wrap_types, &unsafety, crate_path, out.use_hrtb);
 
             has_nontrivial = has_nontrivial || !func.trivial;
 
@@ -404,11 +398,11 @@ impl ParsedFunc {
         let ParsedReturnType {
             c_out,
             c_ret_params,
-            injected_ret_tmp,
+            use_hrtb,
             ..
         } = &self.out;
 
-        let hrtb = if injected_ret_tmp.is_some() {
+        let hrtb = if *use_hrtb {
             quote!(for<'cglue_b> )
         } else {
             quote!()
@@ -440,7 +434,7 @@ impl ParsedFunc {
             c_where_bounds,
             c_ret,
             c_ret_params,
-            injected_ret_tmp,
+            use_hrtb,
             ..
         } = &self.out;
         let call_args = self.to_trait_call_args();
@@ -449,7 +443,7 @@ impl ParsedFunc {
         let fnname = format_ident!("{}{}", FN_PREFIX, name);
         let safety = self.get_safety();
 
-        let tmp_lifetime = if injected_ret_tmp.is_some() {
+        let tmp_lifetime = if *use_hrtb {
             quote!('cglue_b, )
         } else {
             quote!()
@@ -514,7 +508,7 @@ impl ParsedFunc {
         let gen = quote! {
             #[inline(always)]
             #safety #abi fn #name (#args) #out {
-                let __cglue_vfunc = self.vtbl_ref().#name;
+                let __cglue_vfunc = self.as_ref().#name;
                 #def_args
                 #c_ret_precall_def
                 let ret = __cglue_vfunc(#call_args #c_call_ret_args);
@@ -575,6 +569,7 @@ struct ParsedReturnType {
     /// argument's, as well as the return type's. This is only relevant when tmp_ret is being
     /// used. In addition to that, generic bounds will be added to the C wrapper for equivalency.
     injected_ret_tmp: Option<GenericType>,
+    use_hrtb: bool,
 }
 
 impl ParsedReturnType {
@@ -596,6 +591,7 @@ impl ParsedReturnType {
             c_ret,
             impl_func_ret,
             injected_ret_tmp,
+            use_hrtb,
         ) = {
             let mut ret = None;
 
@@ -613,11 +609,20 @@ impl ParsedReturnType {
                     },
                 )) = wrap_type(&mut *ty, targets)
                 {
-                    let mutable = match (*inject_ret_tmp, &**ty) {
-                        (true, Type::Reference(ty)) => ty.mutability.is_some(),
-                        (false, _) => false,
+                    let (mutable, lifetime) = match (*inject_ret_tmp, &**ty) {
+                        (true, Type::Reference(ty)) => {
+                            (ty.mutability.is_some(), ty.lifetime.as_ref().cloned())
+                        }
+                        (false, _) => (false, None),
                         _ => panic!("Wrapped ref return currently only valid for references!"),
                     };
+
+                    let use_hrtb = lifetime.is_none();
+
+                    let lifetime = lifetime.unwrap_or_else(|| Lifetime {
+                        apostrophe: proc_macro2::Span::call_site(),
+                        ident: format_ident!("cglue_b"),
+                    });
 
                     let ret_wrap = match return_conv {
                         Some(conv) => quote! {
@@ -635,14 +640,14 @@ impl ParsedReturnType {
                     let (ret_type, injected_ret_tmp, tmp_type_def, tmp_impl_def, tmp_call_def) =
                         match (inject_ret_tmp, mutable) {
                             (true, false) => (
-                                quote!(&'cglue_b #new_ty),
+                                quote!(&#lifetime #new_ty),
                                 Some(new_ty.clone()),
-                                quote!(ret_tmp: &'cglue_b mut ::core::mem::MaybeUninit<#new_ty>,),
+                                quote!(ret_tmp: &mut ::core::mem::MaybeUninit<#new_ty>,),
                                 quote!(let ret_tmp = ret_tmp.#func_name();),
                                 quote!(ret_tmp,),
                             ),
                             (true, true) => (
-                                quote!(&'cglue_b mut #new_ty),
+                                quote!(&#lifetime mut #new_ty),
                                 Some(new_ty.clone()),
                                 quote!(ret_tmp: &mut ::core::mem::MaybeUninit<#new_ty>,),
                                 quote!(let ret_tmp = ret_tmp.#func_name();),
@@ -660,6 +665,7 @@ impl ParsedReturnType {
                         quote!(#ret_wrap),
                         quote!(ret),
                         injected_ret_tmp,
+                        use_hrtb,
                     ));
                 } else if let Type::Path(p) = &**ty {
                     let last = p.path.segments.last();
@@ -679,6 +685,7 @@ impl ParsedReturnType {
                                             quote!(ret.into()),
                                             quote!(ret.into()),
                                             None,
+                                            false,
                                         ));
                                     }
                                 }
@@ -700,6 +707,7 @@ impl ParsedReturnType {
                                                         quote!(#crate_path::result::into_int_result(ret)),
                                                         quote!(#crate_path::result::from_int_result_empty(ret)),
                                                         None,
+                                                        false,
                                                     );
                                                 }
                                             }
@@ -713,6 +721,7 @@ impl ParsedReturnType {
                                                 quote!(#crate_path::result::into_int_out_result(ret, ok_out)),
                                                 quote!(#unsafety { #crate_path::result::from_int_result(ret, ok_out) }),
                                                 None,
+                                                false,
                                             );
                                         };
 
@@ -732,6 +741,7 @@ impl ParsedReturnType {
                                         quote!(ret.into()),
                                         quote!(ret.into()),
                                         None,
+                                        false,
                                     )),
                                     _ => None,
                                 };
@@ -752,6 +762,7 @@ impl ParsedReturnType {
                     quote!(ret),
                     quote!(ret),
                     None,
+                    false,
                 )
             })
         };
@@ -766,6 +777,7 @@ impl ParsedReturnType {
             c_ret,
             impl_func_ret,
             injected_ret_tmp,
+            use_hrtb,
         }
     }
 }
