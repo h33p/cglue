@@ -91,25 +91,25 @@ impl TraitArg {
 
                 if r.reference.is_none() {
                     (
-                        quote!(let this = self.cobj_owned();),
-                        quote!(this,),
-                        quote!(this: CGlueT,),
+                        quote!(let thisobj = self.cobj_owned();),
+                        quote!(thisobj,),
+                        quote!(thisobj: CGlueT,),
                         quote!(),
                         false,
                     )
                 } else if r.mutability.is_some() {
                     (
-                        quote!(let (this, ret_tmp) = self.cobj_mut();),
-                        quote!(this,),
-                        quote!(this: &#lifetime mut CGlueF,),
+                        quote!(let (thisptr, ret_tmp) = self.cobj_mut();),
+                        quote!(thisptr,),
+                        quote!(thisptr: &#lifetime mut CGlueF,),
                         quote!(),
                         true,
                     )
                 } else {
                     (
-                        quote!(let (this, ret_tmp) = self.cobj_ref();),
-                        quote!(this,),
-                        quote!(this: &#lifetime CGlueF,),
+                        quote!(let (thisptr, ret_tmp) = self.cobj_ref();),
+                        quote!(thisptr,),
+                        quote!(thisptr: &#lifetime CGlueF,),
                         quote!(),
                         true,
                     )
@@ -469,10 +469,10 @@ impl ParsedFunc {
         let (consuming_bound, this) = if self.receiver.reference.is_none() {
             (
                 quote!(CGlueT: #trg_path::IntoInner<InnerTarget = CGlueF>,),
-                quote!(unsafe { this.into_inner() }),
+                quote!(unsafe { thisobj.into_inner() }),
             )
         } else {
-            (quote!(), quote!(this))
+            (quote!(), quote!(thisptr))
         };
 
         let gen = quote! {

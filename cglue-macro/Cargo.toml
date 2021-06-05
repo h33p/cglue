@@ -13,3 +13,7 @@ proc-macro2 = "1"
 quote = "1"
 proc-macro-crate = "1"
 itertools = "0.10"
+
+[features]
+default = []
+empty_retwrap = []

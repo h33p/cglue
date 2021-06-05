@@ -34,6 +34,7 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
     // Additional identifiers
     let vtbl_ident = format_ident!("CGlueVtbl{}", trait_name);
     let ret_tmp_ident = format_ident!("CGlueRetTmp{}", trait_name);
+    let ret_tmp_ident_phantom = format_ident!("CGlueRetTmpPhantom{}", trait_name);
     let opaque_vtbl_ident = format_ident!("Opaque{}", vtbl_ident);
     let trait_obj_ident = format_ident!("CGlueBase{}", trait_name);
     let opaque_owned_trait_obj_ident = format_ident!("CGlueBox{}", trait_name);
@@ -348,6 +349,12 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
         func.ret_default_def(&mut ret_tmp_default_defs);
     }
 
+    // If no types are wrapped, and feature is not enabled, inject a 1 byte padding.
+    if cfg!(not(feature = "empty_retwrap")) && ret_tmp_type_defs.is_empty() {
+        ret_tmp_type_defs.extend(quote!(_padding: u8,));
+        ret_tmp_default_defs.extend(quote!(_padding: 0,));
+    }
+
     // Define Default calls for temp storage
     let mut ret_tmp_getter_defs = TokenStream::new();
 
@@ -430,6 +437,53 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
         },
     };
 
+    let ret_tmp = if !ret_tmp_type_defs.is_empty() {
+        quote! {
+            /// Temporary return value structure, for returning wrapped references.
+            ///
+            /// This structure contains data for each vtable function that returns a reference to
+            /// an associated type. Note that these temporary values should not be accessed
+            /// directly. Use the trait functions.
+            #[repr(C)]
+            #vis struct #ret_tmp_ident<#life_use #gen_use> {
+                #ret_tmp_type_defs
+                #phantom_data_definitions
+            }
+
+            impl<#life_use #gen_use> #ret_tmp_ident<#life_use #gen_use> {
+                #ret_tmp_getter_defs
+            }
+
+            impl<#life_use #gen_use> Default for #ret_tmp_ident<#life_use #gen_use> {
+                fn default() -> Self {
+                    Self {
+                        #ret_tmp_default_defs
+                        #phantom_data_init
+                    }
+                }
+            }
+        }
+    } else {
+        quote! {
+            /// Technically unused phantom data definition structure.
+            #vis struct #ret_tmp_ident_phantom<#life_use #gen_use> {
+                #phantom_data_definitions
+            }
+
+            /// Type definition for temporary return value wrapping storage.
+            ///
+            /// The trait does not use return wrapping, thus is a typedef to `PhantomData`.
+            ///
+            /// Note that `cbindgen` will generate wrong structures for this type. It is important
+            /// to go inside the generated headers and fix it - all RetTmp structures without a
+            /// body should be completely deleted, both as types, and as fields in the
+            /// groups/objects. If C++11 templates are generated, it is important to define a
+            /// custom type for CGlueTraitObj that does not have `ret_tmp` defined, and change all
+            /// type aliases of this trait to use that particular structure.
+            #vis type #ret_tmp_ident<#life_use #gen_use> = ::core::marker::PhantomData<#ret_tmp_ident_phantom<#life_use #gen_use>>;
+        }
+    };
+
     // Glue it all together
     quote! {
         /* Primary vtable definition. */
@@ -443,24 +497,7 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
             #vtbl_phantom_def
         }
 
-        #[repr(C)]
-        #vis struct #ret_tmp_ident<#life_use #gen_use> {
-            #ret_tmp_type_defs
-            #phantom_data_definitions
-        }
-
-        impl<#life_use #gen_use> #ret_tmp_ident<#life_use #gen_use> {
-            #ret_tmp_getter_defs
-        }
-
-        impl<#life_use #gen_use> Default for #ret_tmp_ident<#life_use #gen_use> {
-            fn default() -> Self {
-                Self {
-                    #ret_tmp_default_defs
-                    #phantom_data_init
-                }
-            }
-        }
+        #ret_tmp
 
         /* Default implementation. */
 

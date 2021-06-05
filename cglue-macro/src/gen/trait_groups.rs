@@ -405,10 +405,10 @@ impl TraitGroup {
         let trback_doc = format!("be transformed back into `{}` without losing data.", name);
         let new_doc = format!(" Create new instance of {}.", name);
 
-        let opaque_name = format_ident!("{}Opaque", name);
-        let opaque_name_ref = format_ident!("{}OpaqueRef", name);
-        let opaque_name_mut = format_ident!("{}OpaqueMut", name);
-        let opaque_name_boxed = format_ident!("{}OpaqueBox", name);
+        let opaque_name = format_ident!("{}Base", name);
+        let opaque_name_ref = format_ident!("{}Ref", name);
+        let opaque_name_mut = format_ident!("{}Mut", name);
+        let opaque_name_boxed = format_ident!("{}Box", name);
 
         let filler_trait = format_ident!("{}VtableFiller", name);
         let vtable_type = format_ident!("{}Vtables", name);
