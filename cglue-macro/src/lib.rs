@@ -112,7 +112,25 @@ pub fn trait_obj(args: TokenStream) -> TokenStream {
 pub fn cglue_trait(_args: TokenStream, input: TokenStream) -> TokenStream {
     let tr = parse_macro_input!(input as ItemTrait);
 
-    let trait_def = gen::traits::gen_trait(&tr);
+    let trait_def = gen::traits::gen_trait(&tr, None);
+
+    let gen = quote! {
+        #tr
+        #trait_def
+    };
+
+    gen.into()
+}
+
+#[proc_macro_attribute]
+pub fn cglue_trait_ext(_args: TokenStream, input: TokenStream) -> TokenStream {
+    let mut tr = parse_macro_input!(input as ItemTrait);
+
+    let ext_ident = format_ident!("Ext{}", tr.ident);
+
+    let trait_def = gen::traits::gen_trait(&tr, Some(&ext_ident));
+
+    tr.ident = ext_ident;
 
     let gen = quote! {
         #tr

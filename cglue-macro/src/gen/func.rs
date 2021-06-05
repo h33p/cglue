@@ -11,6 +11,7 @@ pub struct WrappedType {
     pub lifetime_bound: Option<Lifetime>,
     pub other_bounds: Option<TokenStream>,
     pub return_conv: Option<ExprClosure>,
+    pub impl_return_conv: Option<TokenStream>,
     pub inject_ret_tmp: bool,
 }
 
@@ -38,26 +39,46 @@ fn wrap_type<'a>(
         Type::Slice(s) => wrap_type(&mut *s.elem, targets),
         Type::Path(p) => {
             let mut iter = p.path.segments.iter();
-            if let (None, None, Some(p1), Some(p2)) =
-                (&p.qself, p.path.leading_colon, iter.next(), iter.next())
-            {
-                if p1.ident == "Self" {
-                    if let Some(wrapped) = targets.get(&p2.ident) {
-                        let WrappedType { ty: new_ty, .. } = wrapped;
+            match (&p.qself, p.path.leading_colon, iter.next(), iter.next()) {
+                (None, None, Some(p1), Some(p2)) => {
+                    if p1.ident == "Self" {
+                        if let Some(wrapped) = targets.get(&p2.ident) {
+                            let WrappedType { ty: new_ty, .. } = wrapped;
+
+                            std::mem::drop(iter);
+
+                            let ident = p2.ident.clone();
+
+                            let ret = std::mem::replace(
+                                ty,
+                                syn::parse2(new_ty.to_token_stream())
+                                    .expect("Failed to parse wrap_type"),
+                            );
+
+                            return Some((ret, ident, wrapped));
+                        }
+                    }
+                }
+                (None, None, Some(p1), None) => {
+                    if p1.ident == "Self" {
+                        let self_return_wrap =
+                            targets.get(&p1.ident).expect("No self-wrap rule specified");
+                        let WrappedType { ty: new_ty, .. } = self_return_wrap;
 
                         std::mem::drop(iter);
 
-                        let ident = p2.ident.clone();
+                        let ident = p1.ident.clone();
 
                         let ret = std::mem::replace(
                             ty,
                             syn::parse2(new_ty.to_token_stream())
-                                .expect("Failed to parse wrap_type"),
+                                .expect("Failed to parse self-type wrap"),
                         );
 
-                        return Some((ret, ident, wrapped));
+                        return Some((ret, ident, self_return_wrap));
                     }
                 }
+                _ => {}
             }
 
             None
@@ -369,6 +390,24 @@ impl ParsedFunc {
         ret
     }
 
+    pub fn trait_passthrough_args(&self) -> TokenStream {
+        let mut ret = TokenStream::new();
+
+        for arg in &self.args {
+            match &arg.arg {
+                FnArg::Typed(ty) => {
+                    let pat = &ty.pat;
+                    quote!(#pat,).to_tokens(&mut ret);
+                }
+                FnArg::Receiver(_) => {
+                    quote!(self,).to_tokens(&mut ret);
+                }
+            }
+        }
+
+        ret
+    }
+
     pub fn to_c_def_args(&self) -> TokenStream {
         let mut ret = TokenStream::new();
 
@@ -430,9 +469,13 @@ impl ParsedFunc {
     /// Create a wrapper implementation body for this function
     ///
     /// If the function is ReprC already, it will not be wrapped and will return `None`
-    pub fn cfunc_def(&self, tokens: &mut TokenStream, trg_path: &TokenStream) {
+    pub fn cfunc_def(
+        &self,
+        tokens: &mut TokenStream,
+        trg_path: &TokenStream,
+    ) -> Option<&TokenStream> {
         if !self.is_wrapped() {
-            return;
+            return None;
         }
 
         let name = &self.name;
@@ -443,6 +486,7 @@ impl ParsedFunc {
             c_ret,
             c_ret_params,
             use_hrtb,
+            return_self,
             ..
         } = &self.out;
         let call_args = self.to_trait_call_args();
@@ -466,23 +510,33 @@ impl ParsedFunc {
             ..
         } = &self.generics;
 
-        let (consuming_bound, this) = if self.receiver.reference.is_none() {
-            (
-                quote!(CGlueT: #trg_path::IntoInner<InnerTarget = CGlueF>,),
-                quote!(unsafe { thisobj.into_inner() }),
-            )
+        let mut container_bound = TokenStream::new();
+
+        let this = if self.receiver.reference.is_none() {
+            container_bound.extend(quote!(#trg_path::IntoInner<InnerTarget = CGlueF> + ));
+            quote!(unsafe { thisobj.into_inner() })
         } else {
-            (quote!(), quote!(thisptr))
+            quote!(thisptr)
+        };
+
+        let container_bound = if !container_bound.is_empty() {
+            quote!(CGlueT: #container_bound,)
+        } else if *return_self {
+            quote!(CGlueT,)
+        } else {
+            container_bound
         };
 
         let gen = quote! {
-            #safety extern "C" fn #fnname<#tmp_lifetime #life_declare #consuming_bound CGlueF: #trname<#life_use #gen_use>, #gen_declare>(#args #c_ret_params) #c_out where #gen_where_bounds #c_where_bounds {
+            #safety extern "C" fn #fnname<#tmp_lifetime #life_declare #container_bound CGlueF: #trname<#life_use #gen_use>, #gen_declare>(#args #c_ret_params) #c_out where #gen_where_bounds #c_where_bounds {
                 let ret = #this.#name(#call_args);
                 #c_ret
             }
         };
 
         tokens.extend(gen);
+
+        Some(c_where_bounds)
     }
 
     pub fn vtbl_default_def(&self, tokens: &mut TokenStream) {
@@ -507,7 +561,7 @@ impl ParsedFunc {
         }
     }
 
-    pub fn trait_impl(&self, tokens: &mut TokenStream) -> (bool, bool) {
+    pub fn trait_impl(&self, tokens: &mut TokenStream) -> (bool, bool, bool) {
         let name = &self.name;
         let args = self.trait_args();
         let ParsedReturnType {
@@ -538,7 +592,31 @@ impl ParsedFunc {
         (
             self.receiver.mutability.is_some(),
             self.receiver.reference.is_none(),
+            self.out.return_self,
         )
+    }
+
+    pub fn int_trait_impl(
+        &self,
+        ext_path: Option<&TokenStream>,
+        ext_name: &Ident,
+        tokens: &mut TokenStream,
+    ) {
+        let name = &self.name;
+        let args = self.trait_args();
+        let passthrough_args = self.trait_passthrough_args();
+        let ParsedReturnType { ty: out, .. } = &self.out;
+        let safety = self.get_safety();
+        let abi = self.abi.prefix();
+
+        let gen = quote! {
+            #[inline(always)]
+            #safety #abi fn #name (#args) #out {
+                #ext_path #ext_name::#name(#passthrough_args)
+            }
+        };
+
+        tokens.extend(gen);
     }
 }
 
@@ -590,6 +668,7 @@ struct ParsedReturnType {
     /// used. In addition to that, generic bounds will be added to the C wrapper for equivalency.
     injected_ret_tmp: Option<GenericType>,
     use_hrtb: bool,
+    return_self: bool,
 }
 
 impl ParsedReturnType {
@@ -612,18 +691,20 @@ impl ParsedReturnType {
             impl_func_ret,
             injected_ret_tmp,
             use_hrtb,
+            return_self,
         ) = {
             let mut ret = None;
 
             if let ReturnType::Type(_, ty) = &mut ty {
                 if let Some((
-                    _,
+                    old_ty,
                     trait_ty,
                     WrappedType {
                         return_conv,
                         lifetime_bound,
                         other_bounds,
                         inject_ret_tmp,
+                        impl_return_conv,
                         ty: new_ty,
                         ..
                     },
@@ -676,6 +757,19 @@ impl ParsedReturnType {
                             _ => (quote!(#ty), None, quote!(), quote!(), quote!()),
                         };
 
+                    let impl_return_conv = impl_return_conv
+                        .as_ref()
+                        .cloned()
+                        .unwrap_or_else(|| quote!(ret));
+
+                    let return_self = trait_ty == "Self";
+
+                    // If we are returning self, do not actually change the return type.
+                    // I know, messy :(
+                    if return_self {
+                        *ty = Box::new(old_ty);
+                    }
+
                     ret = Some((
                         quote!(-> #ret_type),
                         where_bound,
@@ -683,9 +777,10 @@ impl ParsedReturnType {
                         tmp_impl_def,
                         tmp_call_def,
                         quote!(#ret_wrap),
-                        quote!(ret),
+                        impl_return_conv,
                         injected_ret_tmp,
                         use_hrtb,
+                        return_self,
                     ));
                 } else if let Type::Path(p) = &**ty {
                     let last = p.path.segments.last();
@@ -705,6 +800,7 @@ impl ParsedReturnType {
                                             quote!(ret.into()),
                                             quote!(ret.into()),
                                             None,
+                                            false,
                                             false,
                                         ));
                                     }
@@ -728,6 +824,7 @@ impl ParsedReturnType {
                                                         quote!(#crate_path::result::from_int_result_empty(ret)),
                                                         None,
                                                         false,
+                                                        false,
                                                     );
                                                 }
                                             }
@@ -741,6 +838,7 @@ impl ParsedReturnType {
                                                 quote!(#crate_path::result::into_int_out_result(ret, ok_out)),
                                                 quote!(#unsafety { #crate_path::result::from_int_result(ret, ok_out) }),
                                                 None,
+                                                false,
                                                 false,
                                             );
                                         };
@@ -761,6 +859,7 @@ impl ParsedReturnType {
                                         quote!(ret.into()),
                                         quote!(ret.into()),
                                         None,
+                                        false,
                                         false,
                                     )),
                                     _ => None,
@@ -783,6 +882,7 @@ impl ParsedReturnType {
                     quote!(ret),
                     None,
                     false,
+                    false,
                 )
             })
         };
@@ -798,6 +898,7 @@ impl ParsedReturnType {
             impl_func_ret,
             injected_ret_tmp,
             use_hrtb,
+            return_self,
         }
     }
 }

@@ -8,43 +8,35 @@ use super::generics::{GenericType, ParsedGenerics};
 use quote::*;
 use syn::*;
 
-pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
-    // Path to trait group import.
-    let crate_path = crate::util::crate_path();
-    let trg_path: TokenStream = quote!(#crate_path::trait_group);
-
-    // Need to preserve the same visibility as the trait itself.
-    let vis = tr.vis.to_token_stream();
-
-    let trait_name = &tr.ident;
-
-    let generics = ParsedGenerics::from(&tr.generics);
-
-    let ParsedGenerics {
-        life_declare,
-        life_use,
-        gen_declare,
-        gen_use,
-        gen_where_bounds,
-        ..
-    } = &generics;
-
-    let c_void = quote!(::core::ffi::c_void);
-
-    // Additional identifiers
-    let vtbl_ident = format_ident!("CGlueVtbl{}", trait_name);
-    let ret_tmp_ident = format_ident!("CGlueRetTmp{}", trait_name);
-    let ret_tmp_ident_phantom = format_ident!("CGlueRetTmpPhantom{}", trait_name);
-    let opaque_vtbl_ident = format_ident!("Opaque{}", vtbl_ident);
-    let trait_obj_ident = format_ident!("CGlueBase{}", trait_name);
-    let opaque_owned_trait_obj_ident = format_ident!("CGlueBox{}", trait_name);
-    let opaque_mut_trait_obj_ident = format_ident!("CGlueMut{}", trait_name);
-    let opaque_ref_trait_obj_ident = format_ident!("CGlueRef{}", trait_name);
-
+pub fn parse_trait(
+    tr: &ItemTrait,
+    crate_path: &TokenStream,
+) -> (Vec<ParsedFunc>, ParsedGenerics, TokenStream) {
     let mut funcs = vec![];
     let mut types = BTreeMap::new();
+    let generics = ParsedGenerics::from(&tr.generics);
     let mut trait_type_defs = TokenStream::new();
-    let mut trait_type_bounds = TokenStream::new();
+
+    let c_void = quote!(::core::ffi::c_void);
+    let trait_name = &tr.ident;
+
+    types.insert(
+        format_ident!("Self"),
+        WrappedType {
+            ty: parse2(quote!(CGlueT)).unwrap(),
+            return_conv: None,
+            lifetime_bound: None,
+            other_bounds: Some(quote!(CGlueT: From<CGlueF>,)),
+            impl_return_conv: Some(quote! {
+                // SAFETY:
+                //
+                // The C wrapper type checks that the same object gets returned
+                // as the vtables inside `self`.
+                unsafe { self.cobj_build(ret) }
+            }),
+            inject_ret_tmp: false,
+        },
+    );
 
     let int_result = tr
         .attrs
@@ -97,6 +89,7 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
                                     return_conv: None,
                                     lifetime_bound: None,
                                     other_bounds: None,
+                                    impl_return_conv: None,
                                     inject_ret_tmp: false,
                                 },
                             );
@@ -184,13 +177,13 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
                             ]
                             .contains(&x)
                             {
-                                trait_type_bounds.extend(quote!(CGlueF::#ty_ident: #lifetime, ));
+                                //trait_type_bounds.extend(quote!(CGlueF::#ty_ident: #lifetime, ));
                                 None
                             } else {
                                 let type_bounds = quote!(#from_new_ty_hrtb #from_new_ty: From<#from_new_ty_ref CGlueF::#ty_ident>,);
 
-                                trait_type_bounds
-                                    .extend(quote!(CGlueF::#ty_ident: #lifetime, #type_bounds));
+                                //trait_type_bounds
+                                //    .extend(quote!(CGlueF::#ty_ident: #lifetime, #type_bounds));
 
                                 Some(type_bounds)
                             };
@@ -283,6 +276,7 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
                                 WrappedType {
                                     ty: new_ty,
                                     return_conv: Some(return_conv),
+                                    impl_return_conv: None,
                                     lifetime_bound: Some(lifetime.clone()),
                                     other_bounds: type_bounds,
                                     inject_ret_tmp,
@@ -314,6 +308,45 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
         }
     }
 
+    (funcs, generics, trait_type_defs)
+}
+
+pub fn gen_trait(tr: &ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
+    // Path to trait group import.
+    let crate_path = crate::util::crate_path();
+    let trg_path: TokenStream = quote!(#crate_path::trait_group);
+
+    // Need to preserve the same visibility as the trait itself.
+    let vis = tr.vis.to_token_stream();
+
+    let trait_name = &tr.ident;
+
+    let trait_impl_name = ext_name.unwrap_or(trait_name);
+
+    let c_void = quote!(::core::ffi::c_void);
+
+    // Additional identifiers
+    let vtbl_ident = format_ident!("CGlueVtbl{}", trait_name);
+    let ret_tmp_ident = format_ident!("CGlueRetTmp{}", trait_name);
+    let ret_tmp_ident_phantom = format_ident!("CGlueRetTmpPhantom{}", trait_name);
+    let opaque_vtbl_ident = format_ident!("Opaque{}", vtbl_ident);
+    let trait_obj_ident = format_ident!("CGlueBase{}", trait_name);
+    let opaque_owned_trait_obj_ident = format_ident!("CGlueBox{}", trait_name);
+    let opaque_mut_trait_obj_ident = format_ident!("CGlueMut{}", trait_name);
+    let opaque_ref_trait_obj_ident = format_ident!("CGlueRef{}", trait_name);
+
+    let (funcs, generics, trait_type_defs) = parse_trait(tr, &crate_path);
+    let mut trait_type_bounds = TokenStream::new();
+
+    let ParsedGenerics {
+        life_declare,
+        life_use,
+        gen_declare,
+        gen_use,
+        gen_where_bounds,
+        ..
+    } = &generics;
+
     // Function definitions in the vtable
     let mut vtbl_func_defintions = TokenStream::new();
 
@@ -332,7 +365,8 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
     let mut cfuncs = TokenStream::new();
 
     for func in funcs.iter() {
-        func.cfunc_def(&mut cfuncs, &trg_path);
+        let extra_bounds = func.cfunc_def(&mut cfuncs, &trg_path);
+        trait_type_bounds.extend(extra_bounds.to_token_stream());
     }
 
     // Define wrapped temp storage
@@ -371,15 +405,18 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
     // Implement the trait for a type that has CGlueObj<OpaqueCGlueVtblT, RetTmp>
     let mut trait_impl_fns = TokenStream::new();
 
+    // TODO: clean this up
     let mut need_mut = false;
     let mut need_own = false;
     let mut need_cgluef = false;
+    let mut return_self = false;
 
     for func in &funcs {
-        let (nm, no) = func.trait_impl(&mut trait_impl_fns);
+        let (nm, no, rs) = func.trait_impl(&mut trait_impl_fns);
         need_mut = nm || need_mut;
         need_own = no || need_own;
         need_cgluef = !no || need_cgluef;
+        return_self = rs || return_self;
     }
 
     // If the trait has funcs with mutable self, disallow &CGlueF objects.
@@ -387,6 +424,12 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
         (_, true) => quote!(CGlueObjOwned),
         (true, _) => quote!(CGlueObjMut),
         _ => quote!(CGlueObjRef),
+    };
+
+    let return_self_bound = if return_self {
+        quote!(#trg_path::CGlueObjBuild<#ret_tmp_ident<#life_use #gen_use>>)
+    } else {
+        quote!()
     };
 
     let (cglue_t_bounds, cglue_t_bounds_opaque) = if need_own {
@@ -412,6 +455,24 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
         vtbl_phantom_def.extend(quote!(_phantom_f: ::core::marker::PhantomData<CGlueF>,));
         vtbl_phantom_init.extend(quote!(_phantom_f: ::core::marker::PhantomData{},));
     }
+
+    // If wrapping an external trait, generate an internal implementation for CGlueTraitObj
+
+    let internal_trait_impl = if let Some(ext_name) = ext_name {
+        let mut impls = TokenStream::new();
+
+        for func in &funcs {
+            func.int_trait_impl(None, ext_name, &mut impls);
+        }
+
+        quote! {
+            impl<T, V, S: Default> #trait_name for #trg_path::CGlueTraitObj<'_, T, V, S> where Self: #ext_name {
+                #impls
+            }
+        }
+    } else {
+        quote!()
+    };
 
     // Formatted documentation strings
     let vtbl_doc = format!(" CGlue vtable for trait {}.", trait_name);
@@ -545,9 +606,11 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
         /* Trait implementation. */
 
         /// Implement the traits for any CGlue object.
-        impl<#life_declare CGlueT #cglue_t_bounds_opaque, CGlueO: AsRef<#opaque_vtbl_ident<#life_use CGlueT, #gen_use>> + #trg_path::#required_mutability<#ret_tmp_ident<#life_use #gen_use>, ObjType = #c_void, ContType = CGlueT>, #gen_declare> #trait_name<#life_use #gen_use> for CGlueO where #gen_where_bounds {
+        impl<#life_declare CGlueT #cglue_t_bounds_opaque, CGlueO: AsRef<#opaque_vtbl_ident<#life_use CGlueT, #gen_use>> + #trg_path::#required_mutability<#ret_tmp_ident<#life_use #gen_use>, ObjType = #c_void, ContType = CGlueT> + #return_self_bound, #gen_declare> #trait_impl_name<#life_use #gen_use> for CGlueO where #gen_where_bounds {
             #trait_type_defs
             #trait_impl_fns
         }
+
+        #internal_trait_impl
     }
 }

@@ -3,6 +3,7 @@ use crate::util::*;
 use itertools::*;
 use proc_macro2::TokenStream;
 use quote::*;
+use std::collections::HashMap;
 use syn::parse::{Parse, ParseStream};
 use syn::*;
 
@@ -65,6 +66,7 @@ pub struct TraitGroup {
     generics: ParsedGenerics,
     mandatory_vtbl: Vec<TraitInfo>,
     optional_vtbl: Vec<TraitInfo>,
+    ext_traits: HashMap<Ident, (TokenStream, ItemTrait)>,
 }
 
 impl Parse for TraitGroup {
@@ -82,6 +84,14 @@ impl Parse for TraitGroup {
         input.parse::<Token![,]>()?;
         let optional_traits = parse_maybe_braced::<Path>(input)?;
 
+        let ext_trait_defs = if input.parse::<Token![,]>().is_ok() {
+            parse_maybe_braced::<ItemTrait>(input)?
+        } else {
+            vec![]
+        };
+
+        let mut ext_traits = HashMap::new();
+
         let mut mandatory_vtbl: Vec<TraitInfo> =
             mandatory_traits.into_iter().map(TraitInfo::from).collect();
         mandatory_vtbl.sort();
@@ -90,11 +100,32 @@ impl Parse for TraitGroup {
             optional_traits.into_iter().map(TraitInfo::from).collect();
         optional_vtbl.sort();
 
+        // Go through mand/opt vtbls and pick all external traits used out of there,
+        // and then pick add those trait definitions to the ext_traits list from both
+        // the input list, and the TODO standard trait collection.
+        for vtbl in mandatory_vtbl.iter_mut().chain(optional_vtbl.iter_mut()) {
+            let mut path_str = vtbl.path.to_string();
+            if !path_str.starts_with("ext ::") {
+                continue;
+            }
+            vtbl.path = path_str
+                .split_at_mut("ext ::".len())
+                .1
+                .parse::<TokenStream>()?;
+
+            if let Some(tr) = ext_trait_defs.iter().find(|tr| tr.ident == vtbl.ident) {
+                ext_traits.insert(tr.ident.clone(), (vtbl.path.clone(), tr.clone()));
+            }
+
+            // TODO: use standard store here
+        }
+
         Ok(Self {
             name,
             generics,
             mandatory_vtbl,
             optional_vtbl,
+            ext_traits,
         })
     }
 }
@@ -351,7 +382,6 @@ impl TraitGroup {
         let optional_vtbl_defs_boxed =
             self.optional_vtbl_defs(quote!(#crate_path::boxed::CBox<CGlueF>));
 
-        let mandatory_as_ref_impls = self.mandatory_as_ref_impls(&trg_path);
         let mand_vtbl_default = self.mandatory_vtbl_defaults();
         let mand_ret_tmp_default = self.mandatory_ret_tmp_defaults();
         let full_opt_ret_tmp_default = Self::ret_tmp_defaults(self.optional_vtbl.iter());
@@ -360,6 +390,15 @@ impl TraitGroup {
         let none_opt_vtbl_list = self.none_opt_vtbl_list();
         let mand_vtbl_list = self.vtbl_list(self.mandatory_vtbl.iter());
         let full_opt_vtbl_list = self.vtbl_list(self.optional_vtbl.iter());
+        let full_opt_vtbl_copy = self.vtbl_copy_list(self.optional_vtbl.iter());
+        let mandatory_as_ref_impls =
+            self.mandatory_as_ref_impls(&trg_path, &full_opt_vtbl_copy, &full_opt_ret_tmp_default);
+        let mandatory_internal_trait_impls = self.internal_trait_impls(
+            name,
+            self.mandatory_vtbl.iter(),
+            &self.generics,
+            &crate_path,
+        );
         let vtbl_where_bounds =
             Self::vtbl_where_bounds(self.mandatory_vtbl.iter(), quote!(CGlueT), quote!(CGlueF));
         let vtbl_where_bounds_boxed = Self::vtbl_where_bounds(
@@ -439,20 +478,48 @@ impl TraitGroup {
             let opt_vtbl_defs = self.mandatory_vtbl_defs(traits.iter().copied());
             let opt_mixed_vtbl_defs = self.mixed_opt_vtbl_defs(traits.iter().copied());
 
+            let opt_vtbl_list = self.vtbl_list(traits.iter().copied());
+            let opt_vtbl_copy = self.vtbl_copy_list(traits.iter().copied());
+            let opt_vtbl_unwrap = self.vtbl_unwrap_list(traits.iter().copied());
+            let opt_vtbl_unwrap_validate = self.vtbl_unwrap_validate(traits.iter().copied());
+            let opt_ret_tmp_list = Self::ret_tmp_list(traits.iter().copied());
+            let opt_ret_tmp_defaults = Self::ret_tmp_defaults(traits.iter().copied());
+            let opt_ret_tmp_defs = self.ret_tmp_defs(traits.iter().copied());
+
+            let mixed_opt_vtbl_unwrap = self.mixed_opt_vtbl_unwrap_list(traits.iter().copied());
+
+            let sub_generics = self.used_generics(traits.iter().copied());
+
             let opt_as_ref_impls = self.as_ref_impls(
                 &opt_name,
                 self.mandatory_vtbl.iter().chain(traits.iter().copied()),
                 &self.generics,
                 &trg_path,
+                &full_opt_vtbl_copy,
+                &full_opt_ret_tmp_default,
             );
 
-            let sub_generics = self.used_generics(traits.iter().copied());
+            let opt_internal_trait_impls = self.internal_trait_impls(
+                &opt_name,
+                self.mandatory_vtbl.iter().chain(traits.iter().copied()),
+                &self.generics,
+                &crate_path,
+            );
 
             let opt_final_as_ref_impls = self.as_ref_impls(
                 &opt_final_name,
                 self.mandatory_vtbl.iter().chain(traits.iter().copied()),
                 &sub_generics,
                 &trg_path,
+                &opt_vtbl_copy,
+                &opt_ret_tmp_defaults,
+            );
+
+            let opt_final_internal_trait_impls = self.internal_trait_impls(
+                &opt_final_name,
+                self.mandatory_vtbl.iter().chain(traits.iter().copied()),
+                &sub_generics,
+                &crate_path,
             );
 
             let ParsedGenerics {
@@ -463,14 +530,6 @@ impl TraitGroup {
                 gen_where_bounds: sub_where_bounds,
                 ..
             } = sub_generics;
-
-            let opt_vtbl_list = self.vtbl_list(traits.iter().copied());
-            let opt_vtbl_unwrap = self.vtbl_unwrap_list(traits.iter().copied());
-            let opt_vtbl_unwrap_validate = self.vtbl_unwrap_validate(traits.iter().copied());
-            let opt_ret_tmp_list = Self::ret_tmp_list(traits.iter().copied());
-            let opt_ret_tmp_defs = self.ret_tmp_defs(traits.iter().copied());
-
-            let mixed_opt_vtbl_unwrap = self.mixed_opt_vtbl_unwrap_list(traits.iter().copied());
 
             let impl_traits =
                 self.impl_traits(self.mandatory_vtbl.iter().chain(traits.iter().copied()));
@@ -509,6 +568,8 @@ impl TraitGroup {
 
                 #opt_final_as_ref_impls
 
+                #opt_final_internal_trait_impls
+
                 // Non-final implementation. Has the same layout as the base struct.
 
                 #[doc = #opt_doc]
@@ -534,6 +595,7 @@ impl TraitGroup {
 
                 #opt_as_ref_impls
 
+                #opt_internal_trait_impls
             });
 
             let func_final_doc1 = format!(
@@ -850,8 +912,59 @@ impl TraitGroup {
 
             #mandatory_as_ref_impls
 
+            #mandatory_internal_trait_impls
+
             #opt_structs
         }
+    }
+
+    fn internal_trait_impls<'a>(
+        &'a self,
+        self_ident: &Ident,
+        iter: impl Iterator<Item = &'a TraitInfo>,
+        all_generics: &ParsedGenerics,
+        crate_path: &TokenStream,
+    ) -> TokenStream {
+        let mut ret = TokenStream::new();
+
+        let ParsedGenerics {
+            life_use, gen_use, ..
+        } = all_generics;
+
+        for TraitInfo {
+            path,
+            ident,
+            generics:
+                ParsedGenerics {
+                    life_use: tr_life_use,
+                    gen_use: tr_gen_use,
+                    ..
+                },
+            ..
+        } in iter
+        {
+            if let Some((ext_path, tr_info)) = self.ext_traits.get(&ident) {
+                let mut impls = TokenStream::new();
+
+                let ext_name = format_ident!("Ext{}", ident);
+
+                let (funcs, _, _) = super::traits::parse_trait(tr_info, crate_path);
+
+                for func in &funcs {
+                    func.int_trait_impl(Some(&ext_path), &ext_name, &mut impls);
+                }
+
+                let gen = quote! {
+                    impl<'cglue_a, #life_use CGlueT, CGlueF, #gen_use> #path #ident <#tr_life_use #tr_gen_use> for #self_ident<'cglue_a, #life_use CGlueT, CGlueF, #gen_use> where Self: #ext_path #ext_name {
+                        #impls
+                    }
+                };
+
+                ret.extend(gen);
+            }
+        }
+
+        ret
     }
 
     /// Used generics by the vtable group.
@@ -1023,17 +1136,24 @@ impl TraitGroup {
         ret
     }
 
-    /// `AsRef<Vtable>`, `CGlueObjRef<RetTmp>`, `CGlueObjOwned<RetTmp>`, and `CGlueObjMut<T, RetTmp>` implementations for mandatory vtables.
-    fn mandatory_as_ref_impls(&self, trg_path: &TokenStream) -> TokenStream {
+    /// `AsRef<Vtable>`, `CGlueObjRef<RetTmp>`, `CGlueObjOwned<RetTmp>`, `CGlueObjBuild<RetTmp>`, and `CGlueObjMut<T, RetTmp>` implementations for mandatory vtables.
+    fn mandatory_as_ref_impls(
+        &self,
+        trg_path: &TokenStream,
+        opt_vtbl_copy: &TokenStream,
+        opt_ret_tmp_default: &TokenStream,
+    ) -> TokenStream {
         self.as_ref_impls(
             &self.name,
             self.mandatory_vtbl.iter(),
             &self.generics,
             trg_path,
+            opt_vtbl_copy,
+            opt_ret_tmp_default,
         )
     }
 
-    /// `AsRef<Vtable>`, `CGlueObjRef<RetTmp>`, `CGlueObjOwned<RetTmp>`, and `CGlueObjMut<T, RetTmp>` implementations for arbitrary type and list of tables.
+    /// `AsRef<Vtable>`, `CGlueObjRef<RetTmp>`, `CGlueObjOwned<RetTmp>`, `CGlueObjBuild<RetTmp>`, and `CGlueObjMut<T, RetTmp>` implementations for arbitrary type and list of tables.
     ///
     /// # Arguments
     ///
@@ -1045,6 +1165,8 @@ impl TraitGroup {
         traits: impl Iterator<Item = &'a TraitInfo>,
         all_generics: &ParsedGenerics,
         trg_path: &TokenStream,
+        opt_vtbl_copy: &TokenStream,
+        opt_ret_tmp_default: &TokenStream,
     ) -> TokenStream {
         let mut ret = TokenStream::new();
 
@@ -1053,6 +1175,9 @@ impl TraitGroup {
         let all_life_use = &all_generics.life_use;
         let all_gen_use = &all_generics.gen_use;
         let all_gen_where_bounds = &all_generics.gen_where_bounds;
+
+        let mand_vtbl_copy = self.vtbl_copy_list(self.mandatory_vtbl.iter());
+        let mand_ret_tmp_default = self.mandatory_ret_tmp_defaults();
 
         for TraitInfo {
             vtbl_name,
@@ -1086,11 +1211,25 @@ impl TraitGroup {
                     }
                 }
 
-                impl<#all_life_declare CGlueT: ::core::ops::Deref<Target = CGlueF> + , CGlueF, #all_gen_declare>
+                impl<#all_life_declare CGlueT: ::core::ops::Deref<Target = CGlueF> , CGlueF, #all_gen_declare>
                     #trg_path::CGlueObjOwned<#path #ret_tmp_typename<#life_use #gen_use>> for #name<'_, #all_life_use CGlueT, CGlueF, #all_gen_use> where #all_gen_where_bounds
                 {
                     fn cobj_owned(self) -> CGlueT {
                         self.instance
+                    }
+                }
+
+                impl<#all_life_declare CGlueT: ::core::ops::Deref<Target = CGlueF> , CGlueF, #all_gen_declare>
+                    #trg_path::CGlueObjBuild<#path #ret_tmp_typename<#life_use #gen_use>> for #name<'_, #all_life_use CGlueT, CGlueF, #all_gen_use> where #all_gen_where_bounds
+                {
+                    unsafe fn cobj_build(&self, instance: Self::ContType) -> Self {
+                        Self {
+                            instance,
+                            #mand_vtbl_copy
+                            #opt_vtbl_copy
+                            #mand_ret_tmp_default
+                            #opt_ret_tmp_default
+                        }
                     }
                 }
 
@@ -1164,6 +1303,17 @@ impl TraitGroup {
 
         for TraitInfo { vtbl_name, .. } in iter {
             ret.extend(quote!(#vtbl_name,));
+        }
+
+        ret
+    }
+
+    /// Copy vtables from self
+    fn vtbl_copy_list<'a>(&'a self, iter: impl Iterator<Item = &'a TraitInfo>) -> TokenStream {
+        let mut ret = TokenStream::new();
+
+        for TraitInfo { vtbl_name, .. } in iter {
+            ret.extend(quote!(#vtbl_name: self.#vtbl_name,));
         }
 
         ret

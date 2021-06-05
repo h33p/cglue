@@ -137,6 +137,11 @@ where
     }
 }
 
+pub trait CGlueObjBase {
+    type ObjType;
+    type ContType: ::core::ops::Deref<Target = Self::ObjType>;
+}
+
 /// CGlue compatible object.
 ///
 /// This trait allows to retrieve the constant `this` pointer on the structure.
@@ -166,6 +171,26 @@ impl<T: Deref<Target = F> + DerefMut + IntoInner<InnerTarget = F>, F, V, S> CGlu
 {
     fn cobj_owned(self) -> T {
         self.instance
+    }
+}
+
+pub trait CGlueObjBuild<S>: CGlueObjRef<S> {
+    /// Construct an object from self vtables and a new object
+    ///
+    /// # Safety
+    ///
+    /// It is imporant to make sure `new` uses the same type as the one in the self instance,
+    /// because otherwise wrong functions will be invoked.
+    unsafe fn cobj_build(&self, new: Self::ContType) -> Self;
+}
+
+impl<T: Deref<Target = F>, F, V, S: Default> CGlueObjBuild<S> for CGlueTraitObj<'_, T, V, S> {
+    unsafe fn cobj_build(&self, instance: Self::ContType) -> Self {
+        Self {
+            instance,
+            vtbl: self.vtbl,
+            ret_tmp: Default::default(),
+        }
     }
 }
 

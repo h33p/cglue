@@ -1,7 +1,9 @@
 use super::trait_defs::*;
 use cglue_macro::*;
 
+#[derive(Clone, Copy)]
 pub struct SA {}
+#[derive(Clone, Copy)]
 pub struct SB {}
 
 impl TA for SA {
@@ -25,8 +27,6 @@ impl TB for SB {
         val * val
     }
 }
-
-cglue_impl_group!(SB, super::trait_groups::TestGroup, { TB });
 
 impl TC for SA {
     fn tc_1(&self) {}
