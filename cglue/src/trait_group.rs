@@ -99,15 +99,18 @@ impl<T, V, S> AsRef<V> for CGlueTraitObj<'_, T, V, S> {
     }
 }
 
-impl<T: Deref<Target = F>, F, V, S> CGlueObjRef<F, S> for CGlueTraitObj<'_, T, V, S> {
+impl<T: Deref<Target = F>, F, V, S> CGlueObjRef<S> for CGlueTraitObj<'_, T, V, S> {
+    type ObjType = F;
+    type ContType = T;
+
     fn cobj_ref(&self) -> (&F, &S) {
-        (self.instance.deref(), &self.ret_tmp)
+        (&self.instance, &self.ret_tmp)
     }
 }
 
-impl<T: Deref<Target = F> + DerefMut, F, V, S> CGlueObjMut<F, S> for CGlueTraitObj<'_, T, V, S> {
+impl<T: Deref<Target = F> + DerefMut, F, V, S> CGlueObjMut<S> for CGlueTraitObj<'_, T, V, S> {
     fn cobj_mut(&mut self) -> (&mut F, &mut S) {
-        (self.instance.deref_mut(), &mut self.ret_tmp)
+        (&mut self.instance, &mut self.ret_tmp)
     }
 }
 
@@ -137,15 +140,47 @@ where
 /// CGlue compatible object.
 ///
 /// This trait allows to retrieve the constant `this` pointer on the structure.
-pub trait CGlueObjRef<T, S> {
-    fn cobj_ref(&self) -> (&T, &S);
+pub trait CGlueObjRef<S> {
+    type ObjType;
+    type ContType: ::core::ops::Deref<Target = Self::ObjType>;
+
+    fn cobj_ref(&self) -> (&Self::ObjType, &S);
 }
 
 /// CGlue compatible object.
 ///
 /// This trait allows to retrieve the mutable `this` pointer on the structure.
-pub trait CGlueObjMut<T, S>: CGlueObjRef<T, S> {
-    fn cobj_mut(&mut self) -> (&mut T, &mut S);
+pub trait CGlueObjMut<S>: CGlueObjRef<S> {
+    fn cobj_mut(&mut self) -> (&mut Self::ObjType, &mut S);
+}
+
+/// CGlue compatible object.
+///
+/// This trait allows to retrieve the container of the `this` object on the structure.
+pub trait CGlueObjOwned<S>: CGlueObjRef<S> {
+    fn cobj_owned(self) -> Self::ContType;
+}
+
+impl<T: Deref<Target = F> + DerefMut + IntoInner<InnerTarget = F>, F, V, S> CGlueObjOwned<S>
+    for CGlueTraitObj<'_, T, V, S>
+{
+    fn cobj_owned(self) -> T {
+        self.instance
+    }
+}
+
+/// Convert a container into inner type.
+pub trait IntoInner {
+    type InnerTarget;
+
+    /// Consume self and return inner type.
+    ///
+    /// # Safety
+    ///
+    /// It might be unsafe to invoke this method if the container has an opaque type, or is on
+    /// the wrong side of FFI. CGlue code generator guards against these problems, but it is
+    /// important to consider them when working manually with this trait.
+    unsafe fn into_inner(self) -> Self::InnerTarget;
 }
 
 /// Trait for CGlue vtables.

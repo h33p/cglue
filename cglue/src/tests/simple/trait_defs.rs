@@ -16,3 +16,6 @@ pub trait TC {
     fn tc_1(&self);
     extern "C" fn tc_2(&mut self);
 }
+
+#[cglue_trait]
+pub trait TE {}

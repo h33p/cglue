@@ -89,11 +89,19 @@ impl TraitArg {
                     r.lifetime().to_token_stream()
                 };
 
-                if r.mutability.is_some() {
+                if r.reference.is_none() {
+                    (
+                        quote!(let this = self.cobj_owned();),
+                        quote!(this,),
+                        quote!(this: CGlueT,),
+                        quote!(),
+                        false,
+                    )
+                } else if r.mutability.is_some() {
                     (
                         quote!(let (this, ret_tmp) = self.cobj_mut();),
                         quote!(this,),
-                        quote!(this: &#lifetime mut CGlueT,),
+                        quote!(this: &#lifetime mut CGlueF,),
                         quote!(),
                         true,
                     )
@@ -101,7 +109,7 @@ impl TraitArg {
                     (
                         quote!(let (this, ret_tmp) = self.cobj_ref();),
                         quote!(this,),
-                        quote!(this: &#lifetime CGlueT,),
+                        quote!(this: &#lifetime CGlueF,),
                         quote!(),
                         true,
                     )
@@ -422,7 +430,7 @@ impl ParsedFunc {
     /// Create a wrapper implementation body for this function
     ///
     /// If the function is ReprC already, it will not be wrapped and will return `None`
-    pub fn cfunc_def(&self, tokens: &mut TokenStream) {
+    pub fn cfunc_def(&self, tokens: &mut TokenStream, trg_path: &TokenStream) {
         if !self.is_wrapped() {
             return;
         }
@@ -458,9 +466,18 @@ impl ParsedFunc {
             ..
         } = &self.generics;
 
+        let (consuming_bound, this) = if self.receiver.reference.is_none() {
+            (
+                quote!(CGlueT: #trg_path::IntoInner<InnerTarget = CGlueF>,),
+                quote!(unsafe { this.into_inner() }),
+            )
+        } else {
+            (quote!(), quote!(this))
+        };
+
         let gen = quote! {
-            #safety extern "C" fn #fnname<#tmp_lifetime #life_declare CGlueT: #trname<#life_use #gen_use>, #gen_declare>(#args #c_ret_params) #c_out where #gen_where_bounds #c_where_bounds {
-                let ret = this.#name(#call_args);
+            #safety extern "C" fn #fnname<#tmp_lifetime #life_declare #consuming_bound CGlueF: #trname<#life_use #gen_use>, #gen_declare>(#args #c_ret_params) #c_out where #gen_where_bounds #c_where_bounds {
+                let ret = #this.#name(#call_args);
                 #c_ret
             }
         };
@@ -474,7 +491,7 @@ impl ParsedFunc {
         let fnname: TokenStream = if self.is_wrapped() {
             format!("{}{}", FN_PREFIX, name)
         } else {
-            format!("CGlueT::{}", name)
+            format!("CGlueF::{}", name)
         }
         .parse()
         .unwrap();
@@ -490,7 +507,7 @@ impl ParsedFunc {
         }
     }
 
-    pub fn trait_impl(&self, tokens: &mut TokenStream) -> bool {
+    pub fn trait_impl(&self, tokens: &mut TokenStream) -> (bool, bool) {
         let name = &self.name;
         let args = self.trait_args();
         let ParsedReturnType {
@@ -518,7 +535,10 @@ impl ParsedFunc {
 
         tokens.extend(gen);
 
-        self.receiver.mutability.is_some()
+        (
+            self.receiver.mutability.is_some(),
+            self.receiver.reference.is_none(),
+        )
     }
 }
 
@@ -633,7 +653,7 @@ impl ParsedReturnType {
                     };
 
                     let where_bound = match lifetime_bound {
-                        Some(bound) => quote!(CGlueT::#trait_ty: #bound, #other_bounds),
+                        Some(bound) => quote!(CGlueF::#trait_ty: #bound, #other_bounds),
                         _ => quote!(#other_bounds),
                     };
 

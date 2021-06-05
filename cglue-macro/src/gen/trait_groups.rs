@@ -172,13 +172,16 @@ impl TraitGroupImpl {
         let vtable_type = format_ident!("{}Vtables", group);
 
         let implemented_tables = TraitGroup::enable_opt_vtbls(self.implemented_vtbl.iter());
-        let vtbl_where_bounds =
-            TraitGroup::vtbl_where_bounds(self.implemented_vtbl.iter(), quote!(Self));
+        let vtbl_where_bounds = TraitGroup::vtbl_where_bounds(
+            self.implemented_vtbl.iter(),
+            quote!(CGlueT),
+            quote!(#path),
+        );
 
         quote! {
-            impl<'cglue_a, #life_declare #gen_declare> #group_path #filler_trait<'cglue_a, #life_use #gen_use> for #path
+            impl<'cglue_a, #life_declare CGlueT: ::core::ops::Deref<Target = #path>, #gen_declare> #group_path #filler_trait<'cglue_a, #life_use #path, #gen_use> for CGlueT
             where #gen_where_bounds #vtbl_where_bounds {
-                fn fill_table(table: #group_path #vtable_type<'cglue_a, #life_use Self, #gen_use>) -> #group_path #vtable_type<'cglue_a, #life_use Self, #gen_use> {
+                fn fill_table(table: #group_path #vtable_type<'cglue_a, #life_use CGlueT, #path, #gen_use>) -> #group_path #vtable_type<'cglue_a, #life_use CGlueT, #path, #gen_use> {
                     table #implemented_tables
                 }
             }
@@ -344,7 +347,9 @@ impl TraitGroup {
         } = &self.generics;
 
         let mandatory_vtbl_defs = self.mandatory_vtbl_defs(self.mandatory_vtbl.iter());
-        let optional_vtbl_defs = self.optional_vtbl_defs();
+        let optional_vtbl_defs = self.optional_vtbl_defs(quote!(CGlueT));
+        let optional_vtbl_defs_boxed =
+            self.optional_vtbl_defs(quote!(#crate_path::boxed::CBox<CGlueF>));
 
         let mandatory_as_ref_impls = self.mandatory_as_ref_impls(&trg_path);
         let mand_vtbl_default = self.mandatory_vtbl_defaults();
@@ -355,7 +360,13 @@ impl TraitGroup {
         let none_opt_vtbl_list = self.none_opt_vtbl_list();
         let mand_vtbl_list = self.vtbl_list(self.mandatory_vtbl.iter());
         let full_opt_vtbl_list = self.vtbl_list(self.optional_vtbl.iter());
-        let vtbl_where_bounds = Self::vtbl_where_bounds(self.mandatory_vtbl.iter(), quote!(CGlueF));
+        let vtbl_where_bounds =
+            Self::vtbl_where_bounds(self.mandatory_vtbl.iter(), quote!(CGlueT), quote!(CGlueF));
+        let vtbl_where_bounds_boxed = Self::vtbl_where_bounds(
+            self.mandatory_vtbl.iter(),
+            quote!(#crate_path::boxed::CBox<CGlueF>),
+            quote!(CGlueF),
+        );
         let ret_tmp_defs = self.ret_tmp_defs(self.optional_vtbl.iter());
 
         let mut enable_funcs = TokenStream::new();
@@ -372,7 +383,7 @@ impl TraitGroup {
         {
             enable_funcs.extend(quote! {
                 pub fn #enable_vtbl_name (self) -> Self
-                    where &'cglue_a #vtbl_typename<#life_use CGlueF, #gen_use>: Default {
+                    where &'cglue_a #vtbl_typename<#life_use CGlueT, CGlueF, #gen_use>: Default {
                     Self {
                         #vtbl_name: Some(Default::default()),
                         ..self
@@ -726,12 +737,12 @@ impl TraitGroup {
             }
 
             #[repr(C)]
-            pub struct #vtable_type<'cglue_a, #life_declare CGlueF, #gen_declare> where #gen_where_bounds {
+            pub struct #vtable_type<'cglue_a, #life_declare CGlueT, CGlueF, #gen_declare> where #gen_where_bounds {
                 #mandatory_vtbl_defs
                 #optional_vtbl_defs
             }
 
-            impl<'cglue_a, #life_declare CGlueF, #gen_declare> Default for #vtable_type<'cglue_a, #life_use CGlueF, #gen_use>
+            impl<'cglue_a, #life_declare CGlueT, CGlueF, #gen_declare> Default for #vtable_type<'cglue_a, #life_use CGlueT, CGlueF, #gen_use>
                 where #vtbl_where_bounds #gen_where_bounds
             {
                 fn default() -> Self {
@@ -742,13 +753,13 @@ impl TraitGroup {
                 }
             }
 
-            impl<'cglue_a, #life_declare CGlueF, #gen_declare> #vtable_type<'cglue_a, #life_use CGlueF, #gen_use>
+            impl<'cglue_a, #life_declare CGlueT: ::core::ops::Deref<Target = CGlueF>, CGlueF, #gen_declare> #vtable_type<'cglue_a, #life_use CGlueT, CGlueF, #gen_use>
                 where #gen_where_bounds {
                 #enable_funcs
             }
 
-            pub trait #filler_trait<'cglue_a, #life_declare #gen_declare>: Sized where #gen_where_bounds {
-                fn fill_table(table: #vtable_type<'cglue_a, #life_use Self, #gen_use>) -> #vtable_type<'cglue_a, #life_use Self, #gen_use>;
+            pub trait #filler_trait<'cglue_a, #life_declare CGlueF, #gen_declare>: Sized + ::core::ops::Deref<Target = CGlueF> where #gen_where_bounds {
+                fn fill_table(table: #vtable_type<'cglue_a, #life_use Self, Self::Target, #gen_use>) -> #vtable_type<'cglue_a, #life_use Self, Self::Target, #gen_use>;
             }
 
             pub type #opaque_name<'cglue_a, #life_use CGlueT: ::core::ops::Deref<Target = #c_void>, #gen_use> = #name<'cglue_a, #life_use CGlueT, CGlueT::Target, #gen_use>;
@@ -756,7 +767,7 @@ impl TraitGroup {
             pub type #opaque_name_mut<'cglue_a, #life_use #gen_use> = #name<'cglue_a, #life_use &'cglue_a mut #c_void, #c_void, #gen_use>;
             pub type #opaque_name_boxed<'cglue_a, #life_use #gen_use> = #name<'cglue_a, #life_use #crate_path::boxed::CBox<#c_void>, #c_void, #gen_use>;
 
-            impl<'cglue_a, #life_declare CGlueT: ::core::ops::Deref<Target = CGlueF>, CGlueF: #filler_trait<'cglue_a, #life_use #gen_use>, #gen_declare> From<CGlueT> for #name<'cglue_a, #life_use CGlueT, CGlueF, #gen_use>
+            impl<'cglue_a, #life_declare CGlueT: ::core::ops::Deref<Target = CGlueF> + #filler_trait<'cglue_a, #life_use CGlueF, #gen_use>, CGlueF, #gen_declare> From<CGlueT> for #name<'cglue_a, #life_use CGlueT, CGlueF, #gen_use>
                 where #vtbl_where_bounds #gen_where_bounds
             {
                 fn from(instance: CGlueT) -> Self {
@@ -777,8 +788,8 @@ impl TraitGroup {
                 }
             }
 
-            impl<'cglue_a, #life_declare CGlueF: #filler_trait<'cglue_a, #life_use #gen_use>, #gen_declare> From<CGlueF> for #name<'cglue_a, #life_use #crate_path::boxed::CBox<CGlueF>, CGlueF, #gen_use>
-                where #vtbl_where_bounds #gen_where_bounds
+            impl<'cglue_a, #life_declare CGlueF, #gen_declare> From<CGlueF> for #name<'cglue_a, #life_use #crate_path::boxed::CBox<CGlueF>, CGlueF, #gen_use>
+                where #crate_path::boxed::CBox<CGlueF>: #filler_trait<'cglue_a, #life_use CGlueF, #gen_use>, #vtbl_where_bounds_boxed #gen_where_bounds
             {
                 fn from(instance: CGlueF) -> Self {
                     #name::from(#crate_path::boxed::CBox::from(instance))
@@ -809,8 +820,8 @@ impl TraitGroup {
                 #[doc = #new_doc]
                 ///
                 /// `instance` will be moved onto heap.
-                pub fn new_boxed(instance: CGlueF, #optional_vtbl_defs) -> Self
-                    where #vtbl_where_bounds
+                pub fn new_boxed(instance: CGlueF, #optional_vtbl_defs_boxed) -> Self
+                    where #vtbl_where_bounds_boxed
                 {
                     Self {
                         instance: From::from(instance),
@@ -882,7 +893,7 @@ impl TraitGroup {
         } in iter
         {
             ret.extend(
-                quote!(#vtbl_name: &'cglue_a #path #vtbl_typename<#life_use CGlueF, #gen_use>, ),
+                quote!(#vtbl_name: &'cglue_a #path #vtbl_typename<#life_use CGlueT, CGlueF, #gen_use>, ),
             );
         }
 
@@ -924,7 +935,7 @@ impl TraitGroup {
     /// Optional and vtable definitions.
     ///
     /// Optional means they are of type `Option<&'cglue_a VTable>`.
-    fn optional_vtbl_defs(&self) -> TokenStream {
+    fn optional_vtbl_defs(&self, container_ident: TokenStream) -> TokenStream {
         let mut ret = TokenStream::new();
 
         for TraitInfo {
@@ -938,7 +949,7 @@ impl TraitGroup {
         } in &self.optional_vtbl
         {
             ret.extend(
-                quote!(#vtbl_name: ::core::option::Option<&'cglue_a #path #vtbl_typename<#life_use CGlueF, #gen_use>>, ),
+                quote!(#vtbl_name: ::core::option::Option<&'cglue_a #path #vtbl_typename<#life_use #container_ident, CGlueF, #gen_use>>, ),
             );
         }
 
@@ -1000,10 +1011,10 @@ impl TraitGroup {
         }) {
             let def = match mandatory {
                 true => {
-                    quote!(#vtbl_name: &'cglue_a #path #vtbl_typename<#life_use CGlueF, #gen_use>, )
+                    quote!(#vtbl_name: &'cglue_a #path #vtbl_typename<#life_use CGlueT, CGlueF, #gen_use>, )
                 }
                 false => {
-                    quote!(#vtbl_name: ::core::option::Option<&'cglue_a #path #vtbl_typename<#life_use CGlueF, #gen_use>>, )
+                    quote!(#vtbl_name: ::core::option::Option<&'cglue_a #path #vtbl_typename<#life_use CGlueT, CGlueF, #gen_use>>, )
                 }
             };
             ret.extend(def);
@@ -1012,7 +1023,7 @@ impl TraitGroup {
         ret
     }
 
-    /// `AsRef<Vtable>`, `CGlueObjRef<T, RetTmp>`, and `CGlueObjMut<T, RetTmp>` implementations for mandatory vtables.
+    /// `AsRef<Vtable>`, `CGlueObjRef<RetTmp>`, `CGlueObjOwned<RetTmp>`, and `CGlueObjMut<T, RetTmp>` implementations for mandatory vtables.
     fn mandatory_as_ref_impls(&self, trg_path: &TokenStream) -> TokenStream {
         self.as_ref_impls(
             &self.name,
@@ -1022,7 +1033,7 @@ impl TraitGroup {
         )
     }
 
-    /// `AsRef<Vtable>`, `CGlueObjRef<T, RetTmp>`, and `CGlueObjMut<T, RetTmp>` implementations for arbitrary type and list of tables.
+    /// `AsRef<Vtable>`, `CGlueObjRef<RetTmp>`, `CGlueObjOwned<RetTmp>`, and `CGlueObjMut<T, RetTmp>` implementations for arbitrary type and list of tables.
     ///
     /// # Arguments
     ///
@@ -1057,26 +1068,37 @@ impl TraitGroup {
         {
             ret.extend(quote! {
                 impl<#all_life_declare CGlueT: ::core::ops::Deref<Target = CGlueF>, CGlueF, #all_gen_declare>
-                    #trg_path::CGlueObjRef<CGlueF, #path #ret_tmp_typename<#life_use #gen_use>> for #name<'_, #all_life_use CGlueT, CGlueF, #all_gen_use> where #all_gen_where_bounds
+                    #trg_path::CGlueObjRef<#path #ret_tmp_typename<#life_use #gen_use>> for #name<'_, #all_life_use CGlueT, CGlueF, #all_gen_use> where #all_gen_where_bounds
                 {
+                    type ObjType = CGlueF;
+                    type ContType = CGlueT;
+
                     fn cobj_ref(&self) -> (&CGlueF, &#path #ret_tmp_typename<#life_use #gen_use>) {
                         (self.instance.deref(), &self.#ret_tmp_name)
                     }
                 }
 
                 impl<#all_life_declare CGlueT: ::core::ops::Deref<Target = CGlueF> + ::core::ops::DerefMut, CGlueF, #all_gen_declare>
-                    #trg_path::CGlueObjMut<CGlueF, #path #ret_tmp_typename<#life_use #gen_use>> for #name<'_, #all_life_use CGlueT, CGlueF, #all_gen_use> where #all_gen_where_bounds
+                    #trg_path::CGlueObjMut<#path #ret_tmp_typename<#life_use #gen_use>> for #name<'_, #all_life_use CGlueT, CGlueF, #all_gen_use> where #all_gen_where_bounds
                 {
                     fn cobj_mut(&mut self) -> (&mut CGlueF, &mut #path #ret_tmp_typename<#life_use #gen_use>) {
                         (self.instance.deref_mut(), &mut self.#ret_tmp_name)
                     }
                 }
 
-                impl<#all_life_declare CGlueT, CGlueF, #all_gen_declare> AsRef<#path #vtbl_typename<#life_use CGlueF, #gen_use>>
+                impl<#all_life_declare CGlueT: ::core::ops::Deref<Target = CGlueF> + , CGlueF, #all_gen_declare>
+                    #trg_path::CGlueObjOwned<#path #ret_tmp_typename<#life_use #gen_use>> for #name<'_, #all_life_use CGlueT, CGlueF, #all_gen_use> where #all_gen_where_bounds
+                {
+                    fn cobj_owned(self) -> CGlueT {
+                        self.instance
+                    }
+                }
+
+                impl<#all_life_declare CGlueT, CGlueF, #all_gen_declare> AsRef<#path #vtbl_typename<#life_use CGlueT, CGlueF, #gen_use>>
                     for #name<'_, #all_life_use CGlueT, CGlueF, #all_gen_use>
                     where #all_gen_where_bounds
                 {
-                    fn as_ref(&self) -> &#path #vtbl_typename<#life_use CGlueF, #gen_use> {
+                    fn as_ref(&self) -> &#path #vtbl_typename<#life_use CGlueT, CGlueF, #gen_use> {
                         &self.#vtbl_name
                     }
                 }
@@ -1217,6 +1239,7 @@ impl TraitGroup {
     /// Bind `Default` to mandatory vtables.
     pub fn vtbl_where_bounds<'a>(
         iter: impl Iterator<Item = &'a TraitInfo>,
+        container_ident: TokenStream,
         this_ident: TokenStream,
     ) -> TokenStream {
         let mut ret = TokenStream::new();
@@ -1230,7 +1253,7 @@ impl TraitGroup {
             ..
         } in iter
         {
-            ret.extend(quote!(&'cglue_a #path #vtbl_typename<#life_use #this_ident, #gen_use>: 'cglue_a + Default,));
+            ret.extend(quote!(&'cglue_a #path #vtbl_typename<#life_use #container_ident, #this_ident, #gen_use>: 'cglue_a + Default,));
         }
 
         ret

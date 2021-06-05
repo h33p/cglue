@@ -55,6 +55,11 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
         ident: format_ident!("static"),
     };
 
+    let cglue_c_lifetime = Lifetime {
+        apostrophe: proc_macro2::Span::call_site(),
+        ident: format_ident!("cglue_c"),
+    };
+
     // Parse all functions in the trait
     for item in &tr.items {
         match item {
@@ -128,22 +133,46 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
                                     .to_token_stream();
                             }
 
+                            // These variables model a `SomeGroup: From<CGlueF::#ty_ident>` bound.
+                            let mut from_new_ty_hrtb = None;
+                            let mut from_new_ty = new_ty.clone();
+                            let mut from_new_ty_ref = TokenStream::new();
+
                             let lifetime = lifetime_bound.unwrap_or(&static_lifetime);
 
                             // Insert the object lifetime at the start
                             new_ty.push_lifetime_start(lifetime);
 
+                            let from_lifetime =
+                                if x == "wrap_with_group" || lifetime != &static_lifetime {
+                                    lifetime
+                                } else {
+                                    from_new_ty_hrtb = Some(quote!(for<'cglue_c>));
+                                    &cglue_c_lifetime
+                                };
+
+                            from_new_ty.push_lifetime_start(from_lifetime);
+
+                            let ty_ident = &ty.ident;
+
                             if x == "wrap_with_group" {
                                 new_ty.push_types_start(
                                     quote!(#crate_path::boxed::CBox<#c_void>, #c_void,),
                                 );
+                                from_new_ty.push_types_start(
+                                    quote!(#crate_path::boxed::CBox<CGlueF::#ty_ident>, CGlueF::#ty_ident,),
+                                );
                             } else if x == "wrap_with_group_ref" {
                                 new_ty.push_types_start(quote!(&#lifetime #c_void, #c_void,));
+                                from_new_ty.push_types_start(
+                                    quote!(&#from_lifetime CGlueF::#ty_ident, CGlueF::#ty_ident,),
+                                );
+                                from_new_ty_ref.extend(quote!(&#from_lifetime));
                             } else if x == "wrap_with_group_mut" {
                                 new_ty.push_types_start(quote!(&#lifetime mut #c_void, #c_void,));
+                                from_new_ty.push_types_start(quote!(&#from_lifetime mut CGlueF::#ty_ident, CGlueF::#ty_ident,));
+                                from_new_ty_ref.extend(quote!(&#from_lifetime mut));
                             }
-
-                            let ty_ident = &ty.ident;
 
                             trait_type_defs.extend(quote!(type #ty_ident = #new_ty;));
 
@@ -154,22 +183,13 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
                             ]
                             .contains(&x)
                             {
-                                trait_type_bounds.extend(quote!(CGlueT::#ty_ident: #lifetime, ));
+                                trait_type_bounds.extend(quote!(CGlueF::#ty_ident: #lifetime, ));
                                 None
                             } else {
-                                let filler_trait =
-                                    format_ident!("{}VtableFiller", new_ty.target.to_string());
-
-                                let path = &new_ty.path;
-
-                                let type_bounds = if life_use.is_empty() {
-                                    quote!(CGlueT::#ty_ident: #path #filler_trait<#lifetime, #gen_use>,)
-                                } else {
-                                    quote!(CGlueT::#ty_ident: #path #filler_trait<#life_use #gen_use>,)
-                                };
+                                let type_bounds = quote!(#from_new_ty_hrtb #from_new_ty: From<#from_new_ty_ref CGlueF::#ty_ident>,);
 
                                 trait_type_bounds
-                                    .extend(quote!(CGlueT::#ty_ident: #lifetime, #type_bounds));
+                                    .extend(quote!(CGlueF::#ty_ident: #lifetime, #type_bounds));
 
                                 Some(type_bounds)
                             };
@@ -311,7 +331,7 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
     let mut cfuncs = TokenStream::new();
 
     for func in funcs.iter() {
-        func.cfunc_def(&mut cfuncs);
+        func.cfunc_def(&mut cfuncs, &trg_path);
     }
 
     // Define wrapped temp storage
@@ -345,16 +365,46 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
     let mut trait_impl_fns = TokenStream::new();
 
     let mut need_mut = false;
+    let mut need_own = false;
+    let mut need_cgluef = false;
 
     for func in &funcs {
-        need_mut = func.trait_impl(&mut trait_impl_fns) || need_mut;
+        let (nm, no) = func.trait_impl(&mut trait_impl_fns);
+        need_mut = nm || need_mut;
+        need_own = no || need_own;
+        need_cgluef = !no || need_cgluef;
     }
 
-    // If the trait has funcs with mutable self, disallow &CGlueT objects.
-    let required_mutability = match need_mut {
-        true => quote!(CGlueObjMut),
+    // If the trait has funcs with mutable self, disallow &CGlueF objects.
+    let required_mutability = match (need_mut, need_own) {
+        (_, true) => quote!(CGlueObjOwned),
+        (true, _) => quote!(CGlueObjMut),
         _ => quote!(CGlueObjRef),
     };
+
+    let (cglue_t_bounds, cglue_t_bounds_opaque) = if need_own {
+        (
+            quote!(: ::core::ops::Deref<Target = CGlueF> + #trg_path::IntoInner<InnerTarget = CGlueF>),
+            quote!(: ::core::ops::Deref<Target = #c_void> + #trg_path::IntoInner),
+        )
+    } else {
+        (quote!(), quote!())
+    };
+
+    // Inject phantom data depending on what kind of Self parameters are not being used.
+
+    let mut vtbl_phantom_def = TokenStream::new();
+    let mut vtbl_phantom_init = TokenStream::new();
+
+    if !need_own {
+        vtbl_phantom_def.extend(quote!(_phantom_t: ::core::marker::PhantomData<CGlueT>,));
+        vtbl_phantom_init.extend(quote!(_phantom_t: ::core::marker::PhantomData{},));
+    }
+
+    if !need_cgluef {
+        vtbl_phantom_def.extend(quote!(_phantom_f: ::core::marker::PhantomData<CGlueF>,));
+        vtbl_phantom_init.extend(quote!(_phantom_f: ::core::marker::PhantomData{},));
+    }
 
     // Formatted documentation strings
     let vtbl_doc = format!(" CGlue vtable for trait {}.", trait_name);
@@ -376,7 +426,7 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
         true => quote!(),
         false => quote! {
             #[doc = #opaque_ref_trait_obj_doc]
-            pub type #opaque_ref_trait_obj_ident<'cglue_a, #life_use #gen_use> = #trait_obj_ident<'cglue_a, #life_use #c_void, &'cglue_a #c_void, #gen_use>;
+            pub type #opaque_ref_trait_obj_ident<'cglue_a, #life_use #gen_use> = #trait_obj_ident<'cglue_a, #life_use &'cglue_a #c_void, #c_void, #gen_use>;
         },
     };
 
@@ -388,8 +438,9 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
         ///
         /// This virtual function table contains ABI-safe interface for the given trait.
         #[repr(C)]
-        #vis struct #vtbl_ident<#life_declare CGlueT, #gen_declare> where #gen_where_bounds {
+        #vis struct #vtbl_ident<#life_declare CGlueT, CGlueF, #gen_declare> where #gen_where_bounds {
             #vtbl_func_defintions
+            #vtbl_phantom_def
         }
 
         #[repr(C)]
@@ -414,11 +465,12 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
         /* Default implementation. */
 
         /// Default vtable reference creation.
-        impl<'cglue_a, #life_declare CGlueT: #trait_name<#life_use #gen_use>, #gen_declare> Default for &'cglue_a #vtbl_ident<#life_use CGlueT, #gen_use> where #gen_where_bounds #trait_type_bounds {
+        impl<'cglue_a, #life_declare CGlueT #cglue_t_bounds, CGlueF: #trait_name<#life_use #gen_use>, #gen_declare> Default for &'cglue_a #vtbl_ident<#life_use CGlueT, CGlueF, #gen_use> where #gen_where_bounds #trait_type_bounds {
             /// Create a static vtable for the given type.
             fn default() -> Self {
                 &#vtbl_ident {
                     #vtbl_default_funcs
+                    #vtbl_phantom_init
                 }
             }
         }
@@ -429,23 +481,23 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
         ///
         /// This virtual function table has type information destroyed, is used in CGlue objects
         /// and trait groups.
-        #vis type #opaque_vtbl_ident<#life_use #gen_use> = #vtbl_ident<#life_use #c_void, #gen_use>;
+        #vis type #opaque_vtbl_ident<#life_use CGlueT, #gen_use> = #vtbl_ident<#life_use CGlueT, #c_void, #gen_use>;
 
-        unsafe impl<#life_declare CGlueT: #trait_name<#life_use #gen_use>, #gen_declare> #trg_path::CGlueBaseVtbl for #vtbl_ident<#life_use CGlueT, #gen_use> where #gen_where_bounds {
-            type OpaqueVtbl = #opaque_vtbl_ident<#life_use #gen_use>;
+        unsafe impl<#life_declare CGlueT: #trg_path::Opaquable, CGlueF: #trait_name<#life_use #gen_use>, #gen_declare> #trg_path::CGlueBaseVtbl for #vtbl_ident<#life_use CGlueT, CGlueF, #gen_use> where #gen_where_bounds {
+            type OpaqueVtbl = #opaque_vtbl_ident<#life_use CGlueT::OpaqueTarget, #gen_use>;
             type RetTmp = #ret_tmp_ident<#life_use #gen_use>;
         }
 
-        impl<#life_declare CGlueT: #trait_name<#life_use #gen_use>, #gen_declare> #trg_path::CGlueVtbl<CGlueT> for #vtbl_ident<#life_use CGlueT, #gen_use> where #gen_where_bounds {}
+        impl<#life_declare CGlueT #cglue_t_bounds, CGlueF: #trait_name<#life_use #gen_use>, #gen_declare> #trg_path::CGlueVtbl<CGlueF> for #vtbl_ident<#life_use CGlueT, CGlueF, #gen_use> where #gen_where_bounds CGlueT: #trg_path::Opaquable {}
 
         #[doc = #trait_obj_doc]
-        pub type #trait_obj_ident<'cglue_a, #life_use CGlueT, B, #gen_use> = #trg_path::CGlueTraitObj::<'cglue_a, B, #vtbl_ident<#life_use CGlueT, #gen_use>, #ret_tmp_ident<#life_use #gen_use>>;
+        pub type #trait_obj_ident<'cglue_a, #life_use CGlueT, CGlueF, #gen_use> = #trg_path::CGlueTraitObj::<'cglue_a, CGlueT, #vtbl_ident<#life_use CGlueT, CGlueF, #gen_use>, #ret_tmp_ident<#life_use #gen_use>>;
 
         #[doc = #opaque_owned_trait_obj_doc]
-        pub type #opaque_owned_trait_obj_ident<'cglue_a, #life_use #gen_use> = #trait_obj_ident<'cglue_a, #life_use #c_void, #crate_path::boxed::CBox<#c_void>, #gen_use>;
+        pub type #opaque_owned_trait_obj_ident<'cglue_a, #life_use #gen_use> = #trait_obj_ident<'cglue_a, #life_use #crate_path::boxed::CBox<#c_void>, #c_void, #gen_use>;
 
         #[doc = #opaque_mut_trait_obj_doc]
-        pub type #opaque_mut_trait_obj_ident<'cglue_a, #life_use #gen_use> = #trait_obj_ident<'cglue_a, #life_use #c_void, &'cglue_a mut #c_void, #gen_use>;
+        pub type #opaque_mut_trait_obj_ident<'cglue_a, #life_use #gen_use> = #trait_obj_ident<'cglue_a, #life_use &'cglue_a mut #c_void, #c_void, #gen_use>;
 
         #opaque_ref_trait_obj
 
@@ -456,7 +508,7 @@ pub fn gen_trait(tr: &ItemTrait) -> TokenStream {
         /* Trait implementation. */
 
         /// Implement the traits for any CGlue object.
-        impl<#life_declare CGlueT: AsRef<#opaque_vtbl_ident<#life_use #gen_use>> + #trg_path::#required_mutability<#c_void, #ret_tmp_ident<#life_use #gen_use>>, #gen_declare> #trait_name<#life_use #gen_use> for CGlueT where #gen_where_bounds {
+        impl<#life_declare CGlueT #cglue_t_bounds_opaque, CGlueO: AsRef<#opaque_vtbl_ident<#life_use CGlueT, #gen_use>> + #trg_path::#required_mutability<#ret_tmp_ident<#life_use #gen_use>, ObjType = #c_void, ContType = CGlueT>, #gen_declare> #trait_name<#life_use #gen_use> for CGlueO where #gen_where_bounds {
             #trait_type_defs
             #trait_impl_fns
         }

@@ -88,6 +88,22 @@ impl GenericGroupReturn<usize> for SA {
     }
 }
 
+#[cglue_trait]
+pub trait GenericConsumedGroupReturn<T: 'static + Eq> {
+    #[wrap_with_group(GenericGroup<T>)]
+    type ReturnType: GenericTrait<T>;
+
+    fn gcgr_1(self) -> Self::ReturnType;
+}
+
+impl GenericConsumedGroupReturn<usize> for SA {
+    type ReturnType = SA;
+
+    fn gcgr_1(self) -> SA {
+        self
+    }
+}
+
 #[test]
 fn use_assoc_return() {
     let sa = SA {};
@@ -130,6 +146,20 @@ fn use_group_return() {
     let obj = trait_obj!(sa as GenericGroupReturn);
 
     let group = obj.ggr_1();
+
+    let cast = cast!(group impl GenWithInlineClause).unwrap();
+
+    assert!(cast.gwi_1(&cast.gt_1()));
+    assert!(!cast.gwi_1(&(cast.gt_1() + 1)));
+}
+
+#[test]
+fn use_consumed_group_return() {
+    let sa = SA {};
+
+    let obj = trait_obj!(sa as GenericConsumedGroupReturn);
+
+    let group = obj.gcgr_1();
 
     let cast = cast!(group impl GenWithInlineClause).unwrap();
 

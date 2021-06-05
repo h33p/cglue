@@ -12,6 +12,16 @@ pub struct CBox<T: 'static> {
     drop: unsafe extern "C" fn(&mut T),
 }
 
+impl<T> super::trait_group::IntoInner for CBox<T> {
+    type InnerTarget = T;
+
+    unsafe fn into_inner(self) -> Self::InnerTarget {
+        let b = Box::from_raw(self.instance);
+        std::mem::forget(self);
+        *b
+    }
+}
+
 impl<T> Deref for CBox<T> {
     type Target = T;
 
