@@ -5,6 +5,7 @@
 //! [![API Docs](https://docs.rs/cglue/badge.svg)](https://docs.rs/cglue)
 //! [![Build and test](https://github.com/h33p/cglue/actions/workflows/build.yml/badge.svg)](https://github.com/h33p/cglue/actions/workflows/build.yml)
 //! [![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/h33p/cglue/blob/main/LICENSE)
+//! ![Rustc 1.45](https://img.shields.io/badge/rustc-1.45+-lightgray.svg)
 //!
 //! If all code is glued together, our glue is the safest on the market.
 //!
