@@ -21,6 +21,7 @@
 //!     - [Setup](#setup)
 //!     - [Cleanup C](#cleanup-c)
 //!     - [Cleanup C++](#cleanup-c-1)
+//! - [Limitations](#limitations)
 //! <!-- /toc -->
 //!
 //! ## Overview
@@ -309,19 +310,6 @@
 //! use wrapping, because the underlying object types differ. If possible, split up the type to
 //! multiple associated types.
 //!
-//! ## Limitations
-//!
-//! 1. Associated type function arguments are not possible, because opaque conversion works
-//!    one-way.
-//!
-//! 2. Functions that accept an additional `Self` types are not possible for the same reason.
-//!
-//! 3. Custom generic arguments for cglue traits are not yet supported, but this is to be improved
-//!    upon.
-//!
-//! 4. There probably are some corner cases when it comes to path imports. If you find any, please
-//!    file an issue report :)
-//!
 //! ### Working with cbindgen
 //!
 //! [cbindgen](https://github.com/eqrion/cbindgen) can be used to generate C and C++ bindings.
@@ -413,6 +401,20 @@
 //! ```
 //!
 //! Other than that, everything should be good to go!
+//!
+//! ## Limitations
+//!
+//! 1. Associated type function arguments are not possible, because opaque conversion works
+//!    one-way.
+//!
+//! 2. Functions that accept an additional `Self` types are not possible for the same reason.
+//!
+//! 3. Custom generic arguments for cglue traits are not yet supported, but this is to be improved
+//!    upon.
+//!
+//! 4. There probably are some corner cases when it comes to path imports. If you find any, please
+//!    file an issue report :)
+//!
 
 pub mod arc;
 pub mod boxed;
@@ -430,7 +432,7 @@ pub use ::cglue_macro::{
 };
 
 pub mod ext {
-    // Generate all external traits definitions here
+    //! Built-in external traits.
     cglue_macro::cglue_builtin_ext_traits!();
 }
 

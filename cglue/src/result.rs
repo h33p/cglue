@@ -1,7 +1,8 @@
+//! Describes a FFI safe result.
 use core::mem::MaybeUninit;
 use core::num::NonZeroI32;
 
-/// Describes a FFI safe result.
+/// FFI safe result.
 ///
 /// This type is not meant for general use, but rather as a last-resort conversion for type wrapping.
 ///

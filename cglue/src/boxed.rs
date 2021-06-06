@@ -1,4 +1,4 @@
-/// Describes an FFI-safe wrapped box.
+//! Describes an FFI-safe wrapped box.
 use core::ops::{Deref, DerefMut};
 
 /// FFI-safe box

@@ -1,9 +1,4 @@
-/// FFI-Safe Arc
-///
-/// This Arc essentially uses clone/drop from the module that created it, to not mix up global
-/// allocators.
-///
-/// Even though this code should be safe to use, it is private for internal use only
+//! Describes an FFI-safe Arc.
 use std::sync::Arc;
 
 unsafe extern "C" fn c_clone<T: Sized + 'static>(
@@ -25,6 +20,10 @@ unsafe extern "C" fn c_drop<T: Sized + 'static>(ptr_to_arc: &mut Option<&T>) {
     }
 }
 
+/// FFI-Safe Arc
+///
+/// This Arc essentially uses clone/drop from the module that created it, to not mix up global
+/// allocators.
 #[repr(C)]
 pub struct CArc<T: Sized + 'static> {
     inner: Option<&'static T>,

@@ -1,13 +1,12 @@
-/*!
-Wrapper around null-terminated C-style strings.
-
-Analog to Rust's `String` & `str`, [`ReprCString`] owns the underlying data.
-*/
+//! Describes null-terminated transparent C-strings.
 
 use std::prelude::v1::*;
 use std::slice::*;
 use std::str::from_utf8_unchecked;
 
+/// Wrapper around null-terminated C-style strings.
+///
+/// Analog to Rust's `String` & `str`, [`ReprCString`] owns the underlying data.
 #[repr(transparent)]
 pub struct ReprCString(*mut i8);
 

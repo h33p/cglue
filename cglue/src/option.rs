@@ -1,4 +1,6 @@
-/// Describes a FFI safe option
+//! Describes a FFI safe option.
+
+/// FFI-safe Option.
 ///
 /// This type is not really meant for general use, but rather as a last-resort conversion for type
 /// wrapping.
