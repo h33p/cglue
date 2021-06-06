@@ -109,20 +109,16 @@ pub fn is_null_pointer_optimizable(ty: &Type, custom_types: &[&'static str]) -> 
         Type::Path(path) => {
             let last = path.path.segments.last();
 
-            matches!(
-                last.map(|l| {
-                    let s = &l.ident.to_string();
-                    ["NonNull", "Box"].contains(&s.as_str())
-                        || custom_types.contains(&s.as_str())
-                        || (s.starts_with("NonZero")
-                            && [
-                                "I8", "U8", "I16", "U16", "I32", "U32", "I64", "U64", "I128",
-                                "U128",
-                            ]
-                            .contains(&s.split_at("NonZero".len()).1))
-                }),
-                Some(true)
-            )
+            last.map(|l| {
+                let s = &l.ident.to_string();
+                ["NonNull", "Box"].contains(&s.as_str())
+                    || custom_types.contains(&s.as_str())
+                    || (s.starts_with("NonZero")
+                        && [
+                            "I8", "U8", "I16", "U16", "I32", "U32", "I64", "U64", "I128", "U128",
+                        ]
+                        .contains(&s.split_at("NonZero".len()).1))
+            }) == Some(true)
         }
         _ => false,
     }

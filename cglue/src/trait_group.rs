@@ -19,11 +19,6 @@ pub struct CGlueTraitObj<'a, T, V, S> {
     ret_tmp: S,
 }
 
-union Opaquifier<T: Opaquable> {
-    input: ManuallyDrop<T>,
-    output: ManuallyDrop<T::OpaqueTarget>,
-}
-
 /// Describes an opaquable object.
 ///
 /// This trait provides a safe many-traits-to-one conversion. For instance, concrete vtable types
@@ -42,17 +37,17 @@ pub unsafe trait Opaquable: Sized {
     /// The opaque version safely destroys type information, and after this point there is no way
     /// back.
     fn into_opaque(self) -> Self::OpaqueTarget {
-        let val = Opaquifier {
-            input: ManuallyDrop::new(self),
-        };
-
         // Implementors should ensure the same size.
         debug_assert_eq!(
             core::mem::size_of::<Self>(),
             core::mem::size_of::<Self::OpaqueTarget>()
         );
 
-        unsafe { ManuallyDrop::into_inner(val.output) }
+        let input = ManuallyDrop::new(self);
+
+        // We could use a union here, but that forbids us from using Rust 1.45.
+        // Rust does optimize this into a no-op anyways
+        unsafe { core::ptr::read(&input as *const _ as *const _) }
     }
 }
 

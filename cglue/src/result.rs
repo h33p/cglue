@@ -35,11 +35,11 @@ impl<T, E> From<CResult<T, E>> for Result<T, E> {
 }
 
 impl<T, E> CResult<T, E> {
-    pub const fn is_ok(&self) -> bool {
+    pub fn is_ok(&self) -> bool {
         matches!(*self, CResult::Ok(_))
     }
 
-    pub const fn is_err(&self) -> bool {
+    pub fn is_err(&self) -> bool {
         matches!(*self, CResult::Err(_))
     }
 
@@ -57,7 +57,7 @@ impl<T, E> CResult<T, E> {
         }
     }
 
-    pub const fn as_ref(&self) -> Result<&T, &E> {
+    pub fn as_ref(&self) -> Result<&T, &E> {
         match *self {
             CResult::Ok(ref x) => Ok(x),
             CResult::Err(ref e) => Err(e),

@@ -696,10 +696,10 @@ impl ParsedReturnType {
             let mut ret = None;
 
             if let ReturnType::Type(_, ty) = &mut ty {
-                if let Some((
-                    old_ty,
-                    trait_ty,
-                    WrappedType {
+                if let Some(wrapped) = wrap_type(&mut *ty, targets) {
+                    let old_ty = wrapped.0;
+                    let trait_ty = wrapped.1;
+                    let WrappedType {
                         return_conv,
                         lifetime_bound,
                         other_bounds,
@@ -707,10 +707,9 @@ impl ParsedReturnType {
                         impl_return_conv,
                         ty: new_ty,
                         ..
-                    },
-                )) = wrap_type(&mut *ty, targets)
-                {
-                    let (mutable, lifetime) = match (*inject_ret_tmp, &**ty) {
+                    } = wrapped.2;
+
+                    let (mutable, lifetime) = match (inject_ret_tmp, &**ty) {
                         (true, Type::Reference(ty)) => {
                             (ty.mutability.is_some(), ty.lifetime.as_ref().cloned())
                         }

@@ -31,7 +31,7 @@ impl<T> From<COption<T>> for Option<T> {
 }
 
 impl<T> COption<T> {
-    pub const fn is_some(&self) -> bool {
+    pub fn is_some(&self) -> bool {
         matches!(*self, COption::Some(_))
     }
 
@@ -42,7 +42,7 @@ impl<T> COption<T> {
         }
     }
 
-    pub const fn as_ref(&self) -> Option<&T> {
+    pub fn as_ref(&self) -> Option<&T> {
         match *self {
             COption::Some(ref x) => Some(x),
             COption::None => None,

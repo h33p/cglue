@@ -453,7 +453,10 @@ pub fn gen_trait(tr: &ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
             quote!(: ::core::ops::Deref<Target = #c_void> + #trg_path::IntoInner),
         )
     } else {
-        (quote!(), quote!())
+        (
+            quote!(: ::core::ops::Deref<Target = CGlueF>),
+            quote!(: ::core::ops::Deref<Target = #c_void>),
+        )
     };
 
     // Inject phantom data depending on what kind of Self parameters are not being used.

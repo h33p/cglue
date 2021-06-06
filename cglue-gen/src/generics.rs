@@ -338,7 +338,7 @@ impl Parse for GenericCastType {
         let cast: ExprCast = input.parse()?;
 
         let ident = cast.expr;
-        let target = GenericType::from_type(&*cast.ty, true)?;
+        let target = GenericType::from_type(&*cast.ty, true);
 
         Ok(Self { ident, target })
     }
@@ -371,7 +371,7 @@ impl GenericType {
             .extend(quote!(#life_declare #types #gen_declare));
     }
 
-    fn from_type(target: &Type, cast_to_group: bool) -> Result<Self> {
+    fn from_type(target: &Type, cast_to_group: bool) -> Self {
         let (path, target, generics) = match target {
             Type::Path(ty) => {
                 let (path, target, generics) = crate::util::split_path_ident(&ty.path).unwrap();
@@ -401,12 +401,12 @@ impl GenericType {
             _ => (quote!(), quote!()),
         };
 
-        Ok(Self {
+        Self {
             path,
             gen_separator,
             generics,
             target,
-        })
+        }
     }
 }
 
@@ -425,6 +425,6 @@ impl ToTokens for GenericType {
 impl Parse for GenericType {
     fn parse(input: ParseStream) -> Result<Self> {
         let target: Type = input.parse()?;
-        Self::from_type(&target, false)
+        Ok(Self::from_type(&target, false))
     }
 }
