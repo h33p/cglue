@@ -399,7 +399,7 @@ pub fn gen_trait(tr: &ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
     }
 
     // If no types are wrapped, and feature is not enabled, inject a 1 byte padding.
-    if cfg!(not(feature = "empty_retwrap")) && ret_tmp_type_defs.is_empty() {
+    if cfg!(feature = "no_empty_retwrap") && ret_tmp_type_defs.is_empty() {
         ret_tmp_type_defs.extend(quote!(_padding: u8,));
         ret_tmp_default_defs.extend(quote!(_padding: 0,));
     }

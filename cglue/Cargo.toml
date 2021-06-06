@@ -8,3 +8,7 @@ description = "FFI safe abstractions for making plugins and C-compatible librari
 [dependencies]
 paste = "1"
 cglue-macro = { path = "../cglue-macro" }
+
+[features]
+default = []
+no_empty_retwrap = ["cglue-macro/no_empty_retwrap"]

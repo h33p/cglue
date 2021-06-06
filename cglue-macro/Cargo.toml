@@ -15,4 +15,4 @@ cglue-gen = { version = "0.1", path = "../cglue-gen" }
 
 [features]
 default = []
-empty_retwrap = []
+no_empty_retwrap = ["cglue-gen/no_empty_retwrap"]

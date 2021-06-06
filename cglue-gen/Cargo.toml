@@ -11,3 +11,7 @@ quote = "1"
 proc-macro-crate = "1"
 itertools = "0.10"
 lazy_static = "1"
+
+[features]
+default = []
+no_empty_retwrap = []
