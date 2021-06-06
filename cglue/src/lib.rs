@@ -169,5 +169,5 @@ pub mod ext {
     cglue_macro::cglue_builtin_ext_traits!();
 }
 
-//#[cfg(test)]
+#[cfg(test)]
 pub mod tests;
