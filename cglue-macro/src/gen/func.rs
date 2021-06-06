@@ -598,7 +598,7 @@ impl ParsedFunc {
 
     pub fn int_trait_impl(
         &self,
-        ext_path: Option<&TokenStream>,
+        ext_path: Option<&Path>,
         ext_name: &Ident,
         tokens: &mut TokenStream,
     ) {

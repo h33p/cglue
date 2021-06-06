@@ -2,16 +2,7 @@ use super::simple::structs::*;
 use super::simple::trait_defs::*;
 use cglue_macro::*;
 
-#[cglue_trait_ext]
-pub trait Clone {
-    fn clone(&self) -> Self;
-}
-
-cglue_trait_group!(MaybeClone, { TA }, { ext::Clone }, {
-    pub trait Clone {
-        fn clone(&self) -> Self;
-    }
-});
+cglue_trait_group!(MaybeClone, { TA }, { Clone });
 
 cglue_impl_group!(SA, MaybeClone, Clone);
 

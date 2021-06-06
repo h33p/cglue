@@ -1,12 +1,25 @@
 use proc_macro2::TokenStream;
 use proc_macro_crate::{crate_name, FoundCrate};
-use quote::{quote, ToTokens};
+use quote::{format_ident, quote};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
+use syn::token::Colon2;
 use syn::token::Comma;
 use syn::*;
 
 pub fn crate_path() -> TokenStream {
+    let (col, ident) = crate_path_ident();
+    quote!(#col #ident)
+}
+
+pub fn crate_path_ident() -> (Option<Colon2>, Ident) {
+    match crate_path_fixed() {
+        FoundCrate::Itself => (None, format_ident!("crate")),
+        FoundCrate::Name(name) => (Some(Default::default()), format_ident!("{}", name)),
+    }
+}
+
+pub fn crate_path_fixed() -> FoundCrate {
     let found_crate = crate_name("cglue").expect("cglue found in `Cargo.toml`");
 
     match found_crate {
@@ -16,12 +29,12 @@ pub fn crate_path() -> TokenStream {
             });
 
             if has_doc_env {
-                quote!(::cglue)
+                FoundCrate::Name("cglue".to_string())
             } else {
-                quote!(crate)
+                FoundCrate::Itself
             }
         }
-        FoundCrate::Name(name) => quote!(::#name),
+        x => x,
     }
 }
 
@@ -50,8 +63,11 @@ pub fn parse_maybe_braced<T: Parse>(input: ParseStream) -> Result<Vec<T>> {
 
 pub type GenericsOut = Option<Punctuated<GenericArgument, Comma>>;
 
-pub fn split_path_ident(in_path: &Path) -> Result<(TokenStream, Ident, GenericsOut)> {
-    let mut path = in_path.leading_colon.to_token_stream();
+pub fn split_path_ident(in_path: &Path) -> Result<(Path, Ident, GenericsOut)> {
+    let mut path = Path {
+        leading_colon: in_path.leading_colon,
+        segments: Default::default(),
+    };
 
     let mut ident = None;
 
@@ -59,7 +75,10 @@ pub fn split_path_ident(in_path: &Path) -> Result<(TokenStream, Ident, GenericsO
 
     for part in in_path.segments.pairs() {
         match part {
-            punctuated::Pair::Punctuated(p, punc) => path.extend(quote!(#p #punc)),
+            punctuated::Pair::Punctuated(p, _) => {
+                path.segments.push_value(p.clone());
+                path.segments.push_punct(Default::default());
+            }
             punctuated::Pair::End(p) => {
                 if let PathArguments::AngleBracketed(arg) = &p.arguments {
                     generics = Some(arg.args.clone());

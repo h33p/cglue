@@ -3,6 +3,7 @@ extern crate proc_macro;
 mod gen;
 mod util;
 
+use gen::ext::{ext_abs_remap, prelude_remap_with_ident};
 use gen::generics::{GenericCastType, GenericType};
 use gen::trait_groups::*;
 use proc_macro::TokenStream;
@@ -46,6 +47,12 @@ pub fn group_obj(args: TokenStream) -> TokenStream {
                 ..
             },
     } = parse_macro_input!(args as GenericCastType);
+
+    let path = if let Ok(ident) = parse2::<Ident>(target.clone()) {
+        ext_abs_remap(prelude_remap_with_ident(path, &ident))
+    } else {
+        path
+    };
 
     let gen = quote! {
         #crate_path::trait_group::Opaquable::into_opaque(#path #target :: <#generics>::from(#ident))
@@ -99,6 +106,12 @@ pub fn trait_obj(args: TokenStream) -> TokenStream {
             },
     } = parse_macro_input!(args as GenericCastType);
 
+    let path = if let Ok(ident) = parse2::<Ident>(target.clone()) {
+        ext_abs_remap(prelude_remap_with_ident(path, &ident))
+    } else {
+        path
+    };
+
     let target = format_ident!("CGlueBase{}", target.to_token_stream().to_string());
 
     let gen = quote! {
@@ -138,6 +151,11 @@ pub fn cglue_trait_ext(_args: TokenStream, input: TokenStream) -> TokenStream {
     };
 
     gen.into()
+}
+
+#[proc_macro]
+pub fn cglue_builtin_ext_traits(_: TokenStream) -> TokenStream {
+    gen::ext::impl_store().into()
 }
 
 // Marker macros for wrapping

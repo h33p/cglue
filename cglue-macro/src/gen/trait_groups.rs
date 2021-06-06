@@ -1,3 +1,4 @@
+use super::ext::*;
 use super::generics::ParsedGenerics;
 use crate::util::*;
 use itertools::*;
@@ -9,7 +10,7 @@ use syn::*;
 
 /// Describes information about a single trait.
 pub struct TraitInfo {
-    path: TokenStream,
+    path: Path,
     ident: Ident,
     generics: ParsedGenerics,
     vtbl_name: Ident,
@@ -66,7 +67,7 @@ pub struct TraitGroup {
     generics: ParsedGenerics,
     mandatory_vtbl: Vec<TraitInfo>,
     optional_vtbl: Vec<TraitInfo>,
-    ext_traits: HashMap<Ident, (TokenStream, ItemTrait)>,
+    ext_traits: HashMap<Ident, (Path, ItemTrait)>,
 }
 
 impl Parse for TraitGroup {
@@ -92,32 +93,101 @@ impl Parse for TraitGroup {
 
         let mut ext_traits = HashMap::new();
 
-        let mut mandatory_vtbl: Vec<TraitInfo> =
-            mandatory_traits.into_iter().map(TraitInfo::from).collect();
+        let mut mandatory_vtbl: Vec<TraitInfo> = mandatory_traits
+            .into_iter()
+            .map(prelude_remap)
+            .map(TraitInfo::from)
+            .collect();
         mandatory_vtbl.sort();
 
-        let mut optional_vtbl: Vec<TraitInfo> =
-            optional_traits.into_iter().map(TraitInfo::from).collect();
+        let mut optional_vtbl: Vec<TraitInfo> = optional_traits
+            .into_iter()
+            .map(prelude_remap)
+            .map(TraitInfo::from)
+            .collect();
         optional_vtbl.sort();
+
+        let store_exports = get_exports();
+        let store_traits = get_store();
+
+        let mut crate_path: Path = parse2(crate_path()).expect("Failed to parse crate path");
+
+        if !crate_path.segments.empty_or_trailing() {
+            crate_path.segments.push_punct(Default::default());
+        }
 
         // Go through mand/opt vtbls and pick all external traits used out of there,
         // and then pick add those trait definitions to the ext_traits list from both
-        // the input list, and the TODO standard trait collection.
+        // the input list, and the standard trait collection.
         for vtbl in mandatory_vtbl.iter_mut().chain(optional_vtbl.iter_mut()) {
-            let mut path_str = vtbl.path.to_string();
-            if !path_str.starts_with("ext ::") {
+            let is_ext = match (vtbl.path.leading_colon, vtbl.path.segments.first()) {
+                (_, Some(x)) => x.ident == "ext",
+                _ => false,
+            };
+
+            if !is_ext {
                 continue;
             }
-            vtbl.path = path_str
-                .split_at_mut("ext ::".len())
-                .1
-                .parse::<TokenStream>()?;
 
+            // If the user has supplied a custom implementation.
             if let Some(tr) = ext_trait_defs.iter().find(|tr| tr.ident == vtbl.ident) {
-                ext_traits.insert(tr.ident.clone(), (vtbl.path.clone(), tr.clone()));
-            }
+                // Keep the leading colon so as to allow going from the root or relatively
+                let leading_colon = std::mem::replace(&mut vtbl.path.leading_colon, None);
 
-            // TODO: use standard store here
+                let old_path = std::mem::replace(
+                    &mut vtbl.path,
+                    Path {
+                        leading_colon,
+                        segments: Default::default(),
+                    },
+                );
+
+                for seg in old_path.segments.into_pairs().skip(1) {
+                    match seg {
+                        punctuated::Pair::Punctuated(p, punc) => {
+                            vtbl.path.segments.push_value(p);
+                            vtbl.path.segments.push_punct(punc);
+                        }
+                        punctuated::Pair::End(p) => {
+                            vtbl.path.segments.push_value(p);
+                        }
+                    }
+                }
+
+                ext_traits.insert(tr.ident.clone(), (vtbl.path.clone(), tr.clone()));
+            } else {
+                // Check the store otherwise
+                let tr = store_traits
+                    .get(&(vtbl.path.clone(), vtbl.ident.clone()))
+                    .or_else(|| {
+                        store_exports.get(&vtbl.ident).and_then(|p| {
+                            vtbl.path = p.clone();
+                            store_traits.get(&(p.clone(), vtbl.ident.clone()))
+                        })
+                    });
+
+                if let Some(tr) = tr {
+                    // If we are in the store, we should push crate_path path to the very start
+                    let old_path = std::mem::replace(&mut vtbl.path, crate_path.clone());
+                    for seg in old_path.segments.into_pairs() {
+                        match seg {
+                            punctuated::Pair::Punctuated(p, punc) => {
+                                vtbl.path.segments.push_value(p);
+                                vtbl.path.segments.push_punct(punc);
+                            }
+                            punctuated::Pair::End(p) => {
+                                vtbl.path.segments.push_value(p);
+                            }
+                        }
+                    }
+                    ext_traits.insert(tr.ident.clone(), (vtbl.path.clone(), tr.clone()));
+                } else {
+                    eprintln!(
+                        "Could not find external trait {}. Not changing paths.",
+                        vtbl.ident
+                    );
+                }
+            }
         }
 
         Ok(Self {
@@ -134,7 +204,7 @@ impl Parse for TraitGroup {
 pub struct TraitGroupImpl {
     path: Path,
     generics: ParsedGenerics,
-    group_path: TokenStream,
+    group_path: Path,
     group: Ident,
     implemented_vtbl: Vec<TraitInfo>,
 }
@@ -167,8 +237,12 @@ impl Parse for TraitGroupImpl {
         input.parse::<Token![,]>()?;
         let implemented_traits = parse_maybe_braced::<Path>(input)?;
 
-        let mut implemented_vtbl: Vec<TraitInfo> =
-            implemented_traits.into_iter().map(From::from).collect();
+        let mut implemented_vtbl: Vec<TraitInfo> = implemented_traits
+            .into_iter()
+            .map(prelude_remap)
+            .map(ext_abs_remap)
+            .map(From::from)
+            .collect();
 
         implemented_vtbl.sort();
 
@@ -414,6 +488,7 @@ impl TraitGroup {
             enable_vtbl_name,
             vtbl_typename,
             vtbl_name,
+            path,
             generics: ParsedGenerics {
                 life_use, gen_use, ..
             },
@@ -422,7 +497,7 @@ impl TraitGroup {
         {
             enable_funcs.extend(quote! {
                 pub fn #enable_vtbl_name (self) -> Self
-                    where &'cglue_a #vtbl_typename<#life_use CGlueT, CGlueF, #gen_use>: Default {
+                    where &'cglue_a #path #vtbl_typename<#life_use CGlueT, CGlueF, #gen_use>: Default {
                     Self {
                         #vtbl_name: Some(Default::default()),
                         ..self

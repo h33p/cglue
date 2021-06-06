@@ -1,3 +1,4 @@
+pub mod ext;
 pub mod func;
 pub mod generics;
 pub mod trait_groups;

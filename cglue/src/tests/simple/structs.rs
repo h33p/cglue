@@ -1,4 +1,5 @@
 use super::trait_defs::*;
+#[cfg(test)]
 use cglue_macro::*;
 
 #[derive(Clone, Copy)]

@@ -346,7 +346,7 @@ impl Parse for GenericCastType {
 
 #[derive(Clone)]
 pub struct GenericType {
-    pub path: TokenStream,
+    pub path: Path,
     pub gen_separator: TokenStream,
     pub generics: TokenStream,
     pub target: TokenStream,
@@ -375,9 +375,16 @@ impl GenericType {
         let (path, target, generics) = match target {
             Type::Path(ty) => {
                 let (path, target, generics) = crate::util::split_path_ident(&ty.path).unwrap();
-                (quote!(#path), quote!(#target), generics)
+                (path, quote!(#target), generics)
             }
-            x => (quote!(), quote!(#x), None),
+            x => (
+                Path {
+                    leading_colon: None,
+                    segments: Default::default(),
+                },
+                quote!(#x),
+                None,
+            ),
         };
 
         let (gen_separator, generics) = match (cast_to_group, generics) {
@@ -405,7 +412,7 @@ impl GenericType {
 
 impl ToTokens for GenericType {
     fn to_tokens(&self, tokens: &mut TokenStream) {
-        tokens.extend(self.path.clone());
+        tokens.extend(self.path.to_token_stream());
         tokens.extend(self.target.clone());
         let generics = &self.generics;
         if !generics.is_empty() {

@@ -164,5 +164,10 @@ pub mod repr_cstring;
 pub mod result;
 pub mod trait_group;
 
-#[cfg(test)]
+pub mod ext {
+    // Generate all external traits definitions here
+    cglue_macro::cglue_builtin_ext_traits!();
+}
+
+//#[cfg(test)]
 pub mod tests;
