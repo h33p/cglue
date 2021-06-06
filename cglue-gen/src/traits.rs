@@ -288,11 +288,23 @@ pub fn parse_trait(
                 }
             }
             TraitItem::Method(m) => {
-                let mut iter = m.attrs.iter().map(|a| a.path.to_token_stream().to_string());
+
+                let attrs = m.attrs.iter().map(|a| a.path.to_token_stream().to_string()).collect::<Vec<_>>();
+
+                if attrs.iter().any(|i| i == "skip_func") {
+                    continue;
+                }
+
+                if !m.sig.generics.params.is_empty() {
+                    if m.default.is_none() {
+                        panic!("Generic function `{}` detected without a default implementation! This is not supported.", m.sig.ident);
+                    }
+                    continue;
+                }
 
                 let int_result = match int_result {
-                    true => !iter.any(|i| i == "no_int_result"),
-                    false => iter.any(|i| i == "int_result"),
+                    true => !attrs.iter().any(|i| i == "no_int_result"),
+                    false => attrs.iter().any(|i| i == "int_result"),
                 };
 
                 funcs.extend(ParsedFunc::new(

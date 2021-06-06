@@ -7,7 +7,4 @@ description = "FFI safe abstractions for making plugins and C-compatible librari
 
 [dependencies]
 paste = "1"
-
-
-#[dev-dependencies]
 cglue-macro = { path = "../cglue-macro" }
