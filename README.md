@@ -21,6 +21,7 @@ If all code is glued together, our glue is the safest on the market.
     - [Setup](#setup)
     - [Cleanup C](#cleanup-c)
     - [Cleanup C++](#cleanup-c-1)
+- [Limitations](#limitations)
 <!-- /toc -->
 
 ## Overview
@@ -283,19 +284,6 @@ note that if there is a trait that returns a combination of these types, it is n
 use wrapping, because the underlying object types differ. If possible, split up the type to
 multiple associated types.
 
-## Limitations
-
-1. Associated type function arguments are not possible, because opaque conversion works
-   one-way.
-
-2. Functions that accept an additional `Self` types are not possible for the same reason.
-
-3. Custom generic arguments for cglue traits are not yet supported, but this is to be improved
-   upon.
-
-4. There probably are some corner cases when it comes to path imports. If you find any, please
-   file an issue report :)
-
 ### Working with cbindgen
 
 [cbindgen](https://github.com/eqrion/cbindgen) can be used to generate C and C++ bindings.
@@ -387,3 +375,17 @@ using MaybeUninit = T;
 ```
 
 Other than that, everything should be good to go!
+
+## Limitations
+
+1. Associated type function arguments are not possible, because opaque conversion works
+   one-way.
+
+2. Functions that accept an additional `Self` types are not possible for the same reason.
+
+3. Custom generic arguments for cglue traits are not yet supported, but this is to be improved
+   upon.
+
+4. There probably are some corner cases when it comes to path imports. If you find any, please
+   file an issue report :)
+
