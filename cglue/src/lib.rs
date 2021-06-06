@@ -266,27 +266,10 @@ pub mod result;
 pub mod trait_group;
 
 pub use ::cglue_macro::{
-    cglue_trait,
-    cglue_trait_ext,
-    trait_obj,
-    cglue_trait_group,
-    cglue_impl_group,
-    group_obj,
-    cast,
-    as_mut,
-    as_ref,
-    into,
-    int_result,
-    no_int_result,
-    skip_func,
-    wrap_with,
-    return_wrap,
-    wrap_with_obj,
+    as_mut, as_ref, cast, cglue_impl_group, cglue_trait, cglue_trait_ext, cglue_trait_group,
+    group_obj, int_result, into, no_int_result, return_wrap, skip_func, trait_obj, wrap_with,
+    wrap_with_group, wrap_with_group_mut, wrap_with_group_ref, wrap_with_obj, wrap_with_obj_mut,
     wrap_with_obj_ref,
-    wrap_with_obj_mut,
-    wrap_with_group,
-    wrap_with_group_ref,
-    wrap_with_group_mut
 };
 
 pub mod ext {

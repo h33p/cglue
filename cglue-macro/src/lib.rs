@@ -379,4 +379,3 @@ pub fn wrap_with_group_ref(_: TokenStream, input: TokenStream) -> TokenStream {
 pub fn wrap_with_group_mut(_: TokenStream, input: TokenStream) -> TokenStream {
     input
 }
-

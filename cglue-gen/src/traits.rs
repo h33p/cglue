@@ -288,8 +288,11 @@ pub fn parse_trait(
                 }
             }
             TraitItem::Method(m) => {
-
-                let attrs = m.attrs.iter().map(|a| a.path.to_token_stream().to_string()).collect::<Vec<_>>();
+                let attrs = m
+                    .attrs
+                    .iter()
+                    .map(|a| a.path.to_token_stream().to_string())
+                    .collect::<Vec<_>>();
 
                 if attrs.iter().any(|i| i == "skip_func") {
                     continue;
