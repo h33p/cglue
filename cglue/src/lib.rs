@@ -18,6 +18,7 @@
 //!   - [Name generation](#name-generation)
 //!   - [Generics in groups](#generics-in-groups)
 //!     - [Manully implementing groups](#manually-implementing-groups)
+//!   - [External traits](#external-traits)
 //!   - [Type wrapping](#type-wrapping)
 //!   - [Associated type wrapping](#associated-type-wrapping)
 //!   - [Working with cbindgen](#working-with-cbindgen)
@@ -317,7 +318,7 @@
 //! ```
 //!
 //! Note that in the above case, `GA<T>` will be grouppable, if, and only if it implements both,
-//! `GenGroup<T>` and `TA` for `T: Eq`. If `GA` implements different sets of optional traits with
+//! `Getter<T>` and `TA` for `T: Eq`. If `GA` implements different sets of optional traits with
 //! different type parameters, then provide multiple implementations, with specified types. On each
 //! implementation, still add a generic type `T`, but specify its type with an equality somewhere
 //! on the line:
@@ -438,6 +439,73 @@
 //! }
 //! # fn main() {}
 //! ```
+//!
+//! ### External traits
+//!
+//! Certain traits may not be available for `#[cglue_trait]` annotation. Thus, there are mechanisms
+//! in place to allow constructing CGlue objects of external traits. The core primitive is
+//! `#[cglue_trait_ext]`. Essentially the user needs to provide a sufficient definition for the
+//! actual trait, like so:
+//!
+//! ```ignore
+//! # use cglue::*;
+//! #[cglue_trait_ext]
+//! pub trait Clone {
+//!     fn clone(&self) -> Self;
+//! }
+//! # fn main() {}
+//! ```
+//!
+//! Notice how this trait does not have the `clone_from` function. Having a separate `&Self`
+//! parameter is not supported, but the trait can still be implemented, because `clone_from` is
+//! merely an optional optimization and there already is a blanket implementation for it.
+//!
+//! Usage of external traits is the same when constructing single-trait objects. It gets more
+//! complicated when groups are involved. This is how a `MaybeClone` group would be implemented:
+//!
+//! ```ignore
+//! # use cglue::*;
+//! # #[cglue_trait_ext]
+//! # pub trait Clone {
+//! #     fn clone(&self) -> Self;
+//! # }
+//! cglue_trait_group!(MaybeClone, { }, { ext::Clone }, {
+//!     pub trait Clone {
+//!         fn clone(&self) -> Self;
+//!     }
+//! });
+//! # fn main() {}
+//! ```
+//!
+//! The first change is to use `ext::Clone`. This marks cglue to create external trait glue code.
+//! The second bit is the trait definition. Yes, unfortunately the group needs another definition
+//! of the trait. CGlue does not have the context of the crate, and it needs to know the function
+//! signatures.
+//!
+//! This is far from ideal, thus there is an additional mechanism in place - built-in external
+//! traits. It is a store of trait definitions that can be used without providing multiple trait
+//! definitions. With `Clone` being both inside the store, and marked as prelude export, the above
+//! code gets simplified to just this:
+//!
+//! ```
+//! # use cglue::*;
+//! cglue_trait_group!(MaybeClone, { }, { Clone });
+//! # fn main() {}
+//! ```
+//!
+//! For traits not in the prelude, they can be accessed through their fully qualified `::ext` path:
+//!
+//! ```
+//! # use cglue::*;
+//! cglue_trait_group!(MaybeAsRef<T>, { }, { ::ext::core::convert::AsRef<T> });
+//! # fn main() {}
+//! ```
+//!
+//! Note that `use` imports do not work - a fully qualified path is required.
+//!
+//! The trait store is the least complete part of this system. If you encounter missing traits and
+//! wish to use them, please file a pull request with their definitions, and I will be glad to
+//! include them.
 //!
 //! ### Type wrapping
 //!

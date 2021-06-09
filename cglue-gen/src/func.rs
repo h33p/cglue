@@ -611,7 +611,7 @@ impl ParsedFunc {
         let gen = quote! {
             #[inline(always)]
             #safety #abi fn #name (#args) #out {
-                let __cglue_vfunc = self.as_ref().#name;
+                let __cglue_vfunc = self.get_vtbl().#name;
                 #def_args
                 #c_ret_precall_def
                 let ret = __cglue_vfunc(#call_args #c_call_ret_args);

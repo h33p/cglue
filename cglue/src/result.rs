@@ -108,6 +108,16 @@ impl IntError for () {
     fn from_int_err(_err: NonZeroI32) -> Self {}
 }
 
+impl IntError for core::fmt::Error {
+    fn into_int_err(self) -> NonZeroI32 {
+        NonZeroI32::new(1).unwrap()
+    }
+
+    fn from_int_err(_err: NonZeroI32) -> Self {
+        Self
+    }
+}
+
 /// Convert result into an integer error value.
 ///
 /// Returned value of `0` means that the result is of Ok value, otherwise it is an error.

@@ -407,16 +407,6 @@ impl TraitGroup {
         format_ident!("{}{}With{}", name, postfix, all_traits)
     }
 
-    pub fn optional_func_name_with_mand<'a>(
-        &'a self,
-        prefix: &str,
-        lc_names: impl Iterator<Item = &'a TraitInfo>,
-    ) -> Ident {
-        let mut lc_names = self.mandatory_vtbl.iter().chain(lc_names).collect_vec();
-        lc_names.sort();
-        Self::optional_func_name(prefix, lc_names.into_iter())
-    }
-
     /// Get the name of the function for trait conversion.
     ///
     /// # Arguments
@@ -560,20 +550,10 @@ impl TraitGroup {
             .filter(|v| !v.is_empty())
         {
             let func_name = Self::optional_func_name("cast", traits.iter().copied());
-            let func_name_with_mand =
-                self.optional_func_name_with_mand("cast", traits.iter().copied());
             let func_name_final = Self::optional_func_name("into", traits.iter().copied());
-            let func_name_final_with_mand =
-                self.optional_func_name_with_mand("into", traits.iter().copied());
             let func_name_check = Self::optional_func_name("check", traits.iter().copied());
-            let func_name_check_with_mand =
-                self.optional_func_name_with_mand("check", traits.iter().copied());
             let func_name_mut = Self::optional_func_name("as_mut", traits.iter().copied());
-            let func_name_mut_with_mand =
-                self.optional_func_name_with_mand("as_mut", traits.iter().copied());
             let func_name_ref = Self::optional_func_name("as_ref", traits.iter().copied());
-            let func_name_ref_with_mand =
-                self.optional_func_name_with_mand("as_ref", traits.iter().copied());
             let opt_final_name = Self::optional_group_ident(&name, "Final", traits.iter().copied());
             let opt_name = Self::optional_group_ident(&name, "", traits.iter().copied());
             let opt_vtbl_defs = self.mandatory_vtbl_defs(traits.iter().copied());
@@ -743,15 +723,6 @@ impl TraitGroup {
                     self.#func_name_ref().is_some()
                 }
 
-                #[doc = #func_check_doc1]
-                ///
-                #[doc = #func_check_doc2]
-                pub fn #func_name_check_with_mand(&self) -> bool
-                    where #opt_name<'cglue_a, #life_use CGlueT, CGlueF, #gen_use>: 'cglue_a + #impl_traits
-                {
-                    self.#func_name_check()
-                }
-
                 #[doc = #func_final_doc1]
                 ///
                 #[doc = #func_final_doc2]
@@ -774,15 +745,6 @@ impl TraitGroup {
                         #mand_ret_tmp_list
                         #opt_ret_tmp_list
                     })
-                }
-
-                #[doc = #func_final_doc1]
-                ///
-                #[doc = #func_final_doc2]
-                pub fn #func_name_final_with_mand(self) -> ::core::option::Option<impl 'cglue_a + #impl_traits>
-                    where #opt_final_name<'cglue_a, #sub_life_use CGlueT, CGlueF, #sub_gen_use>: 'cglue_a + #impl_traits
-                {
-                    self.#func_name_final()
                 }
 
                 #[doc = #func_doc1]
@@ -808,15 +770,6 @@ impl TraitGroup {
                     })
                 }
 
-                #[doc = #func_doc1]
-                ///
-                #[doc = #func_doc2]
-                pub fn #func_name_with_mand(self) -> ::core::option::Option<#opt_name<'cglue_a, #life_use CGlueT, CGlueF, #gen_use>>
-                    where #opt_name<'cglue_a, #life_use CGlueT, CGlueF, #gen_use>: 'cglue_a + #impl_traits
-                {
-                    self.#func_name()
-                }
-
                 #[doc = #func_mut_doc1]
                 pub fn #func_name_mut<'b>(&'b mut self) -> ::core::option::Option<&'b mut (impl 'cglue_a + #impl_traits)>
                     where #opt_name<'cglue_a, #life_use CGlueT, CGlueF, #gen_use>: 'cglue_a + #impl_traits
@@ -840,13 +793,6 @@ impl TraitGroup {
                     }
                 }
 
-                #[doc = #func_mut_doc1]
-                pub fn #func_name_mut_with_mand<'b>(&'b mut self) -> ::core::option::Option<&'b mut (impl 'cglue_a + #impl_traits)>
-                    where #opt_name<'cglue_a, #life_use CGlueT, CGlueF, #gen_use>: 'cglue_a + #impl_traits
-                {
-                    self.#func_name_mut()
-                }
-
                 #[doc = #func_ref_doc1]
                 pub fn #func_name_ref<'b>(&'b self) -> ::core::option::Option<&'b (impl 'cglue_a + #impl_traits)>
                     where #opt_name<'cglue_a, #life_use CGlueT, CGlueF, #gen_use>: 'cglue_a + #impl_traits
@@ -868,13 +814,6 @@ impl TraitGroup {
                     unsafe {
                         (self as *const Self as *const #opt_name<CGlueT, CGlueF, #gen_use>).as_ref()
                     }
-                }
-
-                #[doc = #func_ref_doc1]
-                pub fn #func_name_ref_with_mand<'b>(&'b self) -> ::core::option::Option<&'b (impl 'cglue_a + #impl_traits)>
-                    where #opt_name<'cglue_a, #life_use CGlueT, CGlueF, #gen_use>: 'cglue_a + #impl_traits
-                {
-                    self.#func_name_ref()
                 }
             });
         }
@@ -1079,7 +1018,7 @@ impl TraitGroup {
                 }
 
                 let gen = quote! {
-                    impl<'cglue_a, #life_use CGlueT, CGlueF, #gen_use> #path #ident <#tr_life_use #tr_gen_use> for #self_ident<'cglue_a, #life_use CGlueT, CGlueF, #gen_use> where Self: #ext_path #ext_name {
+                    impl<'cglue_a, #life_use CGlueT, CGlueF, #gen_use> #path #ident <#tr_life_use #tr_gen_use> for #self_ident<'cglue_a, #life_use CGlueT, CGlueF, #gen_use> where Self: #ext_path #ext_name<#tr_life_use #tr_gen_use> {
                         #impls
                     }
                 };
@@ -1260,7 +1199,7 @@ impl TraitGroup {
         ret
     }
 
-    /// `AsRef<Vtable>`, `CGlueObjRef<RetTmp>`, `CGlueObjOwned<RetTmp>`, `CGlueObjBuild<RetTmp>`, and `CGlueObjMut<T, RetTmp>` implementations for mandatory vtables.
+    /// `GetVtbl<Vtable>`, `CGlueObjRef<RetTmp>`, `CGlueObjOwned<RetTmp>`, `CGlueObjBuild<RetTmp>`, and `CGlueObjMut<T, RetTmp>` implementations for mandatory vtables.
     fn mandatory_as_ref_impls(
         &self,
         trg_path: &TokenStream,
@@ -1277,7 +1216,7 @@ impl TraitGroup {
         )
     }
 
-    /// `AsRef<Vtable>`, `CGlueObjRef<RetTmp>`, `CGlueObjOwned<RetTmp>`, `CGlueObjBuild<RetTmp>`, and `CGlueObjMut<T, RetTmp>` implementations for arbitrary type and list of tables.
+    /// `GetVtbl<Vtable>`, `CGlueObjRef<RetTmp>`, `CGlueObjOwned<RetTmp>`, `CGlueObjBuild<RetTmp>`, and `CGlueObjMut<T, RetTmp>` implementations for arbitrary type and list of tables.
     ///
     /// # Arguments
     ///
@@ -1357,11 +1296,11 @@ impl TraitGroup {
                     }
                 }
 
-                impl<#all_life_declare CGlueT, CGlueF, #all_gen_declare> AsRef<#path #vtbl_typename<#life_use CGlueT, CGlueF, #gen_use>>
+                impl<#all_life_declare CGlueT, CGlueF, #all_gen_declare> #trg_path::GetVtbl<#path #vtbl_typename<#life_use CGlueT, CGlueF, #gen_use>>
                     for #name<'_, #all_life_use CGlueT, CGlueF, #all_gen_use>
                     where #all_gen_where_bounds
                 {
-                    fn as_ref(&self) -> &#path #vtbl_typename<#life_use CGlueT, CGlueF, #gen_use> {
+                    fn get_vtbl(&self) -> &#path #vtbl_typename<#life_use CGlueT, CGlueF, #gen_use> {
                         &self.#vtbl_name
                     }
                 }

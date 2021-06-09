@@ -2,14 +2,20 @@ use super::trait_defs::*;
 #[cfg(test)]
 use cglue_macro::*;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct SA {}
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct SB {}
 
 impl TA for SA {
     extern "C" fn ta_1(&self) -> usize {
         5
+    }
+}
+
+impl AsRef<SA> for SA {
+    fn as_ref(&self) -> &SA {
+        self
     }
 }
 

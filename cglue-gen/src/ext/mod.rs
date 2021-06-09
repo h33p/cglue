@@ -4,6 +4,7 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use syn::{
     parse::{ParseStream, Parser},
     *,
@@ -58,14 +59,14 @@ fn subpath_to_tokens(path: &Path, skip: usize) -> TokenStream {
     out
 }
 
-type Modules = HashMap<usize, HashMap<Path, (TokenStream, Vec<Ident>)>>;
+type Modules = HashMap<usize, HashMap<Path, (TokenStream, HashSet<Ident>)>>;
 
 fn impl_mod(
     path: &Path,
     name: &Ident,
     depth: usize,
     mut mod_impl: TokenStream,
-    children: Vec<Ident>,
+    children: HashSet<Ident>,
     modules: &mut Modules,
 ) -> TokenStream {
     let child_depth = depth + 1;
@@ -152,16 +153,6 @@ pub fn ext_abs_remap(path: Path) -> Path {
 
             new_path.segments.extend(path.segments.into_pairs());
 
-            /*std::mem::drop(iter);
-
-            let (seg, punct) = path.segments.pop().unwrap().into_tuple();
-
-            new_path.segments.push_value(seg);
-
-            if let Some(punct) = punct {
-                new_path.segments.push_punct(punct);
-            }*/
-
             new_path
         } else {
             std::mem::drop(iter);
@@ -180,7 +171,7 @@ pub fn impl_store() -> TokenStream {
     let exports = get_exports();
     let store = get_store();
 
-    let mut modules = HashMap::<usize, HashMap<Path, (TokenStream, Vec<Ident>)>>::new();
+    let mut modules = HashMap::<usize, HashMap<Path, (TokenStream, HashSet<Ident>)>>::new();
 
     // Re-export everything
     for (k, v) in exports.into_iter() {
@@ -221,11 +212,14 @@ pub fn impl_store() -> TokenStream {
             .or_default();
 
         let name = &t.ident;
+        let subpath = subpath_to_tokens(&p, 1);
 
         module.extend(quote! {
-            pub use #name;
+            pub use #subpath #name;
 
-            #[::cglue_macro::cglue_trait_ext]
+            use ::cglue_macro::*;
+
+            #[cglue_trait_ext]
             #t
         });
     }
@@ -263,7 +257,7 @@ fn push_to_parent(depth: usize, path: &Path, modules: &mut Modules) {
         .entry(parent_path.clone());
 
     match entry {
-        Entry::Occupied(mut e) => e.get_mut().1.push(my_ident),
+        Entry::Occupied(mut e) => e.get_mut().1.insert(my_ident),
         Entry::Vacant(_) => {
             push_to_parent(child_depth, &parent_path, modules);
             let (_, children) = modules
@@ -271,9 +265,9 @@ fn push_to_parent(depth: usize, path: &Path, modules: &mut Modules) {
                 .or_default()
                 .entry(parent_path)
                 .or_default();
-            children.push(my_ident);
+            children.insert(my_ident)
         }
-    }
+    };
 }
 
 fn parse_traits(input: ParseStream) -> Result<Vec<ItemTrait>> {

@@ -88,8 +88,12 @@ unsafe impl<'a, T: Opaquable, F: CGlueBaseVtbl> Opaquable for CGlueTraitObj<'a, 
     type OpaqueTarget = CGlueTraitObj<'a, T::OpaqueTarget, F::OpaqueVtbl, F::RetTmp>;
 }
 
-impl<T, V, S> AsRef<V> for CGlueTraitObj<'_, T, V, S> {
-    fn as_ref(&self) -> &V {
+pub trait GetVtbl<V> {
+    fn get_vtbl(&self) -> &V;
+}
+
+impl<T, V, S> GetVtbl<V> for CGlueTraitObj<'_, T, V, S> {
+    fn get_vtbl(&self) -> &V {
         &self.vtbl
     }
 }

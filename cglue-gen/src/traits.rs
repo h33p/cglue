@@ -495,7 +495,7 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
         }
 
         quote! {
-            impl<T, V, S: Default> #trait_name for #trg_path::CGlueTraitObj<'_, T, V, S> where Self: #ext_name {
+            impl<#life_declare CGlueT, CGlueV, CGlueS: Default, #gen_declare> #trait_name<#life_use #gen_use> for #trg_path::CGlueTraitObj<'_, CGlueT, CGlueV, CGlueS> where Self: #ext_name<#life_use #gen_use> {
                 #impls
             }
         }
@@ -520,17 +520,6 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
     );
 
     let submod_name = format_ident!("{}", trait_name.to_string().to_lowercase());
-
-    let (opaque_ref_trait_obj, opaque_ref_trait_obj_use) = match need_mut {
-        true => (quote!(), quote!()),
-        false => (
-            quote! {
-                #[doc = #opaque_ref_trait_obj_doc]
-                pub type #opaque_ref_trait_obj_ident<'cglue_a, #life_use #gen_use> = #trait_obj_ident<'cglue_a, #life_use &'cglue_a #c_void, #c_void, #gen_use>;
-            },
-            quote!(#opaque_ref_trait_obj_ident,),
-        ),
-    };
 
     let ret_tmp = if !ret_tmp_type_defs.is_empty() {
         quote! {
@@ -590,7 +579,7 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
             #trait_obj_ident,
             #opaque_owned_trait_obj_ident,
             #opaque_mut_trait_obj_ident,
-            #opaque_ref_trait_obj_use
+            #opaque_ref_trait_obj_ident,
         };
 
         mod #submod_name {
@@ -653,7 +642,8 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
             #[doc = #opaque_mut_trait_obj_doc]
             pub type #opaque_mut_trait_obj_ident<'cglue_a, #life_use #gen_use> = #trait_obj_ident<'cglue_a, #life_use &'cglue_a mut #c_void, #c_void, #gen_use>;
 
-            #opaque_ref_trait_obj
+            #[doc = #opaque_ref_trait_obj_doc]
+            pub type #opaque_ref_trait_obj_ident<'cglue_a, #life_use #gen_use> = #trait_obj_ident<'cglue_a, #life_use &'cglue_a #c_void, #c_void, #gen_use>;
 
             /* Internal wrapper functions. */
 
@@ -662,7 +652,7 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
             /* Trait implementation. */
 
             /// Implement the traits for any CGlue object.
-            impl<#life_declare CGlueT #cglue_t_bounds_opaque, CGlueO: AsRef<#opaque_vtbl_ident<#life_use CGlueT, #gen_use>> + #trg_path::#required_mutability<#ret_tmp_ident<#life_use #gen_use>, ObjType = #c_void, ContType = CGlueT> + #return_self_bound, #gen_declare> #trait_impl_name<#life_use #gen_use> for CGlueO where #gen_where_bounds {
+            impl<#life_declare CGlueT #cglue_t_bounds_opaque, CGlueO: #trg_path::GetVtbl<#opaque_vtbl_ident<#life_use CGlueT, #gen_use>> + #trg_path::#required_mutability<#ret_tmp_ident<#life_use #gen_use>, ObjType = #c_void, ContType = CGlueT> + #return_self_bound, #gen_declare> #trait_impl_name<#life_use #gen_use> for CGlueO where #gen_where_bounds {
                 #trait_type_defs
                 #trait_impl_fns
             }

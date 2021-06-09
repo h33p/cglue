@@ -1,5 +1,5 @@
-use super::simple::structs::*;
-use super::simple::trait_defs::*;
+use super::super::simple::structs::*;
+use super::super::simple::trait_defs::*;
 use cglue_macro::*;
 
 cglue_trait_group!(MaybeClone, { TA }, { Clone });
