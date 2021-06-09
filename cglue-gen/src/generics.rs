@@ -1,10 +1,28 @@
 use proc_macro2::TokenStream;
 use quote::*;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::token::{Comma, Gt, Lt};
 use syn::*;
+
+fn ident_path(ident: Ident) -> Type {
+    let mut path = Path {
+        leading_colon: None,
+        segments: Punctuated::new(),
+    };
+
+    path.segments.push_value(PathSegment {
+        ident,
+        arguments: Default::default(),
+    });
+
+    Type::Path(TypePath { qself: None, path })
+}
+
+fn ty_ident(ty: &Type) -> Ident {
+    format_ident!("{}", ty.to_token_stream().to_string())
+}
 
 #[derive(Clone)]
 pub struct ParsedGenerics {
@@ -23,9 +41,14 @@ pub struct ParsedGenerics {
     /// Declarations that "use" the traits i.e. has bounds stripped.
     ///
     /// For instance: `T: Clone,` becomes just `T,`.
-    pub gen_use: Punctuated<Ident, Comma>,
+    pub gen_use: Punctuated<Type, Comma>,
     /// All where predicates, without the `where` keyword.
     pub gen_where_bounds: Punctuated<WherePredicate, Comma>,
+    /// Remap generic T to a particular type using T = type syntax.
+    ///
+    /// Then, when generics get cross referenced, all concrete T declarations get removed, and T
+    /// uses get replaced with concrete types.
+    pub gen_remaps: HashMap<Ident, Type>,
 }
 
 impl ParsedGenerics {
@@ -33,12 +56,12 @@ impl ParsedGenerics {
     /// that only contains generic type information about those types.
     pub fn cross_ref<'a>(&self, input: impl IntoIterator<Item = &'a ParsedGenerics>) -> Self {
         let mut applied_lifetimes = HashSet::<&Ident>::new();
-        let mut applied_typenames = HashSet::<&Ident>::new();
+        let mut applied_typenames = HashSet::<&Type>::new();
 
         let mut life_declare = Punctuated::new();
         let mut life_use = Punctuated::new();
         let mut gen_declare = Punctuated::new();
-        let mut gen_use = Punctuated::new();
+        let mut gen_use = Punctuated::<Type, _>::new();
         let mut gen_where_bounds = Punctuated::new();
 
         for ParsedGenerics {
@@ -80,7 +103,7 @@ impl ParsedGenerics {
 
                 gen_declare.push_value(decl.clone());
                 gen_declare.push_punct(Default::default());
-                gen_use.push_value(decl.ident.clone());
+                gen_use.push_value(ident_path(decl.ident.clone()));
                 gen_use.push_punct(Default::default());
 
                 applied_typenames.insert(&ident);
@@ -89,14 +112,7 @@ impl ParsedGenerics {
 
         for wb in self.gen_where_bounds.iter() {
             if match wb {
-                WherePredicate::Type(ty) => {
-                    if let Ok(ident) = parse2::<Ident>(ty.bounded_ty.to_token_stream()) {
-                        applied_typenames.contains(&ident)
-                    } else {
-                        // TODO: What to do with other bounds?
-                        false
-                    }
-                }
+                WherePredicate::Type(ty) => applied_typenames.contains(&ty.bounded_ty),
                 WherePredicate::Lifetime(lt) => applied_lifetimes.contains(&lt.lifetime.ident),
                 _ => false,
             } {
@@ -111,6 +127,54 @@ impl ParsedGenerics {
             gen_declare,
             gen_use,
             gen_where_bounds,
+            gen_remaps: Default::default(),
+        }
+    }
+
+    pub fn merge_remaps(&mut self, other: &mut ParsedGenerics) {
+        self.gen_remaps
+            .extend(std::mem::take(&mut other.gen_remaps));
+        other.gen_remaps = self.gen_remaps.clone();
+    }
+
+    pub fn merge_and_remap(&mut self, other: &mut ParsedGenerics) {
+        self.merge_remaps(other);
+        self.remap_types();
+        other.remap_types();
+    }
+
+    pub fn remap_types(&mut self) {
+        let old_gen_declare = std::mem::take(&mut self.gen_declare);
+        let old_gen_use = std::mem::take(&mut self.gen_use);
+
+        for val in old_gen_declare.into_pairs() {
+            match val {
+                punctuated::Pair::Punctuated(p, punc) => {
+                    if !self.gen_remaps.contains_key(&p.ident) {
+                        self.gen_declare.push_value(p);
+                        self.gen_declare.push_punct(punc);
+                    }
+                }
+                punctuated::Pair::End(p) => {
+                    if !self.gen_remaps.contains_key(&p.ident) {
+                        self.gen_declare.push_value(p);
+                    }
+                }
+            }
+        }
+
+        for val in old_gen_use.into_pairs() {
+            match val {
+                punctuated::Pair::Punctuated(p, punc) => {
+                    self.gen_use
+                        .push_value(self.gen_remaps.get(&ty_ident(&p)).cloned().unwrap_or(p));
+                    self.gen_use.push_punct(punc);
+                }
+                punctuated::Pair::End(p) => {
+                    self.gen_use
+                        .push_value(self.gen_remaps.get(&ty_ident(&p)).cloned().unwrap_or(p));
+                }
+            }
         }
     }
 
@@ -123,8 +187,9 @@ impl ParsedGenerics {
             stream.extend(quote!(#lt_ident: ::core::marker::PhantomData<&#lt ()>,));
         }
 
-        for ty in self.gen_use.iter() {
-            let ty_ident = format_ident!("_ty_{}", ty.to_string().to_lowercase());
+        for ty in self.gen_declare.iter() {
+            let ty_ident = format_ident!("_ty_{}", ty.ident.to_string().to_lowercase());
+            let ty = &ty.ident;
             stream.extend(quote!(#ty_ident: ::core::marker::PhantomData<#ty>,));
         }
 
@@ -140,8 +205,8 @@ impl ParsedGenerics {
             stream.extend(quote!(#lt_ident: ::core::marker::PhantomData{},));
         }
 
-        for ty in self.gen_use.iter() {
-            let ty_ident = format_ident!("_ty_{}", ty.to_string().to_lowercase());
+        for ty in self.gen_declare.iter() {
+            let ty_ident = format_ident!("_ty_{}", ty.ident.to_string().to_lowercase());
             stream.extend(quote!(#ty_ident: ::core::marker::PhantomData{},));
         }
 
@@ -152,17 +217,52 @@ impl ParsedGenerics {
 impl<'a> std::iter::FromIterator<&'a ParsedGenerics> for ParsedGenerics {
     fn from_iter<I: IntoIterator<Item = &'a ParsedGenerics>>(input: I) -> Self {
         let mut life_declare = Punctuated::new();
+        let mut life_declared = HashSet::<&Ident>::new();
+
         let mut life_use = Punctuated::new();
-        let mut gen_declare = Punctuated::new();
         let mut gen_use = Punctuated::new();
+
+        let mut gen_declare = Punctuated::new();
+        let mut gen_declared = HashSet::<&Ident>::new();
+
         let mut gen_where_bounds = Punctuated::new();
 
+        let mut gen_remaps = HashMap::default();
+
         for val in input {
-            life_declare.extend(val.life_declare.clone());
             life_use.extend(val.life_use.clone());
-            gen_declare.extend(val.gen_declare.clone());
             gen_use.extend(val.gen_use.clone());
+
+            for life in val.life_declare.pairs() {
+                let (val, punct) = life.into_tuple();
+                if life_declared.contains(&val.lifetime.ident) {
+                    continue;
+                }
+                life_declare.push_value(val.clone());
+                if let Some(punct) = punct {
+                    life_declare.push_punct(*punct);
+                }
+                life_declared.insert(&val.lifetime.ident);
+            }
+
+            for gen in val.gen_declare.pairs() {
+                let (val, punct) = gen.into_tuple();
+                if gen_declared.contains(&val.ident) {
+                    continue;
+                }
+                gen_declare.push_value(val.clone());
+                if let Some(punct) = punct {
+                    gen_declare.push_punct(*punct);
+                }
+                gen_declared.insert(&val.ident);
+            }
+
             gen_where_bounds.extend(val.gen_where_bounds.clone());
+            gen_remaps.extend(val.gen_remaps.clone());
+        }
+
+        if !gen_where_bounds.empty_or_trailing() {
+            gen_where_bounds.push_punct(Default::default());
         }
 
         Self {
@@ -171,6 +271,7 @@ impl<'a> std::iter::FromIterator<&'a ParsedGenerics> for ParsedGenerics {
             gen_declare,
             gen_use,
             gen_where_bounds,
+            gen_remaps,
         }
     }
 }
@@ -185,6 +286,7 @@ impl From<Option<&Punctuated<GenericArgument, Comma>>> for ParsedGenerics {
                 gen_declare: Punctuated::new(),
                 gen_use: Punctuated::new(),
                 gen_where_bounds: Punctuated::new(),
+                gen_remaps: Default::default(),
             },
         }
     }
@@ -196,12 +298,13 @@ impl From<&Punctuated<GenericArgument, Comma>> for ParsedGenerics {
         let mut life_use = Punctuated::new();
         let mut gen_declare = Punctuated::new();
         let mut gen_use = Punctuated::new();
+        let mut gen_remaps = HashMap::new();
 
         for param in input {
             match param {
                 GenericArgument::Type(ty) => {
-                    let ident = format_ident!("{}", ty.to_token_stream().to_string());
-                    gen_use.push_value(ident.clone());
+                    let ident = ty_ident(&ty);
+                    gen_use.push_value(ty.clone());
                     gen_use.push_punct(Default::default());
                     gen_declare.push_value(TypeParam {
                         attrs: vec![],
@@ -227,7 +330,24 @@ impl From<&Punctuated<GenericArgument, Comma>> for ParsedGenerics {
                     });
                     life_declare.push_punct(Default::default());
                 }
-                _ => {}
+                GenericArgument::Constraint(constraint) => {
+                    gen_use.push_value(ident_path(constraint.ident.clone()));
+                    gen_use.push_punct(Default::default());
+                    gen_declare.push_value(TypeParam {
+                        attrs: vec![],
+                        ident: constraint.ident.clone(),
+                        colon_token: None,
+                        bounds: constraint.bounds.clone(),
+                        eq_token: None,
+                        default: None,
+                    });
+                    gen_declare.push_punct(Default::default());
+                }
+                GenericArgument::Binding(bind) => {
+                    gen_use.push_value(bind.ty.clone());
+                    gen_use.push_punct(Default::default());
+                    gen_remaps.insert(bind.ident.clone(), bind.ty.clone());
+                }
             }
         }
 
@@ -237,6 +357,7 @@ impl From<&Punctuated<GenericArgument, Comma>> for ParsedGenerics {
             gen_declare,
             gen_use,
             gen_where_bounds: Punctuated::new(),
+            gen_remaps,
         }
     }
 }
@@ -254,7 +375,7 @@ impl From<&Generics> for ParsedGenerics {
         for param in input.params.iter() {
             match param {
                 GenericParam::Type(ty) => {
-                    gen_use.push_value(ty.ident.clone());
+                    gen_use.push_value(ident_path(ty.ident.clone()));
                     gen_use.push_punct(Default::default());
                     gen_declare.push_value(ty.clone());
                     gen_declare.push_punct(Default::default());
@@ -278,6 +399,7 @@ impl From<&Generics> for ParsedGenerics {
             gen_declare,
             gen_use,
             gen_where_bounds: gen_where_bounds.cloned().unwrap_or_else(Punctuated::new),
+            gen_remaps: Default::default(),
         }
     }
 }

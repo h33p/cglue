@@ -16,6 +16,7 @@ If all code is glued together, our glue is the safest on the market.
 - [In-depth look](#in-depth-look)
   - [Safety assumptions](#safety-assumptions)
   - [Name generation](#name-generation)
+  - [Generics in groups](#generics-in-groups)
   - [Type wrapping](#type-wrapping)
   - [Associated type wrapping](#associated-type-wrapping)
   - [Working with cbindgen](#working-with-cbindgen)
@@ -179,6 +180,56 @@ The macro generation will also generate structures for all combinations of optio
 being used. For more convenient by-macro usage, the names of optional traits inside are sorted
 in alphabetical order. If not using macros, check `MyGroup` documentation for underlying
 conversion function definitions.
+
+### Generics in groups
+
+Use of generics in trait groups is rather straightforward, with a couple of tiny nuances.
+
+Define a group with the standard template syntax:
+
+```rust
+cglue_trait_group!(GenGroup<T>, Getter<T>, { TA });
+```
+
+It is also possible to specify trait bounds:
+
+```rust
+cglue_trait_group!(GenGroup<T: Eq>, Getter<T>, { TA });
+```
+
+Or:
+
+```rust
+cglue_trait_group!(GenGroup<T> where T: Eq {}, Getter<T>, { TA });
+```
+
+Implement the group on a generic type:
+
+```rust
+cglue_impl_group!(GA<T: Eq>, GenGroup<T>, { TA });
+```
+
+Note that in the above case, `GA<T>` will be grouppable, if, and only if it implements both,
+`GenGroup<T>` and `TA` for `T: Eq`. If `GA` implements different sets of optional traits with
+different type parameters, then provide multiple implementations, with specified types. On each
+implementation, still add a generic type `T`, but specify its type with an equality somewhere
+on the line:
+
+```rust
+cglue_impl_group!(GA<T = u64>, GenGroup<T>, {});
+cglue_impl_group!(GA<T>, GenGroup<T = usize>, { TA });
+```
+
+Here, `GA<u64>` implements only `GenGroup<T>`, while `GA<usize>` implements both
+`GenGroup<usize>` and `TA`.
+
+Finally, you can also mix the 2, assuming the most general implementation has the most
+optional traits defined:
+
+```rust
+cglue_impl_group!(GA<T: Eq>, GenGroup<T>, { TA });
+cglue_impl_group!(GA<T = u64>, GenGroup<T>, {});
+```
 
 ### Type wrapping
 

@@ -202,7 +202,9 @@ impl Parse for TraitGroup {
 
 /// Describes trait group to be implemented on a type.
 pub struct TraitGroupImpl {
-    path: Path,
+    ty_path: Path,
+    ty: Ident,
+    ty_generics: ParsedGenerics,
     generics: ParsedGenerics,
     group_path: Path,
     group: Ident,
@@ -213,6 +215,10 @@ impl Parse for TraitGroupImpl {
     fn parse(input: ParseStream) -> Result<Self> {
         let path = input.parse()?;
 
+        let (ty_path, ty, ty_gens) = split_path_ident(&path)?;
+
+        let mut ty_generics = ParsedGenerics::from(ty_gens.as_ref());
+
         input.parse::<Token![,]>()?;
 
         let group = input.parse()?;
@@ -221,7 +227,7 @@ impl Parse for TraitGroupImpl {
 
         let generics = ParsedGenerics::from(gens.as_ref());
 
-        let generics = match input.parse::<ParsedGenerics>() {
+        let mut generics = match input.parse::<ParsedGenerics>() {
             Ok(ParsedGenerics {
                 gen_where_bounds, ..
             }) => {
@@ -233,6 +239,8 @@ impl Parse for TraitGroupImpl {
             }
             _ => generics,
         };
+
+        generics.merge_and_remap(&mut ty_generics);
 
         input.parse::<Token![,]>()?;
         let implemented_traits = parse_maybe_braced::<Path>(input)?;
@@ -247,7 +255,9 @@ impl Parse for TraitGroupImpl {
         implemented_vtbl.sort();
 
         Ok(Self {
-            path,
+            ty_path,
+            ty,
+            ty_generics,
             generics,
             group_path,
             group,
@@ -261,32 +271,47 @@ impl TraitGroupImpl {
     ///
     /// The type will have specified vtables implemented as a conversion function.
     pub fn implement_group(&self) -> TokenStream {
-        let path = &self.path;
+        let ty_path = &self.ty_path;
+        let ty = &self.ty;
+
+        let ParsedGenerics {
+            life_use: ty_life_use,
+            gen_use: ty_gen_use,
+            ..
+        } = &self.ty_generics;
+
         let group = &self.group;
         let group_path = &self.group_path;
         let ParsedGenerics {
+            life_use, gen_use, ..
+        } = &self.generics;
+
+        let ParsedGenerics {
             life_declare,
-            life_use,
             gen_declare,
-            gen_use,
             gen_where_bounds,
             ..
-        } = &self.generics;
+        } = [&self.ty_generics, &self.generics]
+            .iter()
+            .copied()
+            .collect();
 
         let filler_trait = format_ident!("{}VtableFiller", group);
         let vtable_type = format_ident!("{}Vtables", group);
+
+        let full_ty = quote!(#ty_path #ty <#ty_life_use #ty_gen_use>);
 
         let implemented_tables = TraitGroup::enable_opt_vtbls(self.implemented_vtbl.iter());
         let vtbl_where_bounds = TraitGroup::vtbl_where_bounds(
             self.implemented_vtbl.iter(),
             quote!(CGlueT),
-            quote!(#path),
+            quote!(#full_ty),
         );
 
         quote! {
-            impl<'cglue_a, #life_declare CGlueT: ::core::ops::Deref<Target = #path>, #gen_declare> #group_path #filler_trait<'cglue_a, #life_use #path, #gen_use> for CGlueT
+            impl<'cglue_a, #life_declare CGlueT: ::core::ops::Deref<Target = #full_ty>, #gen_declare> #group_path #filler_trait<'cglue_a, #life_use #full_ty, #gen_use> for CGlueT
             where #gen_where_bounds #vtbl_where_bounds {
-                fn fill_table(table: #group_path #vtable_type<'cglue_a, #life_use CGlueT, #path, #gen_use>) -> #group_path #vtable_type<'cglue_a, #life_use CGlueT, #path, #gen_use> {
+                fn fill_table(table: #group_path #vtable_type<'cglue_a, #life_use CGlueT, #full_ty, #gen_use>) -> #group_path #vtable_type<'cglue_a, #life_use CGlueT, #full_ty, #gen_use> {
                     table #implemented_tables
                 }
             }
