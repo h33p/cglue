@@ -138,19 +138,17 @@ And there is much more! Here are some highlights:
 
 ### Safety assumptions
 
-This crate relies on encapsulation and the assumption that opaque objects will not be
-tampered with, that is vtable functions will not be modified. For this reason, vtable
-fields are not public, and neither are references on generated group objects. However,
-it is still possible to access vtable references of generated groups from the same module.
+This crate relies on the assumption that opaque objects will not be tampered with, that is
+vtable functions will not be modified. It is being ensured through encapsulation of fields
+from anywhere by using hidden submodules. However, unverifiable users (C libraries) may still
+be able to modify the tables. This library assumes they are not malicious and does not
+perform any runtime verification.
 
-`TODO: generate everything in a submodule?`
+Other than one more bit in [wrapping](#associated-type-wrapping), this crate should be safe.
 
-Essentially, this is the safety situation:
-
-1. Destroying type information of trait objects and groups is safe, so long as objects and
-   their vtables do not get swapped.
-
-2. It is still possible to do that from the module that generates the group.
+The crate employs a number of `unsafe` traits that get auto-implemented, or traits with unsafe
+functions. Their usage inside the code generator should be safe, they are marked in such a way
+so that manual implementations can not introduce undefined behaviour.
 
 ### Name generation
 
@@ -469,4 +467,3 @@ Other than that, everything should be good to go!
 
 4. There probably are some corner cases when it comes to path imports. If you find any, please
    file an issue report :)
-
