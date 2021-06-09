@@ -17,6 +17,7 @@ If all code is glued together, our glue is the safest on the market.
   - [Safety assumptions](#safety-assumptions)
   - [Name generation](#name-generation)
   - [Generics in groups](#generics-in-groups)
+    - [Manully implementing groups](#manually-implementing-groups)
   - [Type wrapping](#type-wrapping)
   - [Associated type wrapping](#associated-type-wrapping)
   - [Working with cbindgen](#working-with-cbindgen)
@@ -220,8 +221,8 @@ cglue_impl_group!(GA<T = u64>, GenGroup<T>, {});
 cglue_impl_group!(GA<T>, GenGroup<T = usize>, { TA });
 ```
 
-Here, `GA<u64>` implements only `GenGroup<T>`, while `GA<usize>` implements both
-`GenGroup<usize>` and `TA`.
+Here, `GA<u64>` implements only `Getter<T>`, while `GA<usize>` implements both
+`Getter<usize>` and `TA`.
 
 Finally, you can also mix the 2, assuming the most general implementation has the most
 optional traits defined:
@@ -229,6 +230,34 @@ optional traits defined:
 ```rust
 cglue_impl_group!(GA<T: Eq>, GenGroup<T>, { TA });
 cglue_impl_group!(GA<T = u64>, GenGroup<T>, {});
+```
+
+#### Manually implementing groups
+
+It is also possible to manually implement the groups by implementing `MyGroupVtableFiller`. Here is what
+the above 2 macro invocations expand to:
+
+```rust
+impl<'cglue_a, CGlueT: Deref<Target = GA<T>>, T: Eq>
+GenGroupVtableFiller<'cglue_a, GA<T>, T> for CGlueT
+where
+&'cglue_a CGlueVtblTA<CGlueT, GA<T>>: 'cglue_a + Default,
+{
+    fn fill_table(
+        table: GenGroupVtables<'cglue_a, CGlueT, GA<T>, T>,
+    ) -> GenGroupVtables<'cglue_a, CGlueT, GA<T>, T> {
+        table.enable_ta()
+    }
+}
+impl<'cglue_a, CGlueT: Deref<Target = GA<u64>>>
+GenGroupVtableFiller<'cglue_a, GA<u64>, u64> for CGlueT
+{
+    fn fill_table(
+        table: GenGroupVtables<'cglue_a, CGlueT, GA<u64>, u64>,
+    ) -> GenGroupVtables<'cglue_a, CGlueT, GA<u64>, u64> {
+        table
+    }
+}
 ```
 
 ### Type wrapping
