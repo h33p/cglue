@@ -456,7 +456,39 @@ impl ParsedFunc {
         };
 
         let gen = quote! {
-            pub #name: #hrtb extern "C" fn(#args #c_ret_params) #c_out,
+            #name: #hrtb extern "C" fn(#args #c_ret_params) #c_out,
+        };
+
+        stream.extend(gen);
+    }
+
+    /// Create a VTable definition for this function
+    pub fn vtbl_getter_def(&self, stream: &mut TokenStream) {
+        let name = &self.name;
+        let args = self.vtbl_args();
+        let ParsedReturnType {
+            c_out,
+            c_ret_params,
+            use_hrtb,
+            ..
+        } = &self.out;
+
+        let hrtb = if *use_hrtb {
+            quote!(for<'cglue_b> )
+        } else {
+            quote!()
+        };
+
+        let doc_text = format!(" Getter for {}.", name.to_string());
+
+        let gen = quote! {
+            #[doc = #doc_text]
+            ///
+            /// Note that this function is wrapped into unsafe, because if already were is an
+            /// opaque one, it would allow to invoke undefined behaviour.
+            pub fn #name(&self) -> #hrtb unsafe extern "C" fn(#args #c_ret_params) #c_out {
+                unsafe { ::core::mem::transmute(&self.#name) }
+            }
         };
 
         stream.extend(gen);

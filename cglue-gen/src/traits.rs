@@ -326,7 +326,7 @@ pub fn parse_trait(
     (funcs, generics, trait_type_defs)
 }
 
-pub fn gen_trait(tr: &ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
+pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
     // Path to trait group import.
     let crate_path = crate::util::crate_path();
     let trg_path: TokenStream = quote!(#crate_path::trait_group);
@@ -334,7 +334,8 @@ pub fn gen_trait(tr: &ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
     // Need to preserve the same visibility as the trait itself.
     let vis = tr.vis.to_token_stream();
 
-    let trait_name = &tr.ident;
+    let trait_name = tr.ident.clone();
+    let trait_name = &trait_name;
 
     let trait_impl_name = ext_name.unwrap_or(trait_name);
 
@@ -350,7 +351,10 @@ pub fn gen_trait(tr: &ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
     let opaque_mut_trait_obj_ident = format_ident!("CGlueMut{}", trait_name);
     let opaque_ref_trait_obj_ident = format_ident!("CGlueRef{}", trait_name);
 
-    let (funcs, generics, trait_type_defs) = parse_trait(tr, &crate_path);
+    let (funcs, generics, trait_type_defs) = parse_trait(&tr, &crate_path);
+
+    tr.ident = trait_impl_name.clone();
+
     let mut trait_type_bounds = TokenStream::new();
 
     let ParsedGenerics {
@@ -367,6 +371,13 @@ pub fn gen_trait(tr: &ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
 
     for func in &funcs {
         func.vtbl_def(&mut vtbl_func_defintions);
+    }
+
+    // Getters for vtable functions
+    let mut vtbl_getter_defintions = TokenStream::new();
+
+    for func in &funcs {
+        func.vtbl_getter_def(&mut vtbl_getter_defintions);
     }
 
     // Default functions for vtable reference
@@ -508,12 +519,17 @@ pub fn gen_trait(tr: &ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
         trait_name
     );
 
-    let opaque_ref_trait_obj = match need_mut {
-        true => quote!(),
-        false => quote! {
-            #[doc = #opaque_ref_trait_obj_doc]
-            pub type #opaque_ref_trait_obj_ident<'cglue_a, #life_use #gen_use> = #trait_obj_ident<'cglue_a, #life_use &'cglue_a #c_void, #c_void, #gen_use>;
-        },
+    let submod_name = format_ident!("{}", trait_name.to_string().to_lowercase());
+
+    let (opaque_ref_trait_obj, opaque_ref_trait_obj_use) = match need_mut {
+        true => (quote!(), quote!()),
+        false => (
+            quote! {
+                #[doc = #opaque_ref_trait_obj_doc]
+                pub type #opaque_ref_trait_obj_ident<'cglue_a, #life_use #gen_use> = #trait_obj_ident<'cglue_a, #life_use &'cglue_a #c_void, #c_void, #gen_use>;
+            },
+            quote!(#opaque_ref_trait_obj_ident,),
+        ),
     };
 
     let ret_tmp = if !ret_tmp_type_defs.is_empty() {
@@ -524,7 +540,7 @@ pub fn gen_trait(tr: &ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
             /// an associated type. Note that these temporary values should not be accessed
             /// directly. Use the trait functions.
             #[repr(C)]
-            #vis struct #ret_tmp_ident<#life_use #gen_use> {
+            pub struct #ret_tmp_ident<#life_use #gen_use> {
                 #ret_tmp_type_defs
                 #phantom_data_definitions
             }
@@ -545,7 +561,7 @@ pub fn gen_trait(tr: &ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
     } else {
         quote! {
             /// Technically unused phantom data definition structure.
-            #vis struct #ret_tmp_ident_phantom<#life_use #gen_use> {
+            pub struct #ret_tmp_ident_phantom<#life_use #gen_use> {
                 #phantom_data_definitions
             }
 
@@ -559,76 +575,99 @@ pub fn gen_trait(tr: &ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
             /// groups/objects. If C++11 templates are generated, it is important to define a
             /// custom type for CGlueTraitObj that does not have `ret_tmp` defined, and change all
             /// type aliases of this trait to use that particular structure.
-            #vis type #ret_tmp_ident<#life_use #gen_use> = ::core::marker::PhantomData<#ret_tmp_ident_phantom<#life_use #gen_use>>;
+            pub type #ret_tmp_ident<#life_use #gen_use> = ::core::marker::PhantomData<#ret_tmp_ident_phantom<#life_use #gen_use>>;
         }
     };
 
     // Glue it all together
     quote! {
-        /* Primary vtable definition. */
+        #tr
 
-        #[doc = #vtbl_doc]
-        ///
-        /// This virtual function table contains ABI-safe interface for the given trait.
-        #[repr(C)]
-        #vis struct #vtbl_ident<#life_declare CGlueT, CGlueF, #gen_declare> where #gen_where_bounds {
-            #vtbl_func_defintions
-            #vtbl_phantom_def
-        }
+        #vis use #submod_name::{
+            #vtbl_ident,
+            #ret_tmp_ident,
+            #opaque_vtbl_ident,
+            #trait_obj_ident,
+            #opaque_owned_trait_obj_ident,
+            #opaque_mut_trait_obj_ident,
+            #opaque_ref_trait_obj_use
+        };
 
-        #ret_tmp
+        mod #submod_name {
+            use super::*;
+            use super::#trait_impl_name;
 
-        /* Default implementation. */
+            /* Primary vtable definition. */
 
-        /// Default vtable reference creation.
-        impl<'cglue_a, #life_declare CGlueT #cglue_t_bounds, CGlueF: #trait_name<#life_use #gen_use>, #gen_declare> Default for &'cglue_a #vtbl_ident<#life_use CGlueT, CGlueF, #gen_use> where #gen_where_bounds #trait_type_bounds {
-            /// Create a static vtable for the given type.
-            fn default() -> Self {
-                &#vtbl_ident {
-                    #vtbl_default_funcs
-                    #vtbl_phantom_init
+            #[doc = #vtbl_doc]
+            ///
+            /// This virtual function table contains ABI-safe interface for the given trait.
+            #[repr(C)]
+            pub struct #vtbl_ident<#life_declare CGlueT, CGlueF, #gen_declare> where #gen_where_bounds {
+                #vtbl_func_defintions
+                #vtbl_phantom_def
+            }
+
+            impl<#life_declare CGlueT, CGlueF, #gen_declare> #vtbl_ident<#life_use CGlueT, CGlueF, #gen_use>
+                where #gen_where_bounds
+            {
+                #vtbl_getter_defintions
+            }
+
+            #ret_tmp
+
+            /* Default implementation. */
+
+            /// Default vtable reference creation.
+            impl<'cglue_a, #life_declare CGlueT #cglue_t_bounds, CGlueF: #trait_name<#life_use #gen_use>, #gen_declare> Default for &'cglue_a #vtbl_ident<#life_use CGlueT, CGlueF, #gen_use> where #gen_where_bounds #trait_type_bounds {
+                /// Create a static vtable for the given type.
+                fn default() -> Self {
+                    &#vtbl_ident {
+                        #vtbl_default_funcs
+                        #vtbl_phantom_init
+                    }
                 }
             }
+
+            /* Vtable trait implementations. */
+
+            #[doc = #vtbl_opaque_doc]
+            ///
+            /// This virtual function table has type information destroyed, is used in CGlue objects
+            /// and trait groups.
+            pub type #opaque_vtbl_ident<#life_use CGlueT, #gen_use> = #vtbl_ident<#life_use CGlueT, #c_void, #gen_use>;
+
+            unsafe impl<#life_declare CGlueT: #trg_path::Opaquable, CGlueF: #trait_name<#life_use #gen_use>, #gen_declare> #trg_path::CGlueBaseVtbl for #vtbl_ident<#life_use CGlueT, CGlueF, #gen_use> where #gen_where_bounds {
+                type OpaqueVtbl = #opaque_vtbl_ident<#life_use CGlueT::OpaqueTarget, #gen_use>;
+                type RetTmp = #ret_tmp_ident<#life_use #gen_use>;
+            }
+
+            impl<#life_declare CGlueT #cglue_t_bounds, CGlueF: #trait_name<#life_use #gen_use>, #gen_declare> #trg_path::CGlueVtbl<CGlueF> for #vtbl_ident<#life_use CGlueT, CGlueF, #gen_use> where #gen_where_bounds CGlueT: #trg_path::Opaquable {}
+
+            #[doc = #trait_obj_doc]
+            pub type #trait_obj_ident<'cglue_a, #life_use CGlueT, CGlueF, #gen_use> = #trg_path::CGlueTraitObj::<'cglue_a, CGlueT, #vtbl_ident<#life_use CGlueT, CGlueF, #gen_use>, #ret_tmp_ident<#life_use #gen_use>>;
+
+            #[doc = #opaque_owned_trait_obj_doc]
+            pub type #opaque_owned_trait_obj_ident<'cglue_a, #life_use #gen_use> = #trait_obj_ident<'cglue_a, #life_use #crate_path::boxed::CBox<#c_void>, #c_void, #gen_use>;
+
+            #[doc = #opaque_mut_trait_obj_doc]
+            pub type #opaque_mut_trait_obj_ident<'cglue_a, #life_use #gen_use> = #trait_obj_ident<'cglue_a, #life_use &'cglue_a mut #c_void, #c_void, #gen_use>;
+
+            #opaque_ref_trait_obj
+
+            /* Internal wrapper functions. */
+
+            #cfuncs
+
+            /* Trait implementation. */
+
+            /// Implement the traits for any CGlue object.
+            impl<#life_declare CGlueT #cglue_t_bounds_opaque, CGlueO: AsRef<#opaque_vtbl_ident<#life_use CGlueT, #gen_use>> + #trg_path::#required_mutability<#ret_tmp_ident<#life_use #gen_use>, ObjType = #c_void, ContType = CGlueT> + #return_self_bound, #gen_declare> #trait_impl_name<#life_use #gen_use> for CGlueO where #gen_where_bounds {
+                #trait_type_defs
+                #trait_impl_fns
+            }
+
+            #internal_trait_impl
         }
-
-        /* Vtable trait implementations. */
-
-        #[doc = #vtbl_opaque_doc]
-        ///
-        /// This virtual function table has type information destroyed, is used in CGlue objects
-        /// and trait groups.
-        #vis type #opaque_vtbl_ident<#life_use CGlueT, #gen_use> = #vtbl_ident<#life_use CGlueT, #c_void, #gen_use>;
-
-        unsafe impl<#life_declare CGlueT: #trg_path::Opaquable, CGlueF: #trait_name<#life_use #gen_use>, #gen_declare> #trg_path::CGlueBaseVtbl for #vtbl_ident<#life_use CGlueT, CGlueF, #gen_use> where #gen_where_bounds {
-            type OpaqueVtbl = #opaque_vtbl_ident<#life_use CGlueT::OpaqueTarget, #gen_use>;
-            type RetTmp = #ret_tmp_ident<#life_use #gen_use>;
-        }
-
-        impl<#life_declare CGlueT #cglue_t_bounds, CGlueF: #trait_name<#life_use #gen_use>, #gen_declare> #trg_path::CGlueVtbl<CGlueF> for #vtbl_ident<#life_use CGlueT, CGlueF, #gen_use> where #gen_where_bounds CGlueT: #trg_path::Opaquable {}
-
-        #[doc = #trait_obj_doc]
-        pub type #trait_obj_ident<'cglue_a, #life_use CGlueT, CGlueF, #gen_use> = #trg_path::CGlueTraitObj::<'cglue_a, CGlueT, #vtbl_ident<#life_use CGlueT, CGlueF, #gen_use>, #ret_tmp_ident<#life_use #gen_use>>;
-
-        #[doc = #opaque_owned_trait_obj_doc]
-        pub type #opaque_owned_trait_obj_ident<'cglue_a, #life_use #gen_use> = #trait_obj_ident<'cglue_a, #life_use #crate_path::boxed::CBox<#c_void>, #c_void, #gen_use>;
-
-        #[doc = #opaque_mut_trait_obj_doc]
-        pub type #opaque_mut_trait_obj_ident<'cglue_a, #life_use #gen_use> = #trait_obj_ident<'cglue_a, #life_use &'cglue_a mut #c_void, #c_void, #gen_use>;
-
-        #opaque_ref_trait_obj
-
-        /* Internal wrapper functions. */
-
-        #cfuncs
-
-        /* Trait implementation. */
-
-        /// Implement the traits for any CGlue object.
-        impl<#life_declare CGlueT #cglue_t_bounds_opaque, CGlueO: AsRef<#opaque_vtbl_ident<#life_use CGlueT, #gen_use>> + #trg_path::#required_mutability<#ret_tmp_ident<#life_use #gen_use>, ObjType = #c_void, ContType = CGlueT> + #return_self_bound, #gen_declare> #trait_impl_name<#life_use #gen_use> for CGlueO where #gen_where_bounds {
-            #trait_type_defs
-            #trait_impl_fns
-        }
-
-        #internal_trait_impl
     }
 }

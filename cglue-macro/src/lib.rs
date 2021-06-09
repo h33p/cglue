@@ -18,14 +18,9 @@ use syn::*;
 pub fn cglue_trait(_args: TokenStream, input: TokenStream) -> TokenStream {
     let tr = parse_macro_input!(input as ItemTrait);
 
-    let trait_def = cglue_gen::traits::gen_trait(&tr, None);
+    let trait_def = cglue_gen::traits::gen_trait(tr, None);
 
-    let gen = quote! {
-        #tr
-        #trait_def
-    };
-
-    gen.into()
+    trait_def.into()
 }
 
 /// Make an external trait CGlue compatible.
@@ -36,20 +31,13 @@ pub fn cglue_trait(_args: TokenStream, input: TokenStream) -> TokenStream {
 /// This is very useful when third-party crates are needed to be CGlue compatible.
 #[proc_macro_attribute]
 pub fn cglue_trait_ext(_args: TokenStream, input: TokenStream) -> TokenStream {
-    let mut tr = parse_macro_input!(input as ItemTrait);
+    let tr = parse_macro_input!(input as ItemTrait);
 
     let ext_ident = format_ident!("Ext{}", tr.ident);
 
-    let trait_def = cglue_gen::traits::gen_trait(&tr, Some(&ext_ident));
+    let trait_def = cglue_gen::traits::gen_trait(tr, Some(&ext_ident));
 
-    tr.ident = ext_ident;
-
-    let gen = quote! {
-        #tr
-        #trait_def
-    };
-
-    gen.into()
+    trait_def.into()
 }
 
 /// Convert into a CGlue compatible object.

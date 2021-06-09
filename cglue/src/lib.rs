@@ -117,6 +117,7 @@
 //! // only that `InfoChanger` is optionally implemented.
 //! cglue_impl_group!(Info, InfoGroup, InfoChanger);
 //!
+//! # fn main() {
 //! let mut info = Info { value: 5 };
 //!
 //! let mut obj = group_obj!(info as InfoGroup);
@@ -125,6 +126,7 @@
 //! assert!(as_ref!(&obj impl InfoDeleter).is_none());
 //!
 //! change_info(&mut cast!(obj impl InfoChanger).unwrap(), 20);
+//! # }
 //!
 //! fn change_info(change: &mut (impl InfoPrinter + InfoChanger), new_val: usize) {
 //!     println!("Old info:");
@@ -151,19 +153,17 @@
 //!
 //! ### Safety assumptions
 //!
-//! This crate relies on encapsulation and the assumption that opaque objects will not be
-//! tampered with, that is vtable functions will not be modified. For this reason, vtable
-//! fields are not public, and neither are references on generated group objects. However,
-//! it is still possible to access vtable references of generated groups from the same module.
+//! This crate relies on the assumption that opaque objects will not be tampered with, that is
+//! vtable functions will not be modified. It is being ensured through encapsulation of fields
+//! from anywhere by using hidden submodules. However, unverifiable users (C libraries) may still
+//! be able to modify the tables. This library assumes they are not malicious and does not
+//! perform any runtime verification.
 //!
-//! `TODO: generate everything in a submodule?`
+//! Other than one more bit in [wrapping](#associated-type-wrapping), this crate should be safe.
 //!
-//! Essentially, this is the safety situation:
-//!
-//! 1. Destroying type information of trait objects and groups is safe, so long as objects and
-//!    their vtables do not get swapped.
-//!
-//! 2. It is still possible to do that from the module that generates the group.
+//! The crate employs a number of `unsafe` traits that get auto-implemented, or traits with unsafe
+//! functions. Their usage inside the code generator should be safe, they are marked in such a way
+//! so that manual implementations can not introduce undefined behaviour.
 //!
 //! ### Name generation
 //!
@@ -225,6 +225,7 @@
 //! #     }
 //! # }
 //! cglue_trait_group!(GenGroup<T>, Getter<T>, { TA });
+//! # fn main() {}
 //! ```
 //!
 //! It is also possible to specify trait bounds:
@@ -253,6 +254,7 @@
 //! #     }
 //! # }
 //! cglue_trait_group!(GenGroup<T: Eq>, Getter<T>, { TA });
+//! # fn main() {}
 //! ```
 //!
 //! Or:
@@ -281,6 +283,7 @@
 //! #     }
 //! # }
 //! cglue_trait_group!(GenGroup<T> where T: Eq {}, Getter<T>, { TA });
+//! # fn main() {}
 //! ```
 //!
 //! Implement the group on a generic type:
@@ -310,6 +313,7 @@
 //! # }
 //! # cglue_trait_group!(GenGroup<T: Eq>, Getter<T>, { TA });
 //! cglue_impl_group!(GA<T: Eq>, GenGroup<T>, { TA });
+//! # fn main() {}
 //! ```
 //!
 //! Note that in the above case, `GA<T>` will be grouppable, if, and only if it implements both,
@@ -344,6 +348,7 @@
 //! # cglue_trait_group!(GenGroup<T: Eq>, Getter<T>, { TA });
 //! cglue_impl_group!(GA<T = u64>, GenGroup<T>, {});
 //! cglue_impl_group!(GA<T>, GenGroup<T = usize>, { TA });
+//! # fn main() {}
 //! ```
 //!
 //! Here, `GA<u64>` implements only `Getter<T>`, while `GA<usize>` implements both
@@ -378,6 +383,7 @@
 //! # cglue_trait_group!(GenGroup<T: Eq>, Getter<T>, { TA });
 //! cglue_impl_group!(GA<T: Eq>, GenGroup<T>, { TA });
 //! cglue_impl_group!(GA<T = u64>, GenGroup<T>, {});
+//! # fn main() {}
 //! ```
 //!
 //! #### Manually implementing groups
@@ -409,6 +415,7 @@
 //! #     }
 //! # }
 //! # cglue_trait_group!(GenGroup<T: Eq>, Getter<T>, { TA });
+//! # use core::ops::Deref;
 //! impl<'cglue_a, CGlueT: Deref<Target = GA<T>>, T: Eq>
 //! GenGroupVtableFiller<'cglue_a, GA<T>, T> for CGlueT
 //! where
@@ -429,6 +436,7 @@
 //!         table
 //!     }
 //! }
+//! # fn main() {}
 //! ```
 //!
 //! ### Type wrapping
@@ -519,6 +527,7 @@
 //!     }
 //! }
 //!
+//! # fn main() {
 //! let builder = InfoBuilder {};
 //!
 //! let obj = trait_obj!(builder as ObjReturn);
@@ -526,6 +535,7 @@
 //! let info_printer = obj.or_1();
 //!
 //! info_printer.print_info();
+//! # }
 //! ```
 //!
 //! This also works if the trait were to return a `&Self::ReturnType`, or `&mut Self::ReturnType`.
@@ -653,7 +663,6 @@
 //!
 //! 4. There probably are some corner cases when it comes to path imports. If you find any, please
 //!    file an issue report :)
-//!
 
 pub mod arc;
 pub mod boxed;

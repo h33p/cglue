@@ -534,6 +534,7 @@ impl TraitGroup {
         let mut trait_funcs = TokenStream::new();
 
         let mut opt_structs = TokenStream::new();
+        let mut opt_struct_imports = TokenStream::new();
 
         let impl_traits =
             self.impl_traits(self.mandatory_vtbl.iter().chain(self.optional_vtbl.iter()));
@@ -650,6 +651,11 @@ impl TraitGroup {
             let opt_doc2 = format!(" Retrieve this type using one of [`{}`]({}::{}), [`{}`]({}::{}), or [`{}`]({}::{}) functions.", func_name, name, func_name, func_name_mut, name, func_name_mut, func_name_ref, name, func_name_ref);
 
             // TODO: remove unused generics to remove need for phantom data
+
+            opt_struct_imports.extend(quote! {
+                #opt_final_name,
+                #opt_name,
+            });
 
             opt_structs.extend(quote! {
 
@@ -873,148 +879,166 @@ impl TraitGroup {
             });
         }
 
+        let submod_name = format_ident!("{}", name.to_string().to_lowercase());
+
         quote! {
-            #[repr(C)]
-            #[doc = #base_doc]
-            ///
-            /// Optional traits are not implemented here, however. There are numerous conversion
-            /// functions available for safely retrieving a concrete collection of traits.
-            ///
-            /// `check_impl_` functions allow to check if the object implements the wanted traits.
-            ///
-            /// `into_impl_` functions consume the object and produce a new final structure that
-            /// keeps only the required information.
-            ///
-            /// `cast_impl_` functions merely check and transform the object into a type that can
-            #[doc = #trback_doc]
-            ///
-            /// `as_ref_`, and `as_mut_` functions obtain references to safe objects, but do not
-            /// perform any memory transformations either. They are the safest to use, because
-            /// there is no risk of accidentally consuming the whole object.
-            pub struct #name<'cglue_a, #life_declare CGlueT, CGlueF, #gen_declare> where #gen_where_bounds {
-                instance: CGlueT,
-                #mandatory_vtbl_defs
-                #optional_vtbl_defs
-                #ret_tmp_defs
-            }
 
-            #[repr(C)]
-            pub struct #vtable_type<'cglue_a, #life_declare CGlueT, CGlueF, #gen_declare> where #gen_where_bounds {
-                #mandatory_vtbl_defs
-                #optional_vtbl_defs
-            }
+            pub use #submod_name::{
+                #name,
+                #vtable_type,
+                #filler_trait,
+                #opaque_name,
+                #opaque_name_ref,
+                #opaque_name_mut,
+                #opaque_name_boxed,
+                #opt_struct_imports
+            };
 
-            impl<'cglue_a, #life_declare CGlueT, CGlueF, #gen_declare> Default for #vtable_type<'cglue_a, #life_use CGlueT, CGlueF, #gen_use>
-                where #vtbl_where_bounds #gen_where_bounds
-            {
-                fn default() -> Self {
-                    Self {
-                        #mand_vtbl_default
-                        #none_opt_vtbl_list
-                    }
-                }
-            }
+            mod #submod_name {
+                use super::*;
 
-            impl<'cglue_a, #life_declare CGlueT: ::core::ops::Deref<Target = CGlueF>, CGlueF, #gen_declare> #vtable_type<'cglue_a, #life_use CGlueT, CGlueF, #gen_use>
-                where #gen_where_bounds {
-                #enable_funcs
-            }
-
-            pub trait #filler_trait<'cglue_a, #life_declare CGlueF, #gen_declare>: Sized + ::core::ops::Deref<Target = CGlueF> where #gen_where_bounds {
-                fn fill_table(table: #vtable_type<'cglue_a, #life_use Self, Self::Target, #gen_use>) -> #vtable_type<'cglue_a, #life_use Self, Self::Target, #gen_use>;
-            }
-
-            pub type #opaque_name<'cglue_a, #life_use CGlueT: ::core::ops::Deref<Target = #c_void>, #gen_use> = #name<'cglue_a, #life_use CGlueT, CGlueT::Target, #gen_use>;
-            pub type #opaque_name_ref<'cglue_a, #life_use #gen_use> = #name<'cglue_a, #life_use &'cglue_a #c_void, #c_void, #gen_use>;
-            pub type #opaque_name_mut<'cglue_a, #life_use #gen_use> = #name<'cglue_a, #life_use &'cglue_a mut #c_void, #c_void, #gen_use>;
-            pub type #opaque_name_boxed<'cglue_a, #life_use #gen_use> = #name<'cglue_a, #life_use #crate_path::boxed::CBox<#c_void>, #c_void, #gen_use>;
-
-            impl<'cglue_a, #life_declare CGlueT: ::core::ops::Deref<Target = CGlueF> + #filler_trait<'cglue_a, #life_use CGlueF, #gen_use>, CGlueF, #gen_declare> From<CGlueT> for #name<'cglue_a, #life_use CGlueT, CGlueF, #gen_use>
-                where #vtbl_where_bounds #gen_where_bounds
-            {
-                fn from(instance: CGlueT) -> Self {
-                    let vtbl = #filler_trait::fill_table(Default::default());
-
-                    let #vtable_type {
-                        #mand_vtbl_list
-                        #full_opt_vtbl_list
-                    } = vtbl;
-
-                    Self {
-                        instance,
-                        #mand_vtbl_list
-                        #full_opt_vtbl_list
-                        #mand_ret_tmp_default
-                        #full_opt_ret_tmp_default
-                    }
-                }
-            }
-
-            impl<'cglue_a, #life_declare CGlueF, #gen_declare> From<CGlueF> for #name<'cglue_a, #life_use #crate_path::boxed::CBox<CGlueF>, CGlueF, #gen_use>
-                where #crate_path::boxed::CBox<CGlueF>: #filler_trait<'cglue_a, #life_use CGlueF, #gen_use>, #vtbl_where_bounds_boxed #gen_where_bounds
-            {
-                fn from(instance: CGlueF) -> Self {
-                    #name::from(#crate_path::boxed::CBox::from(instance))
-                }
-            }
-
-            impl<'cglue_a, #life_declare CGlueT: ::core::ops::Deref<Target = CGlueF>, CGlueF: 'cglue_a, #gen_declare> #name<'cglue_a, #life_use CGlueT, CGlueF, #gen_use>
-
-                where #vtbl_where_bounds #gen_where_bounds
-            {
-                #[doc = #new_doc]
-                pub fn new(instance: CGlueT, #optional_vtbl_defs) -> Self
-                    where #vtbl_where_bounds
-                {
-                    Self {
-                        instance,
-                        #mand_vtbl_default
-                        #full_opt_vtbl_list
-                        #mand_ret_tmp_default
-                        #full_opt_ret_tmp_default
-                    }
-                }
-            }
-
-            impl<'cglue_a, #life_declare CGlueF, #gen_declare> #name<'cglue_a, #life_use #crate_path::boxed::CBox<CGlueF>, CGlueF, #gen_use>
-                where #gen_where_bounds
-            {
-                #[doc = #new_doc]
+                #[repr(C)]
+                #[doc = #base_doc]
                 ///
-                /// `instance` will be moved onto heap.
-                pub fn new_boxed(instance: CGlueF, #optional_vtbl_defs_boxed) -> Self
-                    where #vtbl_where_bounds_boxed
+                /// Optional traits are not implemented here, however. There are numerous conversion
+                /// functions available for safely retrieving a concrete collection of traits.
+                ///
+                /// `check_impl_` functions allow to check if the object implements the wanted traits.
+                ///
+                /// `into_impl_` functions consume the object and produce a new final structure that
+                /// keeps only the required information.
+                ///
+                /// `cast_impl_` functions merely check and transform the object into a type that can
+                #[doc = #trback_doc]
+                ///
+                /// `as_ref_`, and `as_mut_` functions obtain references to safe objects, but do not
+                /// perform any memory transformations either. They are the safest to use, because
+                /// there is no risk of accidentally consuming the whole object.
+                pub struct #name<'cglue_a, #life_declare CGlueT, CGlueF, #gen_declare> where #gen_where_bounds {
+                    instance: CGlueT,
+                    #mandatory_vtbl_defs
+                    #optional_vtbl_defs
+                    #ret_tmp_defs
+                }
+
+                #[repr(C)]
+                pub struct #vtable_type<'cglue_a, #life_declare CGlueT, CGlueF, #gen_declare> where #gen_where_bounds {
+                    #mandatory_vtbl_defs
+                    #optional_vtbl_defs
+                }
+
+                impl<'cglue_a, #life_declare CGlueT, CGlueF, #gen_declare> Default for #vtable_type<'cglue_a, #life_use CGlueT, CGlueF, #gen_use>
+                    where #vtbl_where_bounds #gen_where_bounds
                 {
-                    Self {
-                        instance: From::from(instance),
-                        #mand_vtbl_default
-                        #full_opt_vtbl_list
-                        #mand_ret_tmp_default
-                        #full_opt_ret_tmp_default
+                    fn default() -> Self {
+                        Self {
+                            #mand_vtbl_default
+                            #none_opt_vtbl_list
+                        }
                     }
                 }
+
+                impl<'cglue_a, #life_declare CGlueT: ::core::ops::Deref<Target = CGlueF>, CGlueF, #gen_declare> #vtable_type<'cglue_a, #life_use CGlueT, CGlueF, #gen_use>
+                    where #gen_where_bounds {
+                        #enable_funcs
+                    }
+
+                pub trait #filler_trait<'cglue_a, #life_declare CGlueF, #gen_declare>: Sized + ::core::ops::Deref<Target = CGlueF> where #gen_where_bounds {
+                    fn fill_table(table: #vtable_type<'cglue_a, #life_use Self, Self::Target, #gen_use>) -> #vtable_type<'cglue_a, #life_use Self, Self::Target, #gen_use>;
+                }
+
+                pub type #opaque_name<'cglue_a, #life_use CGlueT: ::core::ops::Deref<Target = #c_void>, #gen_use> = #name<'cglue_a, #life_use CGlueT, CGlueT::Target, #gen_use>;
+                pub type #opaque_name_ref<'cglue_a, #life_use #gen_use> = #name<'cglue_a, #life_use &'cglue_a #c_void, #c_void, #gen_use>;
+                pub type #opaque_name_mut<'cglue_a, #life_use #gen_use> = #name<'cglue_a, #life_use &'cglue_a mut #c_void, #c_void, #gen_use>;
+                pub type #opaque_name_boxed<'cglue_a, #life_use #gen_use> = #name<'cglue_a, #life_use #crate_path::boxed::CBox<#c_void>, #c_void, #gen_use>;
+
+                impl<'cglue_a, #life_declare CGlueT: ::core::ops::Deref<Target = CGlueF> + #filler_trait<'cglue_a, #life_use CGlueF, #gen_use>, CGlueF, #gen_declare> From<CGlueT> for #name<'cglue_a, #life_use CGlueT, CGlueF, #gen_use>
+                    where #vtbl_where_bounds #gen_where_bounds
+                    {
+                        fn from(instance: CGlueT) -> Self {
+                            let vtbl = #filler_trait::fill_table(Default::default());
+
+                            let #vtable_type {
+                                #mand_vtbl_list
+                                #full_opt_vtbl_list
+                            } = vtbl;
+
+                            Self {
+                                instance,
+                                #mand_vtbl_list
+                                #full_opt_vtbl_list
+                                #mand_ret_tmp_default
+                                #full_opt_ret_tmp_default
+                            }
+                        }
+                    }
+
+                impl<'cglue_a, #life_declare CGlueF, #gen_declare> From<CGlueF> for #name<'cglue_a, #life_use #crate_path::boxed::CBox<CGlueF>, CGlueF, #gen_use>
+                    where #crate_path::boxed::CBox<CGlueF>: #filler_trait<'cglue_a, #life_use CGlueF, #gen_use>, #vtbl_where_bounds_boxed #gen_where_bounds
+                    {
+                        fn from(instance: CGlueF) -> Self {
+                            #name::from(#crate_path::boxed::CBox::from(instance))
+                        }
+                    }
+
+                impl<'cglue_a, #life_declare CGlueT: ::core::ops::Deref<Target = CGlueF>, CGlueF: 'cglue_a, #gen_declare> #name<'cglue_a, #life_use CGlueT, CGlueF, #gen_use>
+
+                    where #vtbl_where_bounds #gen_where_bounds
+                    {
+                        #[doc = #new_doc]
+                        pub fn new(instance: CGlueT, #optional_vtbl_defs) -> Self
+                            where #vtbl_where_bounds
+                        {
+                            Self {
+                                instance,
+                                #mand_vtbl_default
+                                #full_opt_vtbl_list
+                                #mand_ret_tmp_default
+                                #full_opt_ret_tmp_default
+                            }
+                        }
+                    }
+
+                impl<'cglue_a, #life_declare CGlueF, #gen_declare> #name<'cglue_a, #life_use #crate_path::boxed::CBox<CGlueF>, CGlueF, #gen_use>
+                    where #gen_where_bounds
+                    {
+                        #[doc = #new_doc]
+                        ///
+                        /// `instance` will be moved onto heap.
+                        pub fn new_boxed(instance: CGlueF, #optional_vtbl_defs_boxed) -> Self
+                            where #vtbl_where_bounds_boxed
+                        {
+                            Self {
+                                instance: From::from(instance),
+                                #mand_vtbl_default
+                                #full_opt_vtbl_list
+                                #mand_ret_tmp_default
+                                #full_opt_ret_tmp_default
+                            }
+                        }
+                    }
+
+                /// Convert into opaque object.
+                ///
+                /// This is the prerequisite for using underlying trait implementations.
+                unsafe impl<'cglue_a, #life_declare CGlueT: #trg_path::Opaquable + ::core::ops::Deref<Target = CGlueF>, CGlueF, #gen_declare> #trg_path::Opaquable for #name<'cglue_a, #life_use CGlueT, CGlueF, #gen_use>
+                    where #gen_where_bounds
+                    {
+                        type OpaqueTarget = #name<'cglue_a, #life_use CGlueT::OpaqueTarget, #c_void, #gen_use>;
+                    }
+
+                impl<'cglue_a, #life_declare CGlueT, CGlueF, #gen_declare> #name<'cglue_a, #life_use CGlueT, CGlueF, #gen_use>
+                    where #gen_where_bounds
+                    {
+                        #trait_funcs
+                    }
+
+                #mandatory_as_ref_impls
+
+                #mandatory_internal_trait_impls
+
+                #opt_structs
             }
-
-            /// Convert into opaque object.
-            ///
-            /// This is the prerequisite for using underlying trait implementations.
-            unsafe impl<'cglue_a, #life_declare CGlueT: #trg_path::Opaquable + ::core::ops::Deref<Target = CGlueF>, CGlueF, #gen_declare> #trg_path::Opaquable for #name<'cglue_a, #life_use CGlueT, CGlueF, #gen_use>
-                where #gen_where_bounds
-            {
-                type OpaqueTarget = #name<'cglue_a, #life_use CGlueT::OpaqueTarget, #c_void, #gen_use>;
-            }
-
-            impl<'cglue_a, #life_declare CGlueT, CGlueF, #gen_declare> #name<'cglue_a, #life_use CGlueT, CGlueF, #gen_use>
-                where #gen_where_bounds
-            {
-                #trait_funcs
-            }
-
-            #mandatory_as_ref_impls
-
-            #mandatory_internal_trait_impls
-
-            #opt_structs
         }
     }
 
