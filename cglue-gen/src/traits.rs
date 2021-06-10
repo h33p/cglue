@@ -528,7 +528,7 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
         trait_name
     );
 
-    let submod_name = format_ident!("{}", trait_name.to_string().to_lowercase());
+    let submod_name = format_ident!("cglue_{}", trait_name.to_string().to_lowercase());
 
     let ret_tmp = if !ret_tmp_type_defs.is_empty() {
         quote! {

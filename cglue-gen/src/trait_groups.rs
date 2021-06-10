@@ -818,7 +818,7 @@ impl TraitGroup {
             });
         }
 
-        let submod_name = format_ident!("{}", name.to_string().to_lowercase());
+        let submod_name = format_ident!("cglue_{}", name.to_string().to_lowercase());
 
         quote! {
 
