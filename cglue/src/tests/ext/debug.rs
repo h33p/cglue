@@ -26,5 +26,5 @@ fn use_debug_group() {
 
 #[cfg(test)]
 fn impl_debug(t: &impl ::core::fmt::Debug) {
-    let _ = t.clone();
+    let _ = format!("{:?}", t);
 }
