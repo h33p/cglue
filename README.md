@@ -21,6 +21,7 @@ If all code is glued together, our glue is the safest on the market.
   - [External traits](#external-traits)
   - [Type wrapping](#type-wrapping)
   - [Associated type wrapping](#associated-type-wrapping)
+  - [Plugin system](#plugin-system)
   - [Working with cbindgen](#working-with-cbindgen)
     - [Setup](#setup)
     - [Cleanup C](#cleanup-c)
@@ -418,6 +419,78 @@ functions, `wrap_with_obj_mut/wrap_with_group_mut` in `&mut Self::ReturnType` fu
 note that if there is a trait that returns a combination of these types, it is not possible to
 use wrapping, because the underlying object types differ. If possible, split up the type to
 multiple associated types.
+
+### Plugin system
+
+CGlue currently does not provide an out-of-the box plugin system, but there are primitives in
+place for relatively safe trait usage using dynamically loaded libraries. The core is the
+`cglue_arc_wrappable` attribute:
+
+```rust
+use cglue::{*, arc::*};
+use std::sync::Arc;
+
+#[cglue_trait]
+#[cglue_arc_wrappable]
+pub trait PluginRoot {
+    // ...
+}
+
+impl PluginRoot for () {}
+
+let root = ();
+// This could be a `libloading::Library` arc.
+let ref_to_count = Arc::new(());
+let wrapped: ArcWrapped<(), ()> = (root, ref_to_count).into();
+let obj = trait_obj!(wrapped as PluginRoot);
+// ...
+```
+
+Marking the trait as arc wrappable will generate an implementation of it for `ArcWrapped`. This
+way, one could pass a `&CArc<libloading::Library>` to the dynamically loaded library, which
+would then clone the arc, wrap it in a newly created object, and return a CGlue object to
+prevent the library from being unloaded prematurely.
+
+If `PluginRoot` were to branch out and build new objects that can be dropped after the instance
+of `PluginRoot`, there is a `arc_wrap` attribute that can be applied on the associated return
+type:
+
+```rust
+#[cglue_trait]
+#[cglue_arc_wrappable]
+pub trait PluginRoot {
+    #[arc_wrap]
+    #[wrap_with_obj(InfoPrinter)]
+    type PrinterType: InfoPrinter;
+
+    fn get_printer(&self) -> Self::PrinterType;
+}
+
+impl PluginRoot for () {
+    type PrinterType = Info;
+
+    fn get_printer(&self) -> Self::PrinterType {
+        Info { value: 42 }
+    }
+}
+
+let root = ();
+// This could be a `libloading::Library` arc.
+let ref_to_count = Arc::new(());
+let wrapped: ArcWrapped<(), ()> = (root, ref_to_count).into();
+let obj = trait_obj!(wrapped as PluginRoot);
+let printer = obj.get_printer();
+// It is safe to drop obj now:
+std::mem::drop(obj);
+printer.print_info();
+```
+
+Here, `InfoPrinter` must also be marked as wrappable. Note that this is not foolproof, and
+there may be situations where returned data could depend on the library. The most error prone
+of which are unhandled `Err(E)` conditions, where `E` is some static str. `main` function could
+return an error pointing to the memory of the library, unload it, and then attempt to print it
+out, resulting in a segfault. If possible, try to use `IntError` types, and mark the trait with
+`#[int_result]`, which would prevent this particular issue from happening.
 
 ### Working with cbindgen
 

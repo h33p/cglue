@@ -8,16 +8,264 @@ use super::generics::{GenericType, ParsedGenerics};
 use quote::*;
 use syn::*;
 
+pub fn process_item(
+    ty: &TraitItemType,
+    trait_type_defs: &mut TokenStream,
+    types: &mut BTreeMap<Ident, WrappedType>,
+    crate_path: &TokenStream,
+) {
+    let c_void = quote!(::core::ffi::c_void);
+
+    let static_lifetime = Lifetime {
+        apostrophe: proc_macro2::Span::call_site(),
+        ident: format_ident!("static"),
+    };
+
+    let cglue_c_lifetime = Lifetime {
+        apostrophe: proc_macro2::Span::call_site(),
+        ident: format_ident!("cglue_c"),
+    };
+
+    let mut lifetime_bounds = ty.bounds.iter().filter_map(|b| match b {
+        TypeParamBound::Lifetime(lt) => Some(lt),
+        _ => None,
+    });
+
+    let lifetime_bound = lifetime_bounds.next();
+    // TODO: warn user if multiple bounds exist, and an object is being created
+    // let multiple_lifetime_bounds = lifetime_bounds.next().is_some();
+
+    for attr in &ty.attrs {
+        let s = attr.path.to_token_stream().to_string();
+
+        let x = s.as_str();
+
+        match x {
+            "wrap_with" => {
+                let new_ty = attr
+                    .parse_args::<GenericType>()
+                    .expect("Invalid type in wrap_with.");
+
+                let ty_ident = &ty.ident;
+
+                trait_type_defs.extend(quote!(type #ty_ident = #new_ty;));
+
+                types.insert(
+                    ty_ident.clone(),
+                    WrappedType {
+                        ty: new_ty,
+                        return_conv: None,
+                        lifetime_bound: None,
+                        other_bounds: None,
+                        impl_return_conv: None,
+                        inject_ret_tmp: false,
+                    },
+                );
+            }
+            "return_wrap" => {
+                let closure = attr
+                    .parse_args::<ExprClosure>()
+                    .expect("A valid closure must be supplied accepting the wrapped type!");
+
+                types
+                    .get_mut(&ty.ident)
+                    .expect("Type must be first wrapped with #[wrap_with(T)] atribute.")
+                    .return_conv = Some(closure);
+            }
+            "wrap_with_obj"
+            | "wrap_with_obj_ref"
+            | "wrap_with_obj_mut"
+            | "wrap_with_group"
+            | "wrap_with_group_ref"
+            | "wrap_with_group_mut" => {
+                let mut new_ty = attr
+                    .parse_args::<GenericType>()
+                    .expect("Invalid type in wrap_with.");
+
+                let target = new_ty.target.clone();
+
+                if x == "wrap_with_obj" {
+                    new_ty.target =
+                        format_ident!("CGlueBox{}", target.to_string()).to_token_stream();
+                } else if x == "wrap_with_obj_ref" {
+                    new_ty.target =
+                        format_ident!("CGlueRef{}", target.to_string()).to_token_stream();
+                } else if x == "wrap_with_obj_mut" {
+                    new_ty.target =
+                        format_ident!("CGlueMut{}", target.to_string()).to_token_stream();
+                }
+
+                // These variables model a `SomeGroup: From<CGlueF::#ty_ident>` bound.
+                let mut from_new_ty_hrtb = None;
+                let mut from_new_ty = new_ty.clone();
+                let mut from_new_ty_ref = TokenStream::new();
+
+                let lifetime = lifetime_bound.unwrap_or(&static_lifetime);
+
+                // Insert the object lifetime at the start
+                new_ty.push_lifetime_start(lifetime);
+
+                let from_lifetime = if x == "wrap_with_group" || lifetime != &static_lifetime {
+                    lifetime
+                } else {
+                    from_new_ty_hrtb = Some(quote!(for<'cglue_c>));
+                    &cglue_c_lifetime
+                };
+
+                from_new_ty.push_lifetime_start(from_lifetime);
+
+                let ty_ident = &ty.ident;
+
+                if x == "wrap_with_group" {
+                    new_ty.push_types_start(quote!(#crate_path::boxed::CBox<#c_void>, #c_void,));
+                    from_new_ty.push_types_start(
+                        quote!(#crate_path::boxed::CBox<CGlueF::#ty_ident>, CGlueF::#ty_ident,),
+                    );
+                } else if x == "wrap_with_group_ref" {
+                    new_ty.push_types_start(quote!(&#lifetime #c_void, #c_void,));
+                    from_new_ty.push_types_start(
+                        quote!(&#from_lifetime CGlueF::#ty_ident, CGlueF::#ty_ident,),
+                    );
+                    from_new_ty_ref.extend(quote!(&#from_lifetime));
+                } else if x == "wrap_with_group_mut" {
+                    new_ty.push_types_start(quote!(&#lifetime mut #c_void, #c_void,));
+                    from_new_ty.push_types_start(
+                        quote!(&#from_lifetime mut CGlueF::#ty_ident, CGlueF::#ty_ident,),
+                    );
+                    from_new_ty_ref.extend(quote!(&#from_lifetime mut));
+                }
+
+                trait_type_defs.extend(quote!(type #ty_ident = #new_ty;));
+
+                let type_bounds = if ["wrap_with_obj", "wrap_with_obj_ref", "wrap_with_obj_mut"]
+                    .contains(&x)
+                {
+                    //trait_type_bounds.extend(quote!(CGlueF::#ty_ident: #lifetime, ));
+                    None
+                } else {
+                    let type_bounds = quote!(#from_new_ty_hrtb #from_new_ty: From<#from_new_ty_ref CGlueF::#ty_ident>,);
+
+                    //trait_type_bounds
+                    //    .extend(quote!(CGlueF::#ty_ident: #lifetime, #type_bounds));
+
+                    Some(type_bounds)
+                };
+
+                let (ret_write, conv_bound) = if lifetime != &static_lifetime {
+                    (
+                        quote! {
+                            unsafe {
+                                ret_tmp.as_mut_ptr().write(ret);
+                            }
+                        },
+                        quote!(#lifetime),
+                    )
+                } else {
+                    (
+                        quote! {
+                            // SAFETY:
+                            // We cast anon lifetime to static lifetime. It is rather okay, because we are only
+                            // returning reference to the object.
+                            unsafe {
+                                ret_tmp.as_mut_ptr().write(std::mem::transmute(ret));
+                            }
+                        },
+                        quote!(),
+                    )
+                };
+
+                let (return_conv, inject_ret_tmp) = match x {
+                    "wrap_with_obj" => (
+                        parse2(quote!(|ret| trait_obj!(ret as #target)))
+                            .expect("Internal closure parsing fail"),
+                        false,
+                    ),
+                    "wrap_with_group" => (
+                        parse2(quote!(|ret| group_obj!(ret as #target)))
+                            .expect("Internal closure parsing fail"),
+                        false,
+                    ),
+                    "wrap_with_obj_ref" => (
+                        parse2(quote!(|ret: &#conv_bound _| {
+                            let ret = trait_obj!(ret as #target);
+                            // SAFETY:
+                            // We cast anon lifetime to static lifetime. It is rather okay, because we are only
+                            // returning reference to the object.
+                            unsafe {
+                                ret_tmp.as_mut_ptr().write(std::mem::transmute(ret))
+                            };
+                            unsafe { &*ret_tmp.as_ptr() }
+                        }))
+                        .expect("Internal closure parsing fail"),
+                        true,
+                    ),
+                    "wrap_with_group_ref" => (
+                        parse2(quote!(|ret: &#conv_bound _| {
+                            let ret = group_obj!(ret as #target);
+                            // SAFETY:
+                            // We cast anon lifetime to static lifetime. It is rather okay, because we are only
+                            // returning reference to the object.
+                            unsafe {
+                                ret_tmp.as_mut_ptr().write(std::mem::transmute(ret))
+                            };
+                            unsafe { &*ret_tmp.as_ptr() }
+                        }))
+                        .expect("Internal closure parsing fail"),
+                        true,
+                    ),
+                    "wrap_with_obj_mut" => (
+                        parse2(quote!(|ret: &#conv_bound mut _| {
+                            let ret = trait_obj!(ret as #target);
+                            #ret_write
+                            unsafe { &mut *ret_tmp.as_mut_ptr() }
+                        }))
+                        .expect("Internal closure parsing fail"),
+                        true,
+                    ),
+                    "wrap_with_group_mut" => (
+                        parse2(quote!(|ret: &#conv_bound mut _| {
+                            let ret = group_obj!(ret as #target);
+                            #ret_write
+                            unsafe { &mut *ret_tmp.as_mut_ptr() }
+                        }))
+                        .expect("Internal closure parsing fail"),
+                        true,
+                    ),
+                    _ => unreachable!(),
+                };
+
+                types.insert(
+                    ty_ident.clone(),
+                    WrappedType {
+                        ty: new_ty,
+                        return_conv: Some(return_conv),
+                        impl_return_conv: None,
+                        lifetime_bound: Some(lifetime.clone()),
+                        other_bounds: type_bounds,
+                        inject_ret_tmp,
+                    },
+                );
+            }
+            _ => {}
+        }
+    }
+}
+
 pub fn parse_trait(
     tr: &ItemTrait,
     crate_path: &TokenStream,
+    mut process_item: impl FnMut(
+        &TraitItemType,
+        &mut TokenStream,
+        &mut BTreeMap<Ident, WrappedType>,
+        &TokenStream,
+    ),
 ) -> (Vec<ParsedFunc>, ParsedGenerics, TokenStream) {
     let mut funcs = vec![];
-    let mut types = BTreeMap::new();
     let generics = ParsedGenerics::from(&tr.generics);
     let mut trait_type_defs = TokenStream::new();
+    let mut types = BTreeMap::new();
 
-    let c_void = quote!(::core::ffi::c_void);
     let trait_name = &tr.ident;
 
     types.insert(
@@ -43,250 +291,11 @@ pub fn parse_trait(
         .iter()
         .any(|a| a.path.to_token_stream().to_string() == "int_result");
 
-    let static_lifetime = Lifetime {
-        apostrophe: proc_macro2::Span::call_site(),
-        ident: format_ident!("static"),
-    };
-
-    let cglue_c_lifetime = Lifetime {
-        apostrophe: proc_macro2::Span::call_site(),
-        ident: format_ident!("cglue_c"),
-    };
-
     // Parse all functions in the trait
     for item in &tr.items {
         match item {
             // We assume types are defined before methods here...
-            TraitItem::Type(ty) => {
-                let mut lifetime_bounds = ty.bounds.iter().filter_map(|b| match b {
-                    TypeParamBound::Lifetime(lt) => Some(lt),
-                    _ => None,
-                });
-
-                let lifetime_bound = lifetime_bounds.next();
-                // TODO: warn user if multiple bounds exist, and an object is being created
-                // let multiple_lifetime_bounds = lifetime_bounds.next().is_some();
-
-                for attr in &ty.attrs {
-                    let s = attr.path.to_token_stream().to_string();
-
-                    let x = s.as_str();
-
-                    match x {
-                        "wrap_with" => {
-                            let new_ty = attr
-                                .parse_args::<GenericType>()
-                                .expect("Invalid type in wrap_with.");
-
-                            let ty_ident = &ty.ident;
-
-                            trait_type_defs.extend(quote!(type #ty_ident = #new_ty;));
-
-                            types.insert(
-                                ty_ident.clone(),
-                                WrappedType {
-                                    ty: new_ty,
-                                    return_conv: None,
-                                    lifetime_bound: None,
-                                    other_bounds: None,
-                                    impl_return_conv: None,
-                                    inject_ret_tmp: false,
-                                },
-                            );
-                        }
-                        "return_wrap" => {
-                            let closure = attr.parse_args::<ExprClosure>().expect(
-                                "A valid closure must be supplied accepting the wrapped type!",
-                            );
-
-                            types
-                                .get_mut(&ty.ident)
-                                .expect("Type must be first wrapped with #[wrap_with(T)] atribute.")
-                                .return_conv = Some(closure);
-                        }
-                        "wrap_with_obj"
-                        | "wrap_with_obj_ref"
-                        | "wrap_with_obj_mut"
-                        | "wrap_with_group"
-                        | "wrap_with_group_ref"
-                        | "wrap_with_group_mut" => {
-                            let mut new_ty = attr
-                                .parse_args::<GenericType>()
-                                .expect("Invalid type in wrap_with.");
-
-                            let target = new_ty.target.clone();
-
-                            if x == "wrap_with_obj" {
-                                new_ty.target = format_ident!("CGlueBox{}", target.to_string())
-                                    .to_token_stream();
-                            } else if x == "wrap_with_obj_ref" {
-                                new_ty.target = format_ident!("CGlueRef{}", target.to_string())
-                                    .to_token_stream();
-                            } else if x == "wrap_with_obj_mut" {
-                                new_ty.target = format_ident!("CGlueMut{}", target.to_string())
-                                    .to_token_stream();
-                            }
-
-                            // These variables model a `SomeGroup: From<CGlueF::#ty_ident>` bound.
-                            let mut from_new_ty_hrtb = None;
-                            let mut from_new_ty = new_ty.clone();
-                            let mut from_new_ty_ref = TokenStream::new();
-
-                            let lifetime = lifetime_bound.unwrap_or(&static_lifetime);
-
-                            // Insert the object lifetime at the start
-                            new_ty.push_lifetime_start(lifetime);
-
-                            let from_lifetime =
-                                if x == "wrap_with_group" || lifetime != &static_lifetime {
-                                    lifetime
-                                } else {
-                                    from_new_ty_hrtb = Some(quote!(for<'cglue_c>));
-                                    &cglue_c_lifetime
-                                };
-
-                            from_new_ty.push_lifetime_start(from_lifetime);
-
-                            let ty_ident = &ty.ident;
-
-                            if x == "wrap_with_group" {
-                                new_ty.push_types_start(
-                                    quote!(#crate_path::boxed::CBox<#c_void>, #c_void,),
-                                );
-                                from_new_ty.push_types_start(
-                                    quote!(#crate_path::boxed::CBox<CGlueF::#ty_ident>, CGlueF::#ty_ident,),
-                                );
-                            } else if x == "wrap_with_group_ref" {
-                                new_ty.push_types_start(quote!(&#lifetime #c_void, #c_void,));
-                                from_new_ty.push_types_start(
-                                    quote!(&#from_lifetime CGlueF::#ty_ident, CGlueF::#ty_ident,),
-                                );
-                                from_new_ty_ref.extend(quote!(&#from_lifetime));
-                            } else if x == "wrap_with_group_mut" {
-                                new_ty.push_types_start(quote!(&#lifetime mut #c_void, #c_void,));
-                                from_new_ty.push_types_start(quote!(&#from_lifetime mut CGlueF::#ty_ident, CGlueF::#ty_ident,));
-                                from_new_ty_ref.extend(quote!(&#from_lifetime mut));
-                            }
-
-                            trait_type_defs.extend(quote!(type #ty_ident = #new_ty;));
-
-                            let type_bounds = if [
-                                "wrap_with_obj",
-                                "wrap_with_obj_ref",
-                                "wrap_with_obj_mut",
-                            ]
-                            .contains(&x)
-                            {
-                                //trait_type_bounds.extend(quote!(CGlueF::#ty_ident: #lifetime, ));
-                                None
-                            } else {
-                                let type_bounds = quote!(#from_new_ty_hrtb #from_new_ty: From<#from_new_ty_ref CGlueF::#ty_ident>,);
-
-                                //trait_type_bounds
-                                //    .extend(quote!(CGlueF::#ty_ident: #lifetime, #type_bounds));
-
-                                Some(type_bounds)
-                            };
-
-                            let (ret_write, conv_bound) = if lifetime != &static_lifetime {
-                                (
-                                    quote! {
-                                        unsafe {
-                                            ret_tmp.as_mut_ptr().write(ret);
-                                        }
-                                    },
-                                    quote!(#lifetime),
-                                )
-                            } else {
-                                (
-                                    quote! {
-                                        // SAFETY:
-                                        // We cast anon lifetime to static lifetime. It is rather okay, because we are only
-                                        // returning reference to the object.
-                                        unsafe {
-                                            ret_tmp.as_mut_ptr().write(std::mem::transmute(ret));
-                                        }
-                                    },
-                                    quote!(),
-                                )
-                            };
-
-                            let (return_conv, inject_ret_tmp) = match x {
-                                "wrap_with_obj" => (
-                                    parse2(quote!(|ret| trait_obj!(ret as #target)))
-                                        .expect("Internal closure parsing fail"),
-                                    false,
-                                ),
-                                "wrap_with_group" => (
-                                    parse2(quote!(|ret| group_obj!(ret as #target)))
-                                        .expect("Internal closure parsing fail"),
-                                    false,
-                                ),
-                                "wrap_with_obj_ref" => (
-                                    parse2(quote!(|ret: &#conv_bound _| {
-                                        let ret = trait_obj!(ret as #target);
-                                        // SAFETY:
-                                        // We cast anon lifetime to static lifetime. It is rather okay, because we are only
-                                        // returning reference to the object.
-                                        unsafe {
-                                            ret_tmp.as_mut_ptr().write(std::mem::transmute(ret))
-                                        };
-                                        unsafe { &*ret_tmp.as_ptr() }
-                                    }))
-                                    .expect("Internal closure parsing fail"),
-                                    true,
-                                ),
-                                "wrap_with_group_ref" => (
-                                    parse2(quote!(|ret: &#conv_bound _| {
-                                        let ret = group_obj!(ret as #target);
-                                        // SAFETY:
-                                        // We cast anon lifetime to static lifetime. It is rather okay, because we are only
-                                        // returning reference to the object.
-                                        unsafe {
-                                            ret_tmp.as_mut_ptr().write(std::mem::transmute(ret))
-                                        };
-                                        unsafe { &*ret_tmp.as_ptr() }
-                                    }))
-                                    .expect("Internal closure parsing fail"),
-                                    true,
-                                ),
-                                "wrap_with_obj_mut" => (
-                                    parse2(quote!(|ret: &#conv_bound mut _| {
-                                        let ret = trait_obj!(ret as #target);
-                                        #ret_write
-                                        unsafe { &mut *ret_tmp.as_mut_ptr() }
-                                    }))
-                                    .expect("Internal closure parsing fail"),
-                                    true,
-                                ),
-                                "wrap_with_group_mut" => (
-                                    parse2(quote!(|ret: &#conv_bound mut _| {
-                                        let ret = group_obj!(ret as #target);
-                                        #ret_write
-                                        unsafe { &mut *ret_tmp.as_mut_ptr() }
-                                    }))
-                                    .expect("Internal closure parsing fail"),
-                                    true,
-                                ),
-                                _ => unreachable!(),
-                            };
-
-                            types.insert(
-                                ty_ident.clone(),
-                                WrappedType {
-                                    ty: new_ty,
-                                    return_conv: Some(return_conv),
-                                    impl_return_conv: None,
-                                    lifetime_bound: Some(lifetime.clone()),
-                                    other_bounds: type_bounds,
-                                    inject_ret_tmp,
-                                },
-                            );
-                        }
-                        _ => {}
-                    }
-                }
-            }
+            TraitItem::Type(ty) => process_item(ty, &mut trait_type_defs, &mut types, crate_path),
             TraitItem::Method(m) => {
                 let attrs = m
                     .attrs
@@ -351,7 +360,7 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
     let opaque_mut_trait_obj_ident = format_ident!("CGlueMut{}", trait_name);
     let opaque_ref_trait_obj_ident = format_ident!("CGlueRef{}", trait_name);
 
-    let (funcs, generics, trait_type_defs) = parse_trait(&tr, &crate_path);
+    let (funcs, generics, trait_type_defs) = parse_trait(&tr, &crate_path, process_item);
 
     tr.ident = trait_impl_name.clone();
 

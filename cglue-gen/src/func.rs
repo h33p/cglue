@@ -390,10 +390,10 @@ impl ParsedFunc {
         ret
     }
 
-    pub fn trait_passthrough_args(&self) -> TokenStream {
+    pub fn trait_passthrough_args(&self, skip: usize) -> TokenStream {
         let mut ret = TokenStream::new();
 
-        for arg in &self.args {
+        for arg in self.args.iter().skip(skip) {
             match &arg.arg {
                 FnArg::Typed(ty) => {
                     let pat = &ty.pat;
@@ -628,6 +628,42 @@ impl ParsedFunc {
         )
     }
 
+    pub fn arc_wrapped_trait_impl(&self, tokens: &mut TokenStream) {
+        let name = &self.name;
+        let args = self.trait_args();
+        let passthrough_args = self.trait_passthrough_args(1);
+        let ParsedReturnType {
+            ty: out, use_wrap, ..
+        } = &self.out;
+        let safety = self.get_safety();
+        let abi = self.abi.prefix();
+
+        let get_inner = if self.receiver.reference.is_none() {
+            quote!(self.into_inner())
+        } else if self.receiver.mutability.is_some() {
+            quote!(self.as_mut())
+        } else {
+            quote!(self.as_ref())
+        };
+
+        let return_out = if *use_wrap {
+            quote!((ret, arc).into())
+        } else {
+            quote!(ret)
+        };
+
+        let gen = quote! {
+            #[inline(always)]
+            #safety #abi fn #name (#args) #out {
+                let (inner, arc) = #get_inner;
+                let ret = inner.#name(#passthrough_args);
+                #return_out
+            }
+        };
+
+        tokens.extend(gen);
+    }
+
     pub fn int_trait_impl(
         &self,
         ext_path: Option<&Path>,
@@ -636,7 +672,7 @@ impl ParsedFunc {
     ) {
         let name = &self.name;
         let args = self.trait_args();
-        let passthrough_args = self.trait_passthrough_args();
+        let passthrough_args = self.trait_passthrough_args(0);
         let ParsedReturnType { ty: out, .. } = &self.out;
         let safety = self.get_safety();
         let abi = self.abi.prefix();
@@ -701,6 +737,7 @@ struct ParsedReturnType {
     injected_ret_tmp: Option<GenericType>,
     use_hrtb: bool,
     return_self: bool,
+    use_wrap: bool,
 }
 
 impl ParsedReturnType {
@@ -724,6 +761,7 @@ impl ParsedReturnType {
             injected_ret_tmp,
             use_hrtb,
             return_self,
+            use_wrap,
         ) = {
             let mut ret = None;
 
@@ -812,6 +850,7 @@ impl ParsedReturnType {
                         injected_ret_tmp,
                         use_hrtb,
                         return_self,
+                        true,
                     ));
                 } else if let Type::Path(p) = &**ty {
                     let last = p.path.segments.last();
@@ -831,6 +870,7 @@ impl ParsedReturnType {
                                             quote!(ret.into()),
                                             quote!(ret.into()),
                                             None,
+                                            false,
                                             false,
                                             false,
                                         ));
@@ -856,6 +896,7 @@ impl ParsedReturnType {
                                                         None,
                                                         false,
                                                         false,
+                                                        false,
                                                     );
                                                 }
                                             }
@@ -869,6 +910,7 @@ impl ParsedReturnType {
                                                 quote!(#crate_path::result::into_int_out_result(ret, ok_out)),
                                                 quote!(#unsafety { #crate_path::result::from_int_result(ret, ok_out) }),
                                                 None,
+                                                false,
                                                 false,
                                                 false,
                                             );
@@ -890,6 +932,7 @@ impl ParsedReturnType {
                                         quote!(ret.into()),
                                         quote!(ret.into()),
                                         None,
+                                        false,
                                         false,
                                         false,
                                     )),
@@ -914,6 +957,7 @@ impl ParsedReturnType {
                     None,
                     false,
                     false,
+                    false,
                 )
             })
         };
@@ -930,6 +974,7 @@ impl ParsedReturnType {
             injected_ret_tmp,
             use_hrtb,
             return_self,
+            use_wrap,
         }
     }
 }

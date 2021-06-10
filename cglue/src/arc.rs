@@ -1,25 +1,6 @@
 //! Describes an FFI-safe Arc.
 use std::sync::Arc;
 
-unsafe extern "C" fn c_clone<T: Sized + 'static>(
-    ptr_to_arc: Option<&'static T>,
-) -> Option<&'static T> {
-    if let Some(p) = ptr_to_arc {
-        let arc = Arc::from_raw(p);
-        let cloned_arc = arc.clone();
-        let _ = Arc::into_raw(arc);
-        Arc::into_raw(cloned_arc).as_ref()
-    } else {
-        None
-    }
-}
-
-unsafe extern "C" fn c_drop<T: Sized + 'static>(ptr_to_arc: &mut Option<&T>) {
-    if let Some(p) = ptr_to_arc.take() {
-        Arc::from_raw(p);
-    }
-}
-
 /// FFI-Safe Arc
 ///
 /// This Arc essentially uses clone/drop from the module that created it, to not mix up global
@@ -33,7 +14,12 @@ pub struct CArc<T: Sized + 'static> {
 
 impl<T> From<T> for CArc<T> {
     fn from(obj: T) -> Self {
-        let arc = Arc::new(obj);
+        Self::from(Arc::new(obj))
+    }
+}
+
+impl<T> From<Arc<T>> for CArc<T> {
+    fn from(arc: Arc<T>) -> Self {
         Self {
             inner: unsafe { Arc::into_raw(arc).as_ref() },
             clone_fn: c_clone,
@@ -155,6 +141,102 @@ impl<T> From<COptArc<T>> for Option<CArc<T>> {
             }),
             _ => None,
         }
+    }
+}
+
+/// CArc wrapped object.
+///
+/// This object is useful when building a plugin system. The user can supply a `COptArc<Library>`
+/// reference to the plugin, that the plugin would then clone and wrap the returned plugin instance
+/// with.
+///
+/// The trait needs to implement itself on this object, but that can be automated with the
+/// `#[cglue_arc_wrappable]` macro.
+#[repr(C)]
+//#[derive(Clone)]
+pub struct ArcWrapped<T, A: 'static> {
+    pub inner: T,
+    arc: COptArc<A>,
+}
+
+// Forward all builtin types for `ArcWrapped`.
+cglue_macro::cglue_builtin_ext_wrappable!();
+
+impl<T, A: 'static> ArcWrapped<T, A> {
+    pub fn into_inner(self) -> (T, COptArc<A>) {
+        (self.inner, self.arc)
+    }
+
+    pub fn as_ref(&self) -> (&T, &COptArc<A>) {
+        (&self.inner, &self.arc)
+    }
+
+    pub fn as_mut(&mut self) -> (&mut T, &COptArc<A>) {
+        (&mut self.inner, &self.arc)
+    }
+}
+
+impl<T, O, A: 'static> From<(T, &ArcWrapped<O, A>)> for ArcWrapped<T, A> {
+    fn from((inner, other): (T, &ArcWrapped<O, A>)) -> Self {
+        Self {
+            inner,
+            arc: other.arc.clone(),
+        }
+    }
+}
+
+impl<T, A: 'static> From<(T, &COptArc<A>)> for ArcWrapped<T, A> {
+    fn from((inner, arc): (T, &COptArc<A>)) -> Self {
+        Self {
+            inner,
+            arc: arc.clone(),
+        }
+    }
+}
+
+impl<T, A: 'static> From<(T, COptArc<A>)> for ArcWrapped<T, A> {
+    fn from((inner, arc): (T, COptArc<A>)) -> Self {
+        Self { inner, arc }
+    }
+}
+
+impl<T, A: 'static> From<(T, CArc<A>)> for ArcWrapped<T, A> {
+    fn from((inner, arc): (T, CArc<A>)) -> Self {
+        (inner, COptArc::from(Some(arc))).into()
+    }
+}
+
+impl<T, A: 'static> From<(T, Arc<A>)> for ArcWrapped<T, A> {
+    fn from((inner, arc): (T, Arc<A>)) -> Self {
+        (inner, CArc::from(arc)).into()
+    }
+}
+
+impl<T, A: 'static> From<T> for ArcWrapped<T, A> {
+    fn from(inner: T) -> Self {
+        Self {
+            inner,
+            arc: None.into(),
+        }
+    }
+}
+
+unsafe extern "C" fn c_clone<T: Sized + 'static>(
+    ptr_to_arc: Option<&'static T>,
+) -> Option<&'static T> {
+    if let Some(p) = ptr_to_arc {
+        let arc = Arc::from_raw(p);
+        let cloned_arc = arc.clone();
+        let _ = Arc::into_raw(arc);
+        Arc::into_raw(cloned_arc).as_ref()
+    } else {
+        None
+    }
+}
+
+unsafe extern "C" fn c_drop<T: Sized + 'static>(ptr_to_arc: &mut Option<&T>) {
+    if let Some(p) = ptr_to_arc.take() {
+        Arc::from_raw(p);
     }
 }
 

@@ -164,8 +164,49 @@ pub fn ext_abs_remap(path: Path) -> Path {
     }
 }
 
+pub fn impl_ext_wrappable() -> TokenStream {
+    impl_inner(
+        |_, _| quote!(),
+        |p, _| quote!(#[cglue_arc_wrappable_ext(::#p)]),
+        |_, _| {},
+    )
+}
 /// Implement the external trait store.
 pub fn impl_store() -> TokenStream {
+    impl_inner(
+        |subpath, name| quote!(pub use #subpath #name;),
+        |_, _| quote!(#[cglue_trait_ext]),
+        |exports, out| {
+            // Re-export everything
+            for (k, v) in exports.into_iter() {
+                let subpath = subpath_to_tokens(&v, 1);
+
+                for ident in [
+                    "",
+                    "Ext",
+                    "CGlueVtbl",
+                    "CGlueRetTmp",
+                    "OpaqueCGlueVtbl",
+                    "CGlueBase",
+                    "CGlueBox",
+                    "CGlueMut",
+                    "CGlueRef",
+                ]
+                .iter()
+                .map(|p| format_ident!("{}{}", p, k))
+                {
+                    out.extend(quote!(pub use self:: #subpath #ident;));
+                }
+            }
+        },
+    )
+}
+
+fn impl_inner(
+    use_gen: impl Fn(&TokenStream, &Ident) -> TokenStream,
+    attribute_gen: impl Fn(&TokenStream, &ItemTrait) -> TokenStream,
+    exports_gen: impl Fn(HashMap<Ident, Path>, &mut TokenStream),
+) -> TokenStream {
     let mut out = TokenStream::new();
 
     let exports = get_exports();
@@ -173,27 +214,7 @@ pub fn impl_store() -> TokenStream {
 
     let mut modules = HashMap::<usize, HashMap<Path, (TokenStream, HashSet<Ident>)>>::new();
 
-    // Re-export everything
-    for (k, v) in exports.into_iter() {
-        let subpath = subpath_to_tokens(&v, 1);
-
-        for ident in [
-            "",
-            "Ext",
-            "CGlueVtbl",
-            "CGlueRetTmp",
-            "OpaqueCGlueVtbl",
-            "CGlueBase",
-            "CGlueBox",
-            "CGlueMut",
-            "CGlueRef",
-        ]
-        .iter()
-        .map(|p| format_ident!("{}{}", p, k))
-        {
-            out.extend(quote!(pub use self:: #subpath #ident;));
-        }
-    }
+    exports_gen(exports, &mut out);
 
     for ((p, _), t) in store.into_iter() {
         // exclude :: ext :: segment, and the whole layer altogether
@@ -214,12 +235,16 @@ pub fn impl_store() -> TokenStream {
         let name = &t.ident;
         let subpath = subpath_to_tokens(&p, 1);
 
+        let use_gened = use_gen(&subpath, name);
+
+        let attribute = attribute_gen(&subpath, &t);
+
         module.extend(quote! {
-            pub use #subpath #name;
+            #use_gened
 
             use ::cglue_macro::*;
 
-            #[cglue_trait_ext]
+            #attribute
             #t
         });
     }
