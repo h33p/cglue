@@ -15,6 +15,9 @@ pub trait TB {
 pub trait TC {
     fn tc_1(&self);
     extern "C" fn tc_2(&mut self);
+    fn tc_3(&mut self, mut _ignored: usize) {
+        self.tc_2()
+    }
 }
 
 #[cglue_trait]

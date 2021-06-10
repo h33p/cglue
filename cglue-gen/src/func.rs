@@ -140,6 +140,13 @@ impl TraitArg {
                 let _old = wrap_type(&mut *t.ty, targets);
 
                 let name = &*t.pat;
+
+                // TODO: handle more edge cases here
+                let name = match name {
+                    Pat::Ident(id) => id.ident.to_token_stream(),
+                    x => quote!(#x),
+                };
+
                 let ty = &*t.ty;
 
                 let mut ret = None;
