@@ -462,7 +462,7 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
     };
 
     let return_self_bound = if return_self {
-        quote!(#trg_path::CGlueObjBuild<#ret_tmp_ident<#life_use #gen_use>>)
+        quote!(+ #trg_path::CGlueObjBuild<#ret_tmp_ident<#life_use #gen_use>>)
     } else {
         quote!()
     };
@@ -493,6 +493,17 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
         vtbl_phantom_def.extend(quote!(_phantom_f: ::core::marker::PhantomData<CGlueF>,));
         vtbl_phantom_init.extend(quote!(_phantom_f: ::core::marker::PhantomData{},));
     }
+
+    // Add supertrait bounds here. Note that it probably won't work, unless they are one of the
+    // core traits (Send, etc.).
+    let supertrait_bounds = {
+        let sup = &tr.supertraits;
+        if sup.is_empty() {
+            quote!()
+        } else {
+            quote!(+ #sup)
+        }
+    };
 
     // If wrapping an external trait, generate an internal implementation for CGlueTraitObj
 
@@ -661,7 +672,7 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
             /* Trait implementation. */
 
             /// Implement the traits for any CGlue object.
-            impl<#life_declare CGlueT #cglue_t_bounds_opaque, CGlueO: #trg_path::GetVtbl<#opaque_vtbl_ident<#life_use CGlueT, #gen_use>> + #trg_path::#required_mutability<#ret_tmp_ident<#life_use #gen_use>, ObjType = #c_void, ContType = CGlueT> + #return_self_bound, #gen_declare> #trait_impl_name<#life_use #gen_use> for CGlueO where #gen_where_bounds {
+            impl<#life_declare CGlueT #cglue_t_bounds_opaque, CGlueO: #trg_path::GetVtbl<#opaque_vtbl_ident<#life_use CGlueT, #gen_use>> + #trg_path::#required_mutability<#ret_tmp_ident<#life_use #gen_use>, ObjType = #c_void, ContType = CGlueT> #return_self_bound #supertrait_bounds, #gen_declare> #trait_impl_name<#life_use #gen_use> for CGlueO where #gen_where_bounds {
                 #trait_type_defs
                 #trait_impl_fns
             }
