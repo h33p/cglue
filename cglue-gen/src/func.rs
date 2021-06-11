@@ -81,6 +81,21 @@ fn wrap_type<'a>(
                 _ => {}
             }
 
+            std::mem::drop(iter);
+
+            for seg in p.path.segments.iter_mut() {
+                if let PathArguments::AngleBracketed(brac) = &mut seg.arguments {
+                    for arg in brac.args.iter_mut() {
+                        if let GenericArgument::Type(ty) = arg {
+                            let ret = wrap_type(ty, targets);
+                            if ret.is_some() {
+                                return ret;
+                            }
+                        }
+                    }
+                }
+            }
+
             None
         }
         Type::Ptr(ptr) => wrap_type(&mut *ptr.elem, targets),
@@ -757,231 +772,200 @@ impl ParsedReturnType {
         func_name: &Ident,
         crate_path: &TokenStream,
     ) -> Self {
-        let (
-            c_out,
-            c_where_bounds,
-            c_ret_params,
-            c_ret_precall_def,
-            c_call_ret_args,
-            c_ret,
-            impl_func_ret,
-            injected_ret_tmp,
-            use_hrtb,
-            return_self,
-            use_wrap,
-        ) = {
-            let mut ret = None;
+        let mut ret = Self {
+            ty: ty.clone(),
+            c_out: ty.to_token_stream(),
+            c_where_bounds: quote!(),
+            c_ret_params: quote!(),
+            c_ret_precall_def: quote!(),
+            c_call_ret_args: quote!(),
+            c_ret: quote!(ret),
+            impl_func_ret: quote!(ret),
+            injected_ret_tmp: None,
+            use_hrtb: false,
+            return_self: false,
+            use_wrap: false,
+        };
 
-            if let ReturnType::Type(_, ty) = &mut ty {
-                if let Some(wrapped) = wrap_type(&mut *ty, targets) {
-                    let old_ty = wrapped.0;
-                    let trait_ty = wrapped.1;
-                    let WrappedType {
-                        return_conv,
-                        lifetime_bound,
-                        other_bounds,
-                        inject_ret_tmp,
-                        impl_return_conv,
-                        ty: new_ty,
-                        ..
-                    } = wrapped.2;
+        if let ReturnType::Type(_, ty) = &mut ty {
+            if let Some(wrapped) = wrap_type(&mut *ty, targets) {
+                let old_ty = wrapped.0;
+                let trait_ty = wrapped.1;
+                let WrappedType {
+                    return_conv,
+                    lifetime_bound,
+                    other_bounds,
+                    inject_ret_tmp,
+                    impl_return_conv,
+                    ty: new_ty,
+                    ..
+                } = wrapped.2;
 
-                    let (mutable, lifetime) = match (inject_ret_tmp, &**ty) {
-                        (true, Type::Reference(ty)) => {
-                            (ty.mutability.is_some(), ty.lifetime.as_ref().cloned())
-                        }
-                        (false, _) => (false, None),
-                        _ => panic!("Wrapped ref return currently only valid for references!"),
-                    };
-
-                    let use_hrtb = lifetime.is_none();
-
-                    let lifetime = lifetime.unwrap_or_else(|| Lifetime {
-                        apostrophe: proc_macro2::Span::call_site(),
-                        ident: format_ident!("cglue_b"),
-                    });
-
-                    let ret_wrap = match return_conv {
-                        Some(conv) => quote! {
-                            let mut conv = #conv;
-                            conv(ret)
-                        },
-                        _ => quote!(ret.into()),
-                    };
-
-                    let where_bound = match lifetime_bound {
-                        Some(bound) => quote!(CGlueF::#trait_ty: #bound, #other_bounds),
-                        _ => quote!(#other_bounds),
-                    };
-
-                    let (ret_type, injected_ret_tmp, tmp_type_def, tmp_impl_def, tmp_call_def) =
-                        match (inject_ret_tmp, mutable) {
-                            (true, false) => (
-                                quote!(&#lifetime #new_ty),
-                                Some(new_ty.clone()),
-                                quote!(ret_tmp: &mut ::core::mem::MaybeUninit<#new_ty>,),
-                                quote!(let ret_tmp = ret_tmp.#func_name();),
-                                quote!(ret_tmp,),
-                            ),
-                            (true, true) => (
-                                quote!(&#lifetime mut #new_ty),
-                                Some(new_ty.clone()),
-                                quote!(ret_tmp: &mut ::core::mem::MaybeUninit<#new_ty>,),
-                                quote!(let ret_tmp = ret_tmp.#func_name();),
-                                quote!(ret_tmp,),
-                            ),
-                            _ => (quote!(#ty), None, quote!(), quote!(), quote!()),
-                        };
-
-                    let impl_return_conv = impl_return_conv
-                        .as_ref()
-                        .cloned()
-                        .unwrap_or_else(|| quote!(ret));
-
-                    let return_self = trait_ty == "Self";
-
-                    // If we are returning self, do not actually change the return type.
-                    // I know, messy :(
-                    if return_self {
-                        *ty = Box::new(old_ty);
+                let (mutable, lifetime) = match (inject_ret_tmp, &**ty) {
+                    (true, Type::Reference(ty)) => {
+                        (ty.mutability.is_some(), ty.lifetime.as_ref().cloned())
                     }
+                    (false, _) => (false, None),
+                    _ => panic!("Wrapped ref return currently only valid for references!"),
+                };
 
-                    ret = Some((
-                        quote!(-> #ret_type),
-                        where_bound,
-                        tmp_type_def,
-                        tmp_impl_def,
-                        tmp_call_def,
-                        quote!(#ret_wrap),
-                        impl_return_conv,
-                        injected_ret_tmp,
-                        use_hrtb,
-                        return_self,
-                        true,
-                    ));
-                } else if let Type::Path(p) = &**ty {
-                    let last = p.path.segments.last();
-                    if let Some((PathArguments::AngleBracketed(args), last)) =
-                        last.map(|l| (&l.arguments, l))
-                    {
-                        match last.ident.to_string().as_str() {
-                            "Option" => {
-                                if let Some(GenericArgument::Type(a)) = args.args.first() {
-                                    if !crate::util::is_null_pointer_optimizable(a, &[]) {
-                                        ret = Some((
-                                            quote!(-> #crate_path::option::COption<#a>),
-                                            quote!(),
-                                            quote!(),
-                                            quote!(),
-                                            quote!(),
-                                            quote!(ret.into()),
-                                            quote!(ret.into()),
-                                            None,
-                                            false,
-                                            false,
-                                            false,
-                                        ));
-                                    }
+                let use_hrtb = lifetime.is_none();
+
+                let lifetime = lifetime.unwrap_or_else(|| Lifetime {
+                    apostrophe: proc_macro2::Span::call_site(),
+                    ident: format_ident!("cglue_b"),
+                });
+
+                let ret_wrap = match return_conv {
+                    Some(conv) => quote! {
+                        let mut conv = #conv;
+                        conv(ret)
+                    },
+                    _ => quote!(ret.into()),
+                };
+
+                let where_bound = match lifetime_bound {
+                    Some(bound) => quote!(CGlueF::#trait_ty: #bound, #other_bounds),
+                    _ => quote!(#other_bounds),
+                };
+
+                let (ret_type, injected_ret_tmp, tmp_type_def, tmp_impl_def, tmp_call_def) =
+                    match (inject_ret_tmp, mutable) {
+                        (true, false) => (
+                            quote!(&#lifetime #new_ty),
+                            Some(new_ty.clone()),
+                            quote!(ret_tmp: &mut ::core::mem::MaybeUninit<#new_ty>,),
+                            quote!(let ret_tmp = ret_tmp.#func_name();),
+                            quote!(ret_tmp,),
+                        ),
+                        (true, true) => (
+                            quote!(&#lifetime mut #new_ty),
+                            Some(new_ty.clone()),
+                            quote!(ret_tmp: &mut ::core::mem::MaybeUninit<#new_ty>,),
+                            quote!(let ret_tmp = ret_tmp.#func_name();),
+                            quote!(ret_tmp,),
+                        ),
+                        _ => (quote!(#ty), None, quote!(), quote!(), quote!()),
+                    };
+
+                let impl_return_conv = impl_return_conv
+                    .as_ref()
+                    .cloned()
+                    .unwrap_or_else(|| quote!(ret));
+
+                let return_self = trait_ty == "Self";
+
+                // If we are returning self, do not actually change the return type.
+                // I know, messy :(
+                if return_self {
+                    *ty = Box::new(old_ty);
+                }
+
+                ret.c_out = quote!(-> #ret_type);
+                ret.c_where_bounds = where_bound;
+                ret.c_ret_params = tmp_type_def;
+                ret.c_ret_precall_def = tmp_impl_def;
+                ret.c_call_ret_args = tmp_call_def;
+                ret.c_ret = quote!(#ret_wrap);
+                ret.impl_func_ret = impl_return_conv;
+                ret.injected_ret_tmp = injected_ret_tmp;
+                ret.use_hrtb = use_hrtb;
+                ret.return_self = return_self;
+                ret.use_wrap = true;
+            }
+
+            if let Type::Path(p) = &**ty {
+                let last = p.path.segments.last();
+                if let Some((PathArguments::AngleBracketed(args), last)) =
+                    last.map(|l| (&l.arguments, l))
+                {
+                    match last.ident.to_string().as_str() {
+                        "Option" => {
+                            if let Some(GenericArgument::Type(a)) = args.args.first() {
+                                if !crate::util::is_null_pointer_optimizable(a, &[]) {
+                                    ret.c_out = quote!(-> #crate_path::option::COption<#a>);
+                                    ret.c_ret.extend(quote!(.into()));
+                                    ret.impl_func_ret.extend(quote!(.into()));
                                 }
                             }
-                            "Result" => {
-                                let mut args = args.args.iter();
+                        }
+                        "Result" => {
+                            let mut args = args.args.iter();
 
-                                ret = match (args.next(), args.next(), args.next(), int_result) {
-                                    (Some(GenericArgument::Type(a)), _, None, true) => {
-                                        let ret = loop {
-                                            if let Type::Tuple(tup) = a {
-                                                if tup.elems.is_empty() {
-                                                    break (
-                                                        quote!(-> i32),
-                                                        quote!(),
-                                                        quote!(),
-                                                        quote!(),
-                                                        quote!(),
-                                                        quote!(#crate_path::result::into_int_result(ret)),
-                                                        quote!(#crate_path::result::from_int_result_empty(ret)),
-                                                        None,
-                                                        false,
-                                                        false,
-                                                        false,
-                                                    );
-                                                }
-                                            }
+                            match (args.next(), args.next(), args.next(), int_result) {
+                                (Some(GenericArgument::Type(a)), _, None, true) => {
+                                    loop {
+                                        ret.c_out = quote!(-> i32);
 
-                                            break (
-                                                quote!(-> i32),
-                                                quote!(),
-                                                quote!(ok_out: &mut ::core::mem::MaybeUninit<#a>),
-                                                quote!(let mut ok_out = ::core::mem::MaybeUninit::uninit();),
-                                                quote!(&mut ok_out,),
-                                                quote!(#crate_path::result::into_int_out_result(ret, ok_out)),
-                                                quote!(#unsafety { #crate_path::result::from_int_result(ret, ok_out) }),
-                                                None,
-                                                false,
-                                                false,
-                                                false,
-                                            );
+                                        let c_ret = &ret.c_ret;
+
+                                        let mapped_ret = quote! {
+                                            let ret = ret.map(|ret| {
+                                                #c_ret
+                                            });
                                         };
 
-                                        Some(ret)
+                                        if let Type::Tuple(tup) = a {
+                                            if tup.elems.is_empty() {
+                                                ret.c_ret = quote! {
+                                                    #mapped_ret
+                                                    #crate_path::result::into_int_result(ret)
+                                                };
+                                                let impl_func_ret = &ret.impl_func_ret;
+                                                ret.impl_func_ret = quote!(#crate_path::result::from_int_result_empty(#impl_func_ret));
+
+                                                break;
+                                            }
+                                        }
+
+                                        ret.c_ret_params.extend(
+                                            quote!(ok_out: &mut ::core::mem::MaybeUninit<#a>,),
+                                        );
+                                        ret.c_ret_precall_def.extend(quote!(let mut ok_out = ::core::mem::MaybeUninit::uninit();));
+                                        ret.c_call_ret_args.extend(quote!(&mut ok_out,));
+
+                                        ret.c_ret = quote! {
+                                            #mapped_ret
+                                            #crate_path::result::into_int_out_result(ret, ok_out)
+                                        };
+                                        let impl_func_ret = &ret.impl_func_ret;
+                                        ret.impl_func_ret = quote!(#unsafety { #crate_path::result::from_int_result(#impl_func_ret, ok_out) });
+
+                                        break;
                                     }
-                                    (
-                                        Some(GenericArgument::Type(a)),
-                                        Some(GenericArgument::Type(b)),
-                                        None,
-                                        _,
-                                    ) => Some((
-                                        quote!(-> #crate_path::result::CResult<#a, #b>),
-                                        quote!(),
-                                        quote!(),
-                                        quote!(),
-                                        quote!(),
-                                        quote!(ret.into()),
-                                        quote!(ret.into()),
-                                        None,
-                                        false,
-                                        false,
-                                        false,
-                                    )),
-                                    _ => None,
-                                };
-                            }
-                            _ => {}
+                                }
+                                (
+                                    Some(GenericArgument::Type(a)),
+                                    Some(GenericArgument::Type(b)),
+                                    None,
+                                    _,
+                                ) => {
+                                    ret.c_out = quote!(-> #crate_path::result::CResult<#a, #b>);
+
+                                    let c_ret = &ret.c_ret;
+
+                                    let mapped_ret = quote! {
+                                        let ret = ret.map(|ret| {
+                                            #c_ret
+                                        });
+                                    };
+
+                                    ret.c_ret = quote! {
+                                        #mapped_ret
+                                        ret.into()
+                                    };
+
+                                    ret.impl_func_ret.extend(quote!(.into()));
+                                }
+                                _ => {}
+                            };
                         }
+                        _ => {}
                     }
                 }
             }
-
-            ret.unwrap_or_else(|| {
-                (
-                    ty.to_token_stream(),
-                    quote!(),
-                    quote!(),
-                    quote!(),
-                    quote!(),
-                    quote!(ret),
-                    quote!(ret),
-                    None,
-                    false,
-                    false,
-                    false,
-                )
-            })
-        };
-
-        Self {
-            ty,
-            c_out,
-            c_where_bounds,
-            c_ret_params,
-            c_ret_precall_def,
-            c_call_ret_args,
-            c_ret,
-            impl_func_ret,
-            injected_ret_tmp,
-            use_hrtb,
-            return_self,
-            use_wrap,
         }
+
+        ret
     }
 }

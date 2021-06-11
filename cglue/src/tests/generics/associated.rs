@@ -39,6 +39,28 @@ impl ObjReturn for SA {
 }
 
 #[cglue_trait]
+#[int_result]
+pub trait ObjResultReturn {
+    #[wrap_with_obj(TA)]
+    type ReturnType: TA + 'static;
+
+    fn orr_1(&self) -> Result<Self::ReturnType, ()>;
+
+    #[no_int_result]
+    fn orr_2(&self) -> Result<Self::ReturnType, ()> {
+        self.orr_1()
+    }
+}
+
+impl ObjResultReturn for SA {
+    type ReturnType = SA;
+
+    fn orr_1(&self) -> Result<SA, ()> {
+        Ok(SA {})
+    }
+}
+
+#[cglue_trait]
 pub trait ObjUnboundedReturn {
     #[wrap_with_obj(TA)]
     type ReturnType: TA;
