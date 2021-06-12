@@ -29,18 +29,15 @@ pub fn gen_wrap(tr: ItemTrait, ext_path: Option<TokenStream>) -> TokenStream {
 
     let mut wrapped_types = TokenStream::new();
 
-    let send_bound = if tr
-        .supertraits
-        .iter()
-        .find(|s| {
-            if let TypeParamBound::Trait(tr) = s {
-                tr.path.get_ident().map(|i| i == "Send") == Some(true)
-            } else {
-                false
-            }
-        })
-        .is_some()
-    {
+    let needs_send = tr.supertraits.iter().any(|s| {
+        if let TypeParamBound::Trait(tr) = s {
+            tr.path.get_ident().map(|i| i == "Send") == Some(true)
+        } else {
+            false
+        }
+    });
+
+    let send_bound = if needs_send {
         quote!(+ Send + Sync)
     } else {
         quote!()

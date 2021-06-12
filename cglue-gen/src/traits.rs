@@ -90,15 +90,9 @@ pub fn process_item(
 
                 let target = new_ty.target.clone();
 
-                if x == "wrap_with_obj" {
+                if ["wrap_with_obj", "wrap_with_obj_ref", "wrap_with_obj_mut"].contains(&x) {
                     new_ty.target =
-                        format_ident!("CGlueBox{}", target.to_string()).to_token_stream();
-                } else if x == "wrap_with_obj_ref" {
-                    new_ty.target =
-                        format_ident!("CGlueRef{}", target.to_string()).to_token_stream();
-                } else if x == "wrap_with_obj_mut" {
-                    new_ty.target =
-                        format_ident!("CGlueMut{}", target.to_string()).to_token_stream();
+                        format_ident!("CGlueBase{}", target.to_string()).to_token_stream();
                 }
 
                 // These variables model a `SomeGroup: From<CGlueF::#ty_ident>` bound.
@@ -125,11 +119,7 @@ pub fn process_item(
 
                 let gen_use = &generics.gen_use;
 
-                let type_bounds = if ["wrap_with_obj", "wrap_with_obj_ref", "wrap_with_obj_mut"]
-                    .contains(&x)
-                {
-                    None
-                } else {
+                let type_bounds = {
                     // Here we must inject a lifetime, if the trait has no lifetime,
                     // and its a group we are wrapping
                     let hrtb_lifetime = quote!(#cglue_b_lifetime);
@@ -143,9 +133,14 @@ pub fn process_item(
                     let cglue_f_ty_ident =
                         quote!(<CGlueF as #trait_name<#hrtb_lifetime_use #gen_use>>::#ty_ident);
 
-                    if x == "wrap_with_group" {
+                    let mut new_ty_hrtb = from_new_ty.clone();
+
+                    if x == "wrap_with_group" || x == "wrap_with_obj" {
                         new_ty.push_types_start(
                             quote!(#crate_path::boxed::CBox<#lifetime, #c_void>, #c_void,),
+                        );
+                        new_ty_hrtb.push_types_start(
+                            quote!(#crate_path::boxed::CBox<#from_lifetime, #c_void>, #c_void,),
                         );
                         new_ty_static.push_types_start(
                             quote!(#crate_path::boxed::CBox<'static, #c_void>, #c_void,),
@@ -153,15 +148,17 @@ pub fn process_item(
                         from_new_ty.push_types_start(
                             quote!(#crate_path::boxed::CBox<#from_lifetime, #cglue_f_ty_ident>, #cglue_f_ty_ident,),
                         );
-                    } else if x == "wrap_with_group_ref" {
+                    } else if x == "wrap_with_group_ref" || x == "wrap_with_obj_ref" {
                         new_ty.push_types_start(quote!(&#lifetime #c_void, #c_void,));
+                        new_ty_hrtb.push_types_start(quote!(&#from_lifetime #c_void, #c_void,));
                         new_ty_static.push_types_start(quote!(&'static #c_void, #c_void,));
                         from_new_ty.push_types_start(
                             quote!(&#from_lifetime CGlueF::#ty_ident, #cglue_f_ty_ident,),
                         );
                         from_new_ty_ref.extend(quote!(&#from_lifetime));
-                    } else if x == "wrap_with_group_mut" {
+                    } else if x == "wrap_with_group_mut" || x == "wrap_with_obj_mut" {
                         new_ty.push_types_start(quote!(&#lifetime mut #c_void, #c_void,));
+                        new_ty_hrtb.push_types_start(quote!(&#from_lifetime mut #c_void, #c_void,));
                         new_ty_static.push_types_start(quote!(&'static mut #c_void, #c_void,));
                         from_new_ty.push_types_start(
                             quote!(&#from_lifetime mut #cglue_f_ty_ident, #cglue_f_ty_ident,),
@@ -169,9 +166,7 @@ pub fn process_item(
                         from_new_ty_ref.extend(quote!(&#from_lifetime mut));
                     }
 
-                    let type_bounds = quote!(for<#hrtb_lifetime> #from_new_ty: From<#from_new_ty_ref #cglue_f_ty_ident>,);
-
-                    Some(type_bounds)
+                    quote!(for<#hrtb_lifetime> #from_new_ty: From<#from_new_ty_ref #cglue_f_ty_ident> + #crate_path::trait_group::Opaquable<OpaqueTarget = #new_ty_hrtb>,)
                 };
 
                 trait_type_defs.extend(quote!(type #ty_ident = #new_ty;));
@@ -276,7 +271,7 @@ pub fn process_item(
                         impl_return_conv: None,
                         lifetime_bound,
                         lifetime_type_bound,
-                        other_bounds: type_bounds,
+                        other_bounds: Some(type_bounds),
                         inject_ret_tmp,
                     },
                 );
