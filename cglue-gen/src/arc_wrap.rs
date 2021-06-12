@@ -29,6 +29,23 @@ pub fn gen_wrap(tr: ItemTrait, ext_path: Option<TokenStream>) -> TokenStream {
 
     let mut wrapped_types = TokenStream::new();
 
+    let send_bound = if tr
+        .supertraits
+        .iter()
+        .find(|s| {
+            if let TypeParamBound::Trait(tr) = s {
+                tr.path.get_ident().map(|i| i == "Send") == Some(true)
+            } else {
+                false
+            }
+        })
+        .is_some()
+    {
+        quote!(+ Send + Sync)
+    } else {
+        quote!()
+    };
+
     let (funcs, generics, _) =
         super::traits::parse_trait(&tr, &crate_path, |ty, _, _, _, types, _| {
             let mut has_wrapped = false;
@@ -92,7 +109,7 @@ pub fn gen_wrap(tr: ItemTrait, ext_path: Option<TokenStream>) -> TokenStream {
     quote! {
         #tr_impl
 
-        impl<#life_declare CGlueT, CGlueA: 'static, #gen_declare> #ext_path #trait_name<#life_use #gen_use> for #crate_path::arc::ArcWrapped<CGlueT, CGlueA> where CGlueT: #ext_path #trait_name<#life_use #gen_use>, #gen_where_bounds {
+        impl<#life_declare CGlueT, CGlueA: 'static #send_bound, #gen_declare> #ext_path #trait_name<#life_use #gen_use> for #crate_path::arc::ArcWrapped<CGlueT, CGlueA> where CGlueT: #ext_path #trait_name<#life_use #gen_use>, #gen_where_bounds {
             #wrapped_types
             #impls
         }

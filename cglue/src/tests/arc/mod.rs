@@ -16,6 +16,18 @@ impl DoThings for SA {
 }
 
 #[cglue_arc_wrappable]
+#[cglue_trait]
+pub trait DoThingsSend: Send {
+    fn dts_1(&self) -> usize;
+}
+
+impl DoThingsSend for SA {
+    fn dts_1(&self) -> usize {
+        55
+    }
+}
+
+#[cglue_arc_wrappable]
 pub trait DoThingsAssoc {
     type ReturnType;
 
