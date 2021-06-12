@@ -59,13 +59,17 @@ unsafe impl<'a, T> Opaquable for &'a mut T {
     type OpaqueTarget = &'a mut c_void;
 }
 
-unsafe impl<'a, T> Opaquable for CBox<T> {
-    type OpaqueTarget = CBox<c_void>;
+unsafe impl<'a, T> Opaquable for CBox<'a, T> {
+    type OpaqueTarget = CBox<'a, c_void>;
 }
 
 /// Opaque type of the trait object.
-pub type CGlueOpaqueTraitObjOutCBox<'a, V> =
-    CGlueTraitObj<'a, CBox<c_void>, <V as CGlueBaseVtbl>::OpaqueVtbl, <V as CGlueBaseVtbl>::RetTmp>;
+pub type CGlueOpaqueTraitObjOutCBox<'a, V> = CGlueTraitObj<
+    'a,
+    CBox<'a, c_void>,
+    <V as CGlueBaseVtbl>::OpaqueVtbl,
+    <V as CGlueBaseVtbl>::RetTmp,
+>;
 
 pub type CGlueOpaqueTraitObjOutRef<'a, V> =
     CGlueTraitObj<'a, &'a c_void, <V as CGlueBaseVtbl>::OpaqueVtbl, <V as CGlueBaseVtbl>::RetTmp>;
@@ -127,7 +131,7 @@ where
     }
 }
 
-impl<'a, T, V: CGlueVtbl<T>> From<T> for CGlueTraitObj<'a, CBox<T>, V, V::RetTmp>
+impl<'a, T, V: CGlueVtbl<T>> From<T> for CGlueTraitObj<'a, CBox<'a, T>, V, V::RetTmp>
 where
     &'a V: Default,
 {

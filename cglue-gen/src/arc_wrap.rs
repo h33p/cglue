@@ -17,8 +17,10 @@ pub fn gen_wrap(tr: ItemTrait, ext_path: Option<TokenStream>) -> TokenStream {
         format_ident!("Self"),
         WrappedType {
             ty: parse2(quote!(Self)).unwrap(),
+            ty_static: None,
             return_conv: None,
             lifetime_bound: None,
+            lifetime_type_bound: None,
             other_bounds: None,
             impl_return_conv: None,
             inject_ret_tmp: false,
@@ -27,38 +29,42 @@ pub fn gen_wrap(tr: ItemTrait, ext_path: Option<TokenStream>) -> TokenStream {
 
     let mut wrapped_types = TokenStream::new();
 
-    let (funcs, generics, _) = super::traits::parse_trait(&tr, &crate_path, |ty, _, types, _| {
-        let mut has_wrapped = false;
-        let ident = &ty.ident;
+    let (funcs, generics, _) =
+        super::traits::parse_trait(&tr, &crate_path, |ty, _, _, _, types, _| {
+            let mut has_wrapped = false;
+            let ident = &ty.ident;
 
-        for attr in &ty.attrs {
-            let s = attr.path.to_token_stream().to_string();
+            for attr in &ty.attrs {
+                let s = attr.path.to_token_stream().to_string();
 
-            if s.as_str() == "arc_wrap" {
-                let new_ty =
-                    parse2(quote!(#crate_path::arc::ArcWrapped<CGlueT::#ident, CGlueA>)).unwrap();
-                wrapped_types.extend(quote!(type #ident = #new_ty;));
+                if s.as_str() == "arc_wrap" {
+                    let new_ty =
+                        parse2(quote!(#crate_path::arc::ArcWrapped<CGlueT::#ident, CGlueA>))
+                            .unwrap();
+                    wrapped_types.extend(quote!(type #ident = #new_ty;));
 
-                types.insert(
-                    ident.clone(),
-                    WrappedType {
-                        ty: new_ty,
-                        return_conv: None,
-                        lifetime_bound: None,
-                        other_bounds: None,
-                        impl_return_conv: None,
-                        inject_ret_tmp: false,
-                    },
-                );
+                    types.insert(
+                        ident.clone(),
+                        WrappedType {
+                            ty: new_ty,
+                            ty_static: None,
+                            return_conv: None,
+                            lifetime_bound: None,
+                            lifetime_type_bound: None,
+                            other_bounds: None,
+                            impl_return_conv: None,
+                            inject_ret_tmp: false,
+                        },
+                    );
 
-                has_wrapped = true;
+                    has_wrapped = true;
+                }
             }
-        }
 
-        if !has_wrapped {
-            wrapped_types.extend(quote!(type #ident = CGlueT::#ident;));
-        }
-    });
+            if !has_wrapped {
+                wrapped_types.extend(quote!(type #ident = CGlueT::#ident;));
+            }
+        });
 
     let ParsedGenerics {
         life_declare,

@@ -469,7 +469,7 @@ impl TraitGroup {
         let mandatory_vtbl_defs = self.mandatory_vtbl_defs(self.mandatory_vtbl.iter());
         let optional_vtbl_defs = self.optional_vtbl_defs(quote!(CGlueT));
         let optional_vtbl_defs_boxed =
-            self.optional_vtbl_defs(quote!(#crate_path::boxed::CBox<CGlueF>));
+            self.optional_vtbl_defs(quote!(#crate_path::boxed::CBox<'cglue_a, CGlueF>));
 
         let mand_vtbl_default = self.mandatory_vtbl_defaults();
         let mand_ret_tmp_default = self.mandatory_ret_tmp_defaults();
@@ -492,7 +492,7 @@ impl TraitGroup {
             Self::vtbl_where_bounds(self.mandatory_vtbl.iter(), quote!(CGlueT), quote!(CGlueF));
         let vtbl_where_bounds_boxed = Self::vtbl_where_bounds(
             self.mandatory_vtbl.iter(),
-            quote!(#crate_path::boxed::CBox<CGlueF>),
+            quote!(#crate_path::boxed::CBox<'cglue_a, CGlueF>),
             quote!(CGlueF),
         );
         let ret_tmp_defs = self.ret_tmp_defs(self.optional_vtbl.iter());
@@ -889,7 +889,7 @@ impl TraitGroup {
                 pub type #opaque_name<'cglue_a, #life_use CGlueT: ::core::ops::Deref<Target = #c_void>, #gen_use> = #name<'cglue_a, #life_use CGlueT, CGlueT::Target, #gen_use>;
                 pub type #opaque_name_ref<'cglue_a, #life_use #gen_use> = #name<'cglue_a, #life_use &'cglue_a #c_void, #c_void, #gen_use>;
                 pub type #opaque_name_mut<'cglue_a, #life_use #gen_use> = #name<'cglue_a, #life_use &'cglue_a mut #c_void, #c_void, #gen_use>;
-                pub type #opaque_name_boxed<'cglue_a, #life_use #gen_use> = #name<'cglue_a, #life_use #crate_path::boxed::CBox<#c_void>, #c_void, #gen_use>;
+                pub type #opaque_name_boxed<'cglue_a, #life_use #gen_use> = #name<'cglue_a, #life_use #crate_path::boxed::CBox<'cglue_a, #c_void>, #c_void, #gen_use>;
 
                 impl<'cglue_a, #life_declare CGlueT: ::core::ops::Deref<Target = CGlueF> + #filler_trait<'cglue_a, #life_use CGlueF, #gen_use>, CGlueF, #gen_declare> From<CGlueT> for #name<'cglue_a, #life_use CGlueT, CGlueF, #gen_use>
                     where #vtbl_where_bounds #gen_where_bounds
@@ -912,8 +912,8 @@ impl TraitGroup {
                         }
                     }
 
-                impl<'cglue_a, #life_declare CGlueF, #gen_declare> From<CGlueF> for #name<'cglue_a, #life_use #crate_path::boxed::CBox<CGlueF>, CGlueF, #gen_use>
-                    where #crate_path::boxed::CBox<CGlueF>: #filler_trait<'cglue_a, #life_use CGlueF, #gen_use>, #vtbl_where_bounds_boxed #gen_where_bounds
+                impl<'cglue_a, #life_declare CGlueF, #gen_declare> From<CGlueF> for #name<'cglue_a, #life_use #crate_path::boxed::CBox<'cglue_a, CGlueF>, CGlueF, #gen_use>
+                    where #crate_path::boxed::CBox<'cglue_a, CGlueF>: #filler_trait<'cglue_a, #life_use CGlueF, #gen_use>, #vtbl_where_bounds_boxed #gen_where_bounds
                     {
                         fn from(instance: CGlueF) -> Self {
                             #name::from(#crate_path::boxed::CBox::from(instance))
@@ -938,7 +938,7 @@ impl TraitGroup {
                         }
                     }
 
-                impl<'cglue_a, #life_declare CGlueF, #gen_declare> #name<'cglue_a, #life_use #crate_path::boxed::CBox<CGlueF>, CGlueF, #gen_use>
+                impl<'cglue_a, #life_declare CGlueF, #gen_declare> #name<'cglue_a, #life_use #crate_path::boxed::CBox<'cglue_a, CGlueF>, CGlueF, #gen_use>
                     where #gen_where_bounds
                     {
                         #[doc = #new_doc]

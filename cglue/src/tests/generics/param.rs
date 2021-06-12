@@ -39,12 +39,12 @@ impl GenWithInlineClause<usize> for SA {
 
 #[cglue_trait]
 pub trait GenWithLifetime<'a, T: Eq + 'a> {
-    fn gwl_1(&self) -> &'a T;
+    fn gwl_1(&self) -> &T;
     fn gwl_2(&self) {}
 }
 
 impl<'a> GenWithLifetime<'a, usize> for SA {
-    fn gwl_1(&self) -> &'a usize {
+    fn gwl_1(&self) -> &usize {
         &60
     }
 }
@@ -89,7 +89,7 @@ fn use_lifetime_explicit_t() {
 fn use_lifetime_explicit() {
     let sa = SA {};
 
-    let obj = trait_obj!(sa as GenWithLifetime<'static, 'static, usize>);
+    let obj = trait_obj!(sa as GenWithLifetime<'static, usize>);
 
     println!("{}", obj.gwl_1());
 }

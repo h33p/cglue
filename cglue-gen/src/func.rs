@@ -8,7 +8,9 @@ const FN_PREFIX: &str = "cglue_wrapped_";
 
 pub struct WrappedType {
     pub ty: GenericType,
+    pub ty_static: Option<GenericType>,
     pub lifetime_bound: Option<Lifetime>,
+    pub lifetime_type_bound: Option<Lifetime>,
     pub other_bounds: Option<TokenStream>,
     pub return_conv: Option<ExprClosure>,
     pub impl_return_conv: Option<TokenStream>,
@@ -115,15 +117,11 @@ impl TraitArg {
         targets: &BTreeMap<Ident, WrappedType>,
         unsafety: &TokenStream,
         crate_path: &TokenStream,
-        inject_hrtb: bool,
+        inject_hrtb_lifetime: Option<&Lifetime>,
     ) -> Self {
         let (to_c_args, call_c_args, c_args, to_trait_arg, trivial) = match &mut arg {
             FnArg::Receiver(r) => {
-                let lifetime = if inject_hrtb {
-                    quote!('cglue_b )
-                } else {
-                    r.lifetime().to_token_stream()
-                };
+                let lifetime = inject_hrtb_lifetime.or_else(|| r.lifetime());
 
                 if r.reference.is_none() {
                     (
@@ -305,7 +303,13 @@ impl ParsedFunc {
         let unsafety = if safe { quote!(unsafe) } else { quote!() };
 
         let out = ParsedReturnType::new(
-            sig.output, wrap_types, int_result, &unsafety, &name, crate_path,
+            sig.output,
+            wrap_types,
+            int_result,
+            &unsafety,
+            &name,
+            crate_path,
+            (&trait_name, generics),
         );
 
         for input in sig.inputs.into_iter() {
@@ -313,7 +317,13 @@ impl ParsedFunc {
                 receiver = Some(r.clone());
             }
 
-            let func = TraitArg::new(input, wrap_types, &unsafety, crate_path, out.use_hrtb);
+            let func = TraitArg::new(
+                input,
+                wrap_types,
+                &unsafety,
+                crate_path,
+                out.lifetime.as_ref(),
+            );
 
             has_nontrivial = has_nontrivial || !func.trivial;
 
@@ -339,7 +349,14 @@ impl ParsedFunc {
 
     pub fn ret_tmp_def(&self, stream: &mut TokenStream) {
         let name = &self.name;
-        if let Some(ty) = &self.out.injected_ret_tmp {
+        // If injected_ret_tmp exists, try using the static one, but skip it if it doesn't exist.
+        if let (Some(_), Some(ty)) = (
+            &self.out.injected_ret_tmp,
+            self.out
+                .injected_ret_tmp_static
+                .as_ref()
+                .or_else(|| self.out.injected_ret_tmp.as_ref()),
+        ) {
             let gen = if self.receiver.mutability.is_some() {
                 quote!(#name: ::core::mem::MaybeUninit<#ty>,)
             } else {
@@ -365,23 +382,55 @@ impl ParsedFunc {
         let name = &self.name;
 
         if let Some(ty) = &self.out.injected_ret_tmp {
-            let gen = if self.receiver.mutability.is_some() {
-                quote! {
-                    fn #name(&mut self) -> &mut ::core::mem::MaybeUninit<#ty> {
-                        &mut self.#name
+            let gen = match (&self.out.lifetime, &self.receiver.mutability) {
+                (Some(lt), Some(_)) => {
+                    quote! {
+                        fn #name<#lt>(&#lt mut self) -> &#lt mut ::core::mem::MaybeUninit<#ty> {
+                            // SAFETY:
+                            // We shorten the lifetime of the borrowed data.
+                            // The data is not being dropped, and is not accessible
+                            // from anywhere else, so this is safe.:w
+                            unsafe { std::mem::transmute(&mut self.#name) }
+                        }
                     }
                 }
-            } else {
-                quote! {
-                    #[allow(clippy::mut_from_ref)]
-                    fn #name(&self) -> &mut ::core::mem::MaybeUninit<#ty> {
-                        // SAFETY:
-                        // We mutably alias the underlying cell, which is not very safe, because
-                        // it could already be borrowed immutably. However, for this particular case
-                        // it is somewhat okay, with emphasis on "somewhat". If this function returns
-                        // a constant, this method is safe, because the stack will be overriden with
-                        // the exact same data.
-                        unsafe { self.#name.as_ptr().as_mut().unwrap() }
+                (None, Some(_)) => {
+                    quote! {
+                        fn #name(&mut self) -> &mut ::core::mem::MaybeUninit<#ty> {
+                            &mut self.#name
+                        }
+                    }
+                }
+                (Some(lt), None) => {
+                    quote! {
+                        #[allow(clippy::mut_from_ref)]
+                        fn #name<#lt>(&#lt self) -> &#lt mut ::core::mem::MaybeUninit<#ty> {
+                            // SAFETY:
+                            // We mutably alias the underlying cell, which is not very safe, because
+                            // it could already be borrowed immutably. However, for this particular case
+                            // it is somewhat okay, with emphasis on "somewhat". If this function returns
+                            // a constant, this method is safe, because the stack will be overriden with
+                            // the exact same data.
+                            //
+                            // We shorten the lifetime of the borrowed data.
+                            // The data is not being dropped, and is not accessible
+                            // from anywhere else, so this is safe.:w
+                            unsafe { std::mem::transmute(self.#name.as_ptr().as_mut().unwrap()) }
+                        }
+                    }
+                }
+                (None, None) => {
+                    quote! {
+                        #[allow(clippy::mut_from_ref)]
+                        fn #name(&self) -> &mut ::core::mem::MaybeUninit<#ty> {
+                            // SAFETY:
+                            // We mutably alias the underlying cell, which is not very safe, because
+                            // it could already be borrowed immutably. However, for this particular case
+                            // it is somewhat okay, with emphasis on "somewhat". If this function returns
+                            // a constant, this method is safe, because the stack will be overriden with
+                            // the exact same data.
+                            unsafe { self.#name.as_ptr().as_mut().unwrap() }
+                        }
                     }
                 }
             };
@@ -467,12 +516,12 @@ impl ParsedFunc {
         let ParsedReturnType {
             c_out,
             c_ret_params,
-            use_hrtb,
+            lifetime,
             ..
         } = &self.out;
 
-        let hrtb = if *use_hrtb {
-            quote!(for<'cglue_b> )
+        let hrtb = if let Some(lifetime) = lifetime {
+            quote!(for<#lifetime> )
         } else {
             quote!()
         };
@@ -491,12 +540,12 @@ impl ParsedFunc {
         let ParsedReturnType {
             c_out,
             c_ret_params,
-            use_hrtb,
+            lifetime,
             ..
         } = &self.out;
 
-        let hrtb = if *use_hrtb {
-            quote!(for<'cglue_b> )
+        let hrtb = if let Some(lifetime) = lifetime {
+            quote!(for<#lifetime> )
         } else {
             quote!()
         };
@@ -541,6 +590,7 @@ impl ParsedFunc {
             c_ret_params,
             use_hrtb,
             return_self,
+            lifetime,
             ..
         } = &self.out;
         let call_args = self.to_trait_call_args();
@@ -548,12 +598,6 @@ impl ParsedFunc {
         let trname = &self.trait_name;
         let fnname = format_ident!("{}{}", FN_PREFIX, name);
         let safety = self.get_safety();
-
-        let tmp_lifetime = if *use_hrtb {
-            quote!('cglue_b, )
-        } else {
-            quote!()
-        };
 
         let ParsedGenerics {
             life_declare,
@@ -563,6 +607,20 @@ impl ParsedFunc {
             gen_where_bounds,
             ..
         } = &self.generics;
+
+        let tmp_lifetime = if *use_hrtb && !life_use.is_empty() {
+            quote!('cglue_b, )
+        } else {
+            quote!(#life_use)
+        };
+
+        // Inject 'cglue_a if there are no lifetimes declared by the trait,
+        // and temp lifetime is needed
+        let life_declare = if lifetime.is_some() && life_declare.is_empty() {
+            quote!(#lifetime, )
+        } else {
+            life_declare.to_token_stream()
+        };
 
         let mut container_bound = TokenStream::new();
 
@@ -582,7 +640,7 @@ impl ParsedFunc {
         };
 
         let gen = quote! {
-            #safety extern "C" fn #fnname<#tmp_lifetime #life_declare #container_bound CGlueF: #trname<#life_use #gen_use>, #gen_declare>(#args #c_ret_params) #c_out where #gen_where_bounds #c_where_bounds {
+            #safety extern "C" fn #fnname<#life_declare #container_bound CGlueF: for<'cglue_b> #trname<#tmp_lifetime #gen_use>, #gen_declare>(#args #c_ret_params) #c_out where #gen_where_bounds #c_where_bounds {
                 let ret = #this.#name(#call_args);
                 #c_ret
             }
@@ -757,9 +815,39 @@ struct ParsedReturnType {
     /// argument's, as well as the return type's. This is only relevant when tmp_ret is being
     /// used. In addition to that, generic bounds will be added to the C wrapper for equivalency.
     injected_ret_tmp: Option<GenericType>,
+    injected_ret_tmp_static: Option<GenericType>,
     use_hrtb: bool,
+    lifetime: Option<Lifetime>,
     return_self: bool,
     use_wrap: bool,
+}
+
+// TODO: handle more cases
+#[allow(clippy::single_match)]
+fn wrapped_lifetime(mut ty: Type, target: Lifetime) -> Type {
+    match &mut ty {
+        Type::Path(path) => {
+            for seg in path.path.segments.iter_mut() {
+                if let PathArguments::AngleBracketed(args) = &mut seg.arguments {
+                    for arg in args.args.iter_mut() {
+                        match arg {
+                            GenericArgument::Lifetime(lt) => {
+                                if lt.ident != format_ident!("static") {
+                                    *lt = target.clone()
+                                }
+                            }
+                            GenericArgument::Type(ty) => {
+                                *ty = wrapped_lifetime(ty.clone(), target.clone())
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+    ty
 }
 
 impl ParsedReturnType {
@@ -771,6 +859,7 @@ impl ParsedReturnType {
         unsafety: &TokenStream,
         func_name: &Ident,
         crate_path: &TokenStream,
+        (trait_name, trait_generics): (&Ident, &ParsedGenerics),
     ) -> Self {
         let mut ret = Self {
             ty: ty.clone(),
@@ -782,7 +871,9 @@ impl ParsedReturnType {
             c_ret: quote!(ret),
             impl_func_ret: quote!(ret),
             injected_ret_tmp: None,
+            injected_ret_tmp_static: None,
             use_hrtb: false,
+            lifetime: None,
             return_self: false,
             use_wrap: false,
         };
@@ -794,12 +885,16 @@ impl ParsedReturnType {
                 let WrappedType {
                     return_conv,
                     lifetime_bound,
+                    lifetime_type_bound,
                     other_bounds,
                     inject_ret_tmp,
                     impl_return_conv,
                     ty: new_ty,
+                    ty_static,
                     ..
                 } = wrapped.2;
+
+                // TODO: sort out the order
 
                 let (mutable, lifetime) = match (inject_ret_tmp, &**ty) {
                     (true, Type::Reference(ty)) => {
@@ -809,11 +904,27 @@ impl ParsedReturnType {
                     _ => panic!("Wrapped ref return currently only valid for references!"),
                 };
 
-                let use_hrtb = lifetime.is_none();
+                let lifetime = lifetime.or_else(|| lifetime_bound.clone()).or_else(|| {
+                    Some(Lifetime {
+                        apostrophe: proc_macro2::Span::call_site(),
+                        ident: format_ident!("cglue_a"),
+                    })
+                });
 
-                let lifetime = lifetime.unwrap_or_else(|| Lifetime {
-                    apostrophe: proc_macro2::Span::call_site(),
-                    ident: format_ident!("cglue_b"),
+                if let Some(lifetime) = &lifetime {
+                    **ty = wrapped_lifetime(*ty.clone(), lifetime.clone());
+                }
+
+                // TODO: should this inherit lifetime, or just fallback on lifetime?
+                let lifetime_type_bound = lifetime_type_bound.clone().map(|lt| {
+                    if lt.ident != "static" {
+                        Lifetime {
+                            apostrophe: proc_macro2::Span::call_site(),
+                            ident: format_ident!("cglue_b"),
+                        }
+                    } else {
+                        lt
+                    }
                 });
 
                 let ret_wrap = match return_conv {
@@ -824,10 +935,23 @@ impl ParsedReturnType {
                     _ => quote!(ret.into()),
                 };
 
-                let where_bound = match lifetime_bound {
-                    Some(bound) => quote!(CGlueF::#trait_ty: #bound, #other_bounds),
-                    _ => quote!(#other_bounds),
+                let life_use = &trait_generics.life_use;
+                let gen_use = &trait_generics.gen_use;
+
+                // TODO: where do we need this bound?
+
+                let static_bound = if lifetime_type_bound.map(|l| l.ident == "static") == Some(true)
+                {
+                    if life_use.is_empty() {
+                        quote!(for<'cglue_b> <CGlueF as #trait_name<#gen_use>>::#trait_ty: 'static,)
+                    } else {
+                        quote!(for<'cglue_b> <CGlueF as #trait_name<'cglue_b, #gen_use>>::#trait_ty: 'static,)
+                    }
+                } else {
+                    quote!()
                 };
+
+                let where_bound = quote!(#static_bound #other_bounds);
 
                 let (ret_type, injected_ret_tmp, tmp_type_def, tmp_impl_def, tmp_call_def) =
                     match (inject_ret_tmp, mutable) {
@@ -869,9 +993,11 @@ impl ParsedReturnType {
                 ret.c_ret = quote!(#ret_wrap);
                 ret.impl_func_ret = impl_return_conv;
                 ret.injected_ret_tmp = injected_ret_tmp;
-                ret.use_hrtb = use_hrtb;
+                ret.injected_ret_tmp_static = ty_static.clone();
+                ret.use_hrtb = true;
                 ret.return_self = return_self;
                 ret.use_wrap = true;
+                ret.lifetime = lifetime;
             }
 
             if let Type::Path(p) = &**ty {
@@ -893,47 +1019,44 @@ impl ParsedReturnType {
                             let mut args = args.args.iter();
 
                             match (args.next(), args.next(), args.next(), int_result) {
-                                (Some(GenericArgument::Type(a)), _, None, true) => {
-                                    loop {
-                                        ret.c_out = quote!(-> i32);
+                                (Some(GenericArgument::Type(a)), _, None, true) => loop {
+                                    ret.c_out = quote!(-> i32);
 
-                                        let c_ret = &ret.c_ret;
+                                    let c_ret = &ret.c_ret;
 
-                                        let mapped_ret = quote! {
-                                            let ret = ret.map(|ret| {
-                                                #c_ret
-                                            });
-                                        };
+                                    let mapped_ret = quote! {
+                                        let ret = ret.map(|ret| {
+                                            #c_ret
+                                        });
+                                    };
 
-                                        if let Type::Tuple(tup) = a {
-                                            if tup.elems.is_empty() {
-                                                ret.c_ret = quote! {
-                                                    #mapped_ret
-                                                    #crate_path::result::into_int_result(ret)
-                                                };
-                                                let impl_func_ret = &ret.impl_func_ret;
-                                                ret.impl_func_ret = quote!(#crate_path::result::from_int_result_empty(#impl_func_ret));
+                                    if let Type::Tuple(tup) = a {
+                                        if tup.elems.is_empty() {
+                                            ret.c_ret = quote! {
+                                                #mapped_ret
+                                                #crate_path::result::into_int_result(ret)
+                                            };
+                                            let impl_func_ret = &ret.impl_func_ret;
+                                            ret.impl_func_ret = quote!(#crate_path::result::from_int_result_empty(#impl_func_ret));
 
-                                                break;
-                                            }
+                                            break;
                                         }
-
-                                        ret.c_ret_params.extend(
-                                            quote!(ok_out: &mut ::core::mem::MaybeUninit<#a>,),
-                                        );
-                                        ret.c_ret_precall_def.extend(quote!(let mut ok_out = ::core::mem::MaybeUninit::uninit();));
-                                        ret.c_call_ret_args.extend(quote!(&mut ok_out,));
-
-                                        ret.c_ret = quote! {
-                                            #mapped_ret
-                                            #crate_path::result::into_int_out_result(ret, ok_out)
-                                        };
-                                        let impl_func_ret = &ret.impl_func_ret;
-                                        ret.impl_func_ret = quote!(#unsafety { #crate_path::result::from_int_result(#impl_func_ret, ok_out) });
-
-                                        break;
                                     }
-                                }
+
+                                    ret.c_ret_params
+                                        .extend(quote!(ok_out: &mut ::core::mem::MaybeUninit<#a>,));
+                                    ret.c_ret_precall_def.extend(quote!(let mut ok_out = ::core::mem::MaybeUninit::uninit();));
+                                    ret.c_call_ret_args.extend(quote!(&mut ok_out,));
+
+                                    ret.c_ret = quote! {
+                                        #mapped_ret
+                                        #crate_path::result::into_int_out_result(ret, ok_out)
+                                    };
+                                    let impl_func_ret = &ret.impl_func_ret;
+                                    ret.impl_func_ret = quote!(#unsafety { #crate_path::result::from_int_result(#impl_func_ret, ok_out) });
+
+                                    break;
+                                },
                                 (
                                     Some(GenericArgument::Type(a)),
                                     Some(GenericArgument::Type(b)),

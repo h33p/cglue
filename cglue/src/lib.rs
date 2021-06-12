@@ -840,7 +840,7 @@ pub use ::cglue_macro::{
 };
 
 pub mod ext {
-    //! Built-in external traits.
+    // Built-in external traits.
     cglue_macro::cglue_builtin_ext_traits!();
 }
 

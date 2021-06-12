@@ -52,6 +52,25 @@ pub struct ParsedGenerics {
 }
 
 impl ParsedGenerics {
+    pub fn declare_without_nonstatic_bounds(&self) -> Punctuated<TypeParam, Comma> {
+        let mut ret = self.gen_declare.clone();
+
+        for p in ret.iter_mut() {
+            p.bounds = std::mem::take(&mut p.bounds)
+                .into_iter()
+                .filter(|b| {
+                    if let TypeParamBound::Lifetime(lt) = b {
+                        lt.ident == "static"
+                    } else {
+                        true
+                    }
+                })
+                .collect();
+        }
+
+        ret
+    }
+
     /// This function cross references input lifetimes and returns a new Self
     /// that only contains generic type information about those types.
     pub fn cross_ref<'a>(&self, input: impl IntoIterator<Item = &'a ParsedGenerics>) -> Self {
@@ -182,11 +201,6 @@ impl ParsedGenerics {
     pub fn phantom_data_definitions(&self) -> TokenStream {
         let mut stream = TokenStream::new();
 
-        for lt in self.life_use.iter() {
-            let lt_ident = format_ident!("_lt_{}", lt.ident);
-            stream.extend(quote!(#lt_ident: ::core::marker::PhantomData<&#lt ()>,));
-        }
-
         for ty in self.gen_declare.iter() {
             let ty_ident = format_ident!("_ty_{}", ty.ident.to_string().to_lowercase());
             let ty = &ty.ident;
@@ -199,11 +213,6 @@ impl ParsedGenerics {
     /// Generate phantom data initializations for all lifetimes and types used.
     pub fn phantom_data_init(&self) -> TokenStream {
         let mut stream = TokenStream::new();
-
-        for lt in self.life_use.iter() {
-            let lt_ident = format_ident!("_lt_{}", lt.ident);
-            stream.extend(quote!(#lt_ident: ::core::marker::PhantomData{},));
-        }
 
         for ty in self.gen_declare.iter() {
             let ty_ident = format_ident!("_ty_{}", ty.ident.to_string().to_lowercase());
