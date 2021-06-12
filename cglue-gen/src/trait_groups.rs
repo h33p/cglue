@@ -1257,7 +1257,7 @@ impl TraitGroup {
                     }
                 }
 
-                impl<CGlueT: ::core::ops::Deref<Target = CGlueF> , CGlueF, #all_gen_declare>
+                impl<CGlueT: ::core::ops::Deref<Target = CGlueF> + ::core::ops::DerefMut, CGlueF, #all_gen_declare>
                     #trg_path::CGlueObjOwned<#path #ret_tmp_typename<#gen_use>> for #name<'_, CGlueT, CGlueF, #all_gen_use> where #all_gen_where_bounds
                 {
                     fn cobj_owned(self) -> CGlueT {

@@ -165,7 +165,7 @@ pub trait CGlueObjMut<S>: CGlueObjRef<S> {
 /// CGlue compatible object.
 ///
 /// This trait allows to retrieve the container of the `this` object on the structure.
-pub trait CGlueObjOwned<S>: CGlueObjRef<S> {
+pub trait CGlueObjOwned<S>: CGlueObjMut<S> {
     fn cobj_owned(self) -> Self::ContType;
 }
 

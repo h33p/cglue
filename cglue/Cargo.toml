@@ -7,6 +7,7 @@ description = "FFI safe abstractions for making plugins and C-compatible librari
 
 [dependencies]
 cglue-macro = { path = "../cglue-macro" }
+serde = { version = "1", optional = true }
 
 [features]
 default = []
