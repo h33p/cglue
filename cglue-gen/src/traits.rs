@@ -107,7 +107,9 @@ pub fn process_item(
                 new_ty.push_lifetime_start(lifetime);
                 new_ty_static.push_lifetime_start(&static_lifetime);
 
-                let from_lifetime = if x == "wrap_with_group" {
+                let from_lifetime = if (x == "wrap_with_group" || x == "wrap_with_obj")
+                    && lifetime == &static_lifetime
+                {
                     lifetime
                 } else {
                     &cglue_b_lifetime
