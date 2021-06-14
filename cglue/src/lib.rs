@@ -846,5 +846,20 @@ pub mod ext {
     cglue_macro::cglue_builtin_ext_traits!();
 }
 
+pub mod prelude {
+    pub mod v1 {
+        pub use crate::{
+            arc::{CArc, COptArc},
+            boxed::CBox,
+            callback::{Callback, OpaqueCallback},
+            forward::{Forward, ForwardMut, Fwd},
+            option::COption,
+            repr_cstring::ReprCString,
+            result::{CResult, IntError, IntResult},
+            *,
+        };
+    }
+}
+
 #[cfg(test)]
 pub mod tests;
