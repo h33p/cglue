@@ -74,7 +74,11 @@ pub fn trait_obj(args: TokenStream) -> TokenStream {
     let target = format_ident!("CGlueBase{}", target.to_token_stream().to_string());
 
     let gen = quote! {
-        #crate_path::trait_group::Opaquable::into_opaque(#path #target :: <#generics>::from(#ident))
+        #crate_path::trait_group::Opaquable::into_opaque({
+            // We need rust to infer lifetimes and generics, thus we use a wrapper trait
+            use #crate_path::from2::From2;
+            #path #target :: <#generics>::from2(#ident)
+        })
     };
 
     gen.into()
@@ -146,7 +150,11 @@ pub fn group_obj(args: TokenStream) -> TokenStream {
     };
 
     let gen = quote! {
-        #crate_path::trait_group::Opaquable::into_opaque(#path #target :: <#generics>::from(#ident))
+        #crate_path::trait_group::Opaquable::into_opaque({
+            // We need rust to infer lifetimes and generics, thus we use a wrapper trait
+            use #crate_path::from2::From2;
+            #path #target :: <#generics>::from2(#ident)
+        })
     };
 
     gen.into()

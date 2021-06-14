@@ -529,6 +529,9 @@ impl TraitGroup {
         let trback_doc = format!("be transformed back into `{}` without losing data.", name);
         let new_doc = format!(" Create new instance of {}.", name);
 
+        let base_name_ref = format_ident!("{}BaseRef", name);
+        let base_name_mut = format_ident!("{}BaseMut", name);
+        let base_name_boxed = format_ident!("{}BaseBox", name);
         let opaque_name = format_ident!("{}Opaque", name);
         let opaque_name_ref = format_ident!("{}Ref", name);
         let opaque_name_mut = format_ident!("{}Mut", name);
@@ -818,6 +821,9 @@ impl TraitGroup {
                 #name,
                 #vtable_type,
                 #filler_trait,
+                #base_name_ref,
+                #base_name_mut,
+                #base_name_boxed,
                 #opaque_name,
                 #opaque_name_ref,
                 #opaque_name_mut,
@@ -877,6 +883,10 @@ impl TraitGroup {
                 pub trait #filler_trait<'cglue_a, CGlueF, #gen_declare>: Sized + ::core::ops::Deref<Target = CGlueF> where #gen_where_bounds {
                     fn fill_table(table: #vtable_type<'cglue_a, Self, Self::Target, #gen_use>) -> #vtable_type<'cglue_a, Self, Self::Target, #gen_use>;
                 }
+
+                pub type #base_name_ref<'cglue_a, CGlueF, #gen_use> = #name<'cglue_a, &'cglue_a CGlueF, CGlueF, #gen_use>;
+                pub type #base_name_mut<'cglue_a, CGlueF, #gen_use> = #name<'cglue_a, &'cglue_a mut CGlueF, CGlueF, #gen_use>;
+                pub type #base_name_boxed<'cglue_a, CGlueF, #gen_use> = #name<'cglue_a, #crate_path::boxed::CBox<'cglue_a, CGlueF>, CGlueF, #gen_use>;
 
                 pub type #opaque_name<'cglue_a, CGlueT: ::core::ops::Deref<Target = #c_void>, #gen_use> = #name<'cglue_a, CGlueT, CGlueT::Target, #gen_use>;
                 pub type #opaque_name_ref<'cglue_a, #gen_use> = #name<'cglue_a, &'cglue_a #c_void, #c_void, #gen_use>;

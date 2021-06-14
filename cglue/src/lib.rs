@@ -827,6 +827,7 @@
 pub mod arc;
 pub mod boxed;
 pub mod callback;
+pub mod from2;
 pub mod option;
 pub mod repr_cstring;
 pub mod result;

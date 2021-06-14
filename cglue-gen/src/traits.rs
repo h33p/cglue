@@ -102,7 +102,7 @@ pub fn process_item(
                         format_ident!("CGlueBase{}", target.to_string()).to_token_stream();
                 }
 
-                // These variables model a `SomeGroup: From<CGlueF::#ty_ident>` bound.
+                // These variables model a `CGlueF::#ty_ident: Into<SomeGroup>` bound.
                 let mut from_new_ty = new_ty.clone();
                 let mut from_new_ty_ref = TokenStream::new();
                 let mut from_new_ty_simple = new_ty.clone();
@@ -225,8 +225,8 @@ pub fn process_item(
                         from_new_ty_simple_ref.extend(quote!(&#from_lifetime_simple mut));
                     }
 
-                    let type_bounds = quote!(for<#hrtb_lifetime> #from_new_ty: From<#from_new_ty_ref #cglue_f_ty_ident> + #crate_path::trait_group::Opaquable<OpaqueTarget = #new_ty_hrtb>,);
-                    let type_bounds_simple = quote!(#from_new_ty_simple: From<#from_new_ty_simple_ref #cglue_f_ty_simple_ident> + #crate_path::trait_group::Opaquable<OpaqueTarget = #new_ty_simple>,);
+                    let type_bounds = quote!(for<#hrtb_lifetime> #from_new_ty_ref #cglue_f_ty_ident: Into<#from_new_ty>, for<#hrtb_lifetime> #from_new_ty: #crate_path::trait_group::Opaquable<OpaqueTarget = #new_ty_hrtb>,);
+                    let type_bounds_simple = quote!(#from_new_ty_simple_ref #cglue_f_ty_simple_ident: Into<#from_new_ty_simple>, #from_new_ty_simple: #crate_path::trait_group::Opaquable<OpaqueTarget = #new_ty_simple>,);
 
                     (type_bounds, type_bounds_simple)
                 };
@@ -372,8 +372,8 @@ pub fn parse_trait(
             return_conv: None,
             lifetime_bound: None,
             lifetime_type_bound: None,
-            other_bounds: Some(quote!(CGlueT: From<CGlueF>,)),
-            other_bounds_simple: Some(quote!(CGlueT: From<CGlueF>,)),
+            other_bounds: Some(quote!(CGlueF: Into<CGlueT>,)),
+            other_bounds_simple: Some(quote!(CGlueF: Into<CGlueT>,)),
             impl_return_conv: Some(quote! {
                 // SAFETY:
                 //
@@ -463,6 +463,9 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
     let ret_tmp_ident_phantom = format_ident!("CGlueRetTmpPhantom{}", trait_name);
     let opaque_vtbl_ident = format_ident!("Opaque{}", vtbl_ident);
     let trait_obj_ident = format_ident!("CGlueBase{}", trait_name);
+    let base_owned_trait_obj_ident = format_ident!("CGlueBaseBox{}", trait_name);
+    let base_mut_trait_obj_ident = format_ident!("CGlueBaseMut{}", trait_name);
+    let base_ref_trait_obj_ident = format_ident!("CGlueBaseRef{}", trait_name);
     let opaque_owned_trait_obj_ident = format_ident!("CGlueBox{}", trait_name);
     let opaque_mut_trait_obj_ident = format_ident!("CGlueMut{}", trait_name);
     let opaque_ref_trait_obj_ident = format_ident!("CGlueRef{}", trait_name);
@@ -706,6 +709,9 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
             #ret_tmp_ident,
             #opaque_vtbl_ident,
             #trait_obj_ident,
+            #base_owned_trait_obj_ident,
+            #base_mut_trait_obj_ident,
+            #base_ref_trait_obj_ident,
             #opaque_owned_trait_obj_ident,
             #opaque_mut_trait_obj_ident,
             #opaque_ref_trait_obj_ident,
@@ -767,11 +773,20 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
             #[doc = #trait_obj_doc]
             pub type #trait_obj_ident<'cglue_a, CGlueT, CGlueF, #gen_use> = #trg_path::CGlueTraitObj::<'cglue_a, CGlueT, #vtbl_ident<'cglue_a, CGlueT, CGlueF, #gen_use>, #ret_tmp_ident<#gen_use>>;
 
+            #[doc = #trait_obj_doc]
+            pub type #base_owned_trait_obj_ident<'cglue_a, CGlueF, #gen_use> = #trait_obj_ident<'cglue_a, #crate_path::boxed::CBox<'cglue_a, CGlueF>, CGlueF, #gen_use>;
+
             #[doc = #opaque_owned_trait_obj_doc]
             pub type #opaque_owned_trait_obj_ident<'cglue_a, #gen_use> = #trait_obj_ident<'cglue_a, #crate_path::boxed::CBox<'cglue_a, #c_void>, #c_void, #gen_use>;
 
+            #[doc = #trait_obj_doc]
+            pub type #base_mut_trait_obj_ident<'cglue_a, CGlueF, #gen_use> = #trait_obj_ident<'cglue_a, &'cglue_a mut CGlueF, CGlueF, #gen_use>;
+
             #[doc = #opaque_mut_trait_obj_doc]
             pub type #opaque_mut_trait_obj_ident<'cglue_a, #gen_use> = #trait_obj_ident<'cglue_a, &'cglue_a mut #c_void, #c_void, #gen_use>;
+
+            #[doc = #trait_obj_doc]
+            pub type #base_ref_trait_obj_ident<'cglue_a, CGlueF, #gen_use> = #trait_obj_ident<'cglue_a, &'cglue_a CGlueF, CGlueF, #gen_use>;
 
             #[doc = #opaque_ref_trait_obj_doc]
             pub type #opaque_ref_trait_obj_ident<'cglue_a, #gen_use> = #trait_obj_ident<'cglue_a, &'cglue_a #c_void, #c_void, #gen_use>;
