@@ -40,14 +40,54 @@ impl<'a, 'b> SubPlugin<'a> for Printer<'b> {
         println!("{}", self.sa.ta_1());
     }
 
-    fn get_ta(&'a mut self) -> &'a mut Self::BorrowedTA {
+    fn get_ta(&mut self) -> &mut Self::BorrowedTA {
         self.sa
+    }
+}
+
+#[cglue_trait]
+pub trait AsSubThing {
+    #[wrap_with_obj_mut(TA)]
+    type SubTarget: TA;
+
+    fn get_ta(&mut self) -> &mut Self::SubTarget;
+}
+
+#[repr(transparent)]
+pub struct FwdMut<'a, T>(&'a mut T);
+
+impl<'a, T: TA> TA for FwdMut<'a, T> {
+    extern "C" fn ta_1(&self) -> usize {
+        self.0.ta_1()
+    }
+}
+
+pub struct Plug<T> {
+    val: T,
+}
+
+impl<T: TA> AsSubThing for Plug<T> {
+    type SubTarget = T;
+
+    fn get_ta(&mut self) -> &mut Self::SubTarget {
+        &mut self.val
     }
 }
 
 cglue_trait_group!(PluginInstance<'a>, { PluginInner<'a> }, { Clone });
 
 cglue_impl_group!(SA, PluginInstance<'a>, {});
+
+#[test]
+fn use_subthing() {
+    let mut sa = SA {};
+    let val = FwdMut(&mut sa);
+
+    let mut plug = Plug { val };
+
+    let mut obj = trait_obj!(&mut plug as AsSubThing);
+    obj.get_ta();
+}
 
 #[test]
 fn build_subplugin() {

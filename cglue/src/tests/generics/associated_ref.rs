@@ -68,6 +68,22 @@ impl GroupMutReturn for SA {
 }
 
 #[cglue_trait]
+pub trait GroupMutReturnUnbounded {
+    #[wrap_with_group_mut(TestGroup)]
+    type ReturnType: TA;
+
+    fn gmru_1(&mut self) -> &mut Self::ReturnType;
+}
+
+impl GroupMutReturnUnbounded for SA {
+    type ReturnType = SA;
+
+    fn gmru_1(&mut self) -> &mut SA {
+        self
+    }
+}
+
+#[cglue_trait]
 pub trait GroupLtMutReturn<'a> {
     #[wrap_with_group_mut(TestGroup)]
     type ReturnType: TA + 'a;
@@ -123,6 +139,17 @@ fn use_group_mut() {
     let mut obj = trait_obj!(sa as GroupMutReturn);
 
     let obj2 = obj.gmr_1();
+
+    assert_eq!(obj2.ta_1(), 5);
+}
+
+#[test]
+fn use_group_mut_unbounded() {
+    let mut sa = SA {};
+
+    let mut obj = trait_obj!(&mut sa as GroupMutReturnUnbounded);
+
+    let obj2 = obj.gmru_1();
 
     assert_eq!(obj2.ta_1(), 5);
 }

@@ -421,7 +421,7 @@
 //! impl<'cglue_a, CGlueT: Deref<Target = GA<T>>, T: Eq>
 //! GenGroupVtableFiller<'cglue_a, GA<T>, T> for CGlueT
 //! where
-//! &'cglue_a CGlueVtblTA<CGlueT, GA<T>>: 'cglue_a + Default,
+//! &'cglue_a CGlueVtblTA<'cglue_a, CGlueT, GA<T>>: 'cglue_a + Default,
 //! {
 //!     fn fill_table(
 //!         table: GenGroupVtables<'cglue_a, CGlueT, GA<T>, T>,

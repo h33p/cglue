@@ -22,8 +22,10 @@ pub fn gen_wrap(tr: ItemTrait, ext_path: Option<TokenStream>) -> TokenStream {
             lifetime_bound: None,
             lifetime_type_bound: None,
             other_bounds: None,
+            other_bounds_simple: None,
             impl_return_conv: None,
             inject_ret_tmp: false,
+            unbounded_hrtb: false,
         },
     );
 
@@ -66,8 +68,10 @@ pub fn gen_wrap(tr: ItemTrait, ext_path: Option<TokenStream>) -> TokenStream {
                             lifetime_bound: None,
                             lifetime_type_bound: None,
                             other_bounds: None,
+                            other_bounds_simple: None,
                             impl_return_conv: None,
                             inject_ret_tmp: false,
+                            unbounded_hrtb: false,
                         },
                     );
 

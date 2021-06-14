@@ -505,7 +505,7 @@ impl TraitGroup {
         {
             enable_funcs.extend(quote! {
                 pub fn #enable_vtbl_name (self) -> Self
-                    where &'cglue_a #path #vtbl_typename<CGlueT, CGlueF, #gen_use>: Default {
+                    where &'cglue_a #path #vtbl_typename<'cglue_a, CGlueT, CGlueF, #gen_use>: Default {
                     Self {
                         #vtbl_name: Some(Default::default()),
                         ..self
@@ -1058,7 +1058,7 @@ impl TraitGroup {
         } in iter
         {
             ret.extend(
-                quote!(#vtbl_name: &'cglue_a #path #vtbl_typename<CGlueT, CGlueF, #gen_use>, ),
+                quote!(#vtbl_name: &'cglue_a #path #vtbl_typename<'cglue_a, CGlueT, CGlueF, #gen_use>, ),
             );
         }
 
@@ -1117,7 +1117,7 @@ impl TraitGroup {
         } in &self.optional_vtbl
         {
             ret.extend(
-                quote!(#vtbl_name: ::core::option::Option<&'cglue_a #path #vtbl_typename<#container_ident, CGlueF, #gen_use>>, ),
+                quote!(#vtbl_name: ::core::option::Option<&'cglue_a #path #vtbl_typename<'cglue_a, #container_ident, CGlueF, #gen_use>>, ),
             );
         }
 
@@ -1174,10 +1174,10 @@ impl TraitGroup {
         }) {
             let def = match mandatory {
                 true => {
-                    quote!(#vtbl_name: &'cglue_a #path #vtbl_typename<CGlueT, CGlueF, #gen_use>, )
+                    quote!(#vtbl_name: &'cglue_a #path #vtbl_typename<'cglue_a, CGlueT, CGlueF, #gen_use>, )
                 }
                 false => {
-                    quote!(#vtbl_name: ::core::option::Option<&'cglue_a #path #vtbl_typename<CGlueT, CGlueF, #gen_use>>, )
+                    quote!(#vtbl_name: ::core::option::Option<&'cglue_a #path #vtbl_typename<'cglue_a, CGlueT, CGlueF, #gen_use>>, )
                 }
             };
             ret.extend(def);
@@ -1279,11 +1279,11 @@ impl TraitGroup {
                     }
                 }
 
-                impl<CGlueT, CGlueF, #all_gen_declare> #trg_path::GetVtbl<#path #vtbl_typename<CGlueT, CGlueF, #gen_use>>
-                    for #name<'_, CGlueT, CGlueF, #all_gen_use>
+                impl<'cglue_a, CGlueT, CGlueF, #all_gen_declare> #trg_path::GetVtbl<#path #vtbl_typename<'cglue_a, CGlueT, CGlueF, #gen_use>>
+                    for #name<'cglue_a, CGlueT, CGlueF, #all_gen_use>
                     where #all_gen_where_bounds
                 {
-                    fn get_vtbl(&self) -> &#path #vtbl_typename<CGlueT, CGlueF, #gen_use> {
+                    fn get_vtbl(&self) -> &#path #vtbl_typename<'cglue_a, CGlueT, CGlueF, #gen_use> {
                         &self.#vtbl_name
                     }
                 }
@@ -1447,7 +1447,7 @@ impl TraitGroup {
             ..
         } in iter
         {
-            ret.extend(quote!(&'cglue_a #path #vtbl_typename<#container_ident, #this_ident, #gen_use>: 'cglue_a + Default,));
+            ret.extend(quote!(&'cglue_a #path #vtbl_typename<'cglue_a, #container_ident, #this_ident, #gen_use>: 'cglue_a + Default,));
         }
 
         ret

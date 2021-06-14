@@ -12,9 +12,11 @@ pub struct WrappedType {
     pub lifetime_bound: Option<Lifetime>,
     pub lifetime_type_bound: Option<Lifetime>,
     pub other_bounds: Option<TokenStream>,
+    pub other_bounds_simple: Option<TokenStream>,
     pub return_conv: Option<ExprClosure>,
     pub impl_return_conv: Option<TokenStream>,
     pub inject_ret_tmp: bool,
+    pub unbounded_hrtb: bool,
 }
 
 /// TraitArg stores implementations for Unstable-C-Unstable ABI transitions.
@@ -26,6 +28,8 @@ struct TraitArg {
     call_c_args: TokenStream,
     /// C function signature.
     c_args: TokenStream,
+    /// C function signature, where 'cglue_a lifetimes are replaced with 'cglue_b.
+    c_cast_args: TokenStream,
     /// Arguments inside the call to the trait function.
     to_trait_arg: TokenStream,
     /// Whether argument conversion is trivial - 1-1 relationship with no changed types
@@ -117,16 +121,19 @@ impl TraitArg {
         targets: &BTreeMap<Ident, WrappedType>,
         unsafety: &TokenStream,
         crate_path: &TokenStream,
-        inject_hrtb_lifetime: Option<&Lifetime>,
+        inject_lifetime: Option<&Lifetime>,
+        inject_lifetime_cast: Option<&Lifetime>,
     ) -> Self {
-        let (to_c_args, call_c_args, c_args, to_trait_arg, trivial) = match &mut arg {
+        let (to_c_args, call_c_args, c_args, c_cast_args, to_trait_arg, trivial) = match &mut arg {
             FnArg::Receiver(r) => {
-                let lifetime = inject_hrtb_lifetime.or_else(|| r.lifetime());
+                let lifetime = inject_lifetime.or_else(|| r.lifetime());
+                let lifetime_cast = inject_lifetime_cast.or_else(|| r.lifetime());
 
                 if r.reference.is_none() {
                     (
                         quote!(let thisobj = self.cobj_owned();),
                         quote!(thisobj,),
+                        quote!(thisobj: CGlueT,),
                         quote!(thisobj: CGlueT,),
                         quote!(),
                         false,
@@ -136,6 +143,7 @@ impl TraitArg {
                         quote!(let (thisptr, ret_tmp) = self.cobj_mut();),
                         quote!(thisptr,),
                         quote!(thisptr: &#lifetime mut CGlueF,),
+                        quote!(thisptr: &#lifetime_cast mut CGlueF,),
                         quote!(),
                         true,
                     )
@@ -144,6 +152,7 @@ impl TraitArg {
                         quote!(let (thisptr, ret_tmp) = self.cobj_ref();),
                         quote!(thisptr,),
                         quote!(thisptr: &#lifetime CGlueF,),
+                        quote!(thisptr: &#lifetime_cast CGlueF,),
                         quote!(),
                         true,
                     )
@@ -189,6 +198,7 @@ impl TraitArg {
                                 quote!(let (#name, #szname) = (#name.#as_ptr(), #name.len());),
                                 quote!(#name, #szname,),
                                 quote!(#name: #ptrt, #szname: usize,),
+                                quote!(#name: #ptrt, #szname: usize,),
                                 quote!(#unsafety { ::core::slice::#from_raw_parts(#name, #szname) },),
                                 false,
                             ))
@@ -209,6 +219,7 @@ impl TraitArg {
                                             ret = Some((
                                                 quote!(let #name = #name.into();),
                                                 quote!(#name,),
+                                                quote!(#name: #crate_path::option::COption<#a>,),
                                                 quote!(#name: #crate_path::option::COption<#a>,),
                                                 quote!(#name.into(),),
                                                 false,
@@ -234,6 +245,7 @@ impl TraitArg {
                                                 quote!(let #name = #name.into();),
                                                 quote!(#name,),
                                                 quote!(#name: #crate_path::result::CResult<#a, #b>,),
+                                                quote!(#name: #crate_path::result::CResult<#a, #b>,),
                                                 quote!(#name.into(),),
                                                 false,
                                             ));
@@ -253,6 +265,7 @@ impl TraitArg {
                         quote!(let #name = #name;),
                         quote!(#name,),
                         quote!(#name: #ty,),
+                        quote!(#name: #ty,),
                         quote!(#name,),
                         true,
                     )
@@ -265,6 +278,7 @@ impl TraitArg {
             to_c_args,
             call_c_args,
             c_args,
+            c_cast_args,
             to_trait_arg,
             trivial,
         }
@@ -323,6 +337,7 @@ impl ParsedFunc {
                 &unsafety,
                 crate_path,
                 out.lifetime.as_ref(),
+                out.lifetime_cast.as_ref(),
             );
 
             has_nontrivial = has_nontrivial || !func.trivial;
@@ -449,6 +464,16 @@ impl ParsedFunc {
         ret
     }
 
+    pub fn vtbl_args_cast(&self) -> TokenStream {
+        let mut ret = TokenStream::new();
+
+        for arg in &self.args {
+            arg.c_cast_args.to_tokens(&mut ret);
+        }
+
+        ret
+    }
+
     pub fn trait_args(&self) -> TokenStream {
         let mut ret = TokenStream::new();
 
@@ -515,15 +540,24 @@ impl ParsedFunc {
         let args = self.vtbl_args();
         let ParsedReturnType {
             c_out,
+            c_cast_out,
             c_ret_params,
             lifetime,
+            lifetime_cast,
+            unbounded_hrtb,
             ..
         } = &self.out;
 
-        let hrtb = if let Some(lifetime) = lifetime {
-            quote!(for<#lifetime> )
-        } else {
-            quote!()
+        let (hrtb, args, c_out) = match (
+            lifetime.as_ref().filter(|lt| lt.ident != "cglue_a"),
+            lifetime_cast,
+            *unbounded_hrtb,
+        ) {
+            (_, Some(lifetime), false) => {
+                (quote!(for<#lifetime>), self.vtbl_args_cast(), c_cast_out)
+            }
+            (Some(lifetime), _, _) => (quote!(for<#lifetime>), args, c_out),
+            _ => (quote!(), args, c_out),
         };
 
         let gen = quote! {
@@ -539,15 +573,24 @@ impl ParsedFunc {
         let args = self.vtbl_args();
         let ParsedReturnType {
             c_out,
+            c_cast_out,
             c_ret_params,
             lifetime,
+            lifetime_cast,
+            unbounded_hrtb,
             ..
         } = &self.out;
 
-        let hrtb = if let Some(lifetime) = lifetime {
-            quote!(for<#lifetime> )
-        } else {
-            quote!()
+        let (hrtb, args, c_out) = match (
+            lifetime.as_ref().filter(|lt| lt.ident != "cglue_a"),
+            lifetime_cast,
+            *unbounded_hrtb,
+        ) {
+            (_, Some(lifetime), false) => {
+                (quote!(for<#lifetime>), self.vtbl_args_cast(), c_cast_out)
+            }
+            (Some(lifetime), _, _) => (quote!(for<#lifetime>), args, c_out),
+            _ => (quote!(), args, c_out),
         };
 
         let doc_text = format!(" Getter for {}.", name.to_string());
@@ -558,11 +601,36 @@ impl ParsedFunc {
             /// Note that this function is wrapped into unsafe, because if already were is an
             /// opaque one, it would allow to invoke undefined behaviour.
             pub fn #name(&self) -> #hrtb unsafe extern "C" fn(#args #c_ret_params) #c_out {
-                unsafe { ::core::mem::transmute(&self.#name) }
+                unsafe { ::core::mem::transmute(self.#name) }
             }
         };
 
         stream.extend(gen);
+
+        if lifetime_cast.is_some() && *unbounded_hrtb {
+            let name2 = format_ident!("{}_lifetimed", name);
+
+            let safety = self.get_safety();
+
+            let args_cast = self.vtbl_args_cast();
+
+            let gen = quote! {
+                #[doc = #doc_text]
+                ///
+                /// This function has its argument lifetime cast so that it's usable with anonymous
+                /// lifetime functions.
+                ///
+                /// # Safety
+                ///
+                /// This ought to only be used when references to objects are being returned,
+                /// otherwise there is a risk of lifetime rule breakage.
+                unsafe fn #name2(&self) -> for<#lifetime_cast> #safety extern "C" fn(#args_cast #c_ret_params) #c_cast_out {
+                    ::core::mem::transmute(self.#name)
+                }
+            };
+
+            stream.extend(gen);
+        }
     }
 
     pub fn is_wrapped(&self) -> bool {
@@ -586,11 +654,14 @@ impl ParsedFunc {
         let ParsedReturnType {
             c_out,
             c_where_bounds,
+            c_where_bounds_cast,
             c_ret,
             c_ret_params,
             use_hrtb,
             return_self,
             lifetime,
+            lifetime_cast,
+            unbounded_hrtb,
             ..
         } = &self.out;
         let call_args = self.to_trait_call_args();
@@ -639,6 +710,12 @@ impl ParsedFunc {
             container_bound
         };
 
+        let c_where_bounds = if lifetime_cast.is_some() && *unbounded_hrtb {
+            c_where_bounds_cast
+        } else {
+            c_where_bounds
+        };
+
         let gen = quote! {
             #safety extern "C" fn #fnname<#life_declare #container_bound CGlueF: for<'cglue_b> #trname<#tmp_lifetime #gen_use>, #gen_declare>(#args #c_ret_params) #c_out where #gen_where_bounds #c_where_bounds {
                 let ret = #this.#name(#call_args);
@@ -681,6 +758,8 @@ impl ParsedFunc {
             impl_func_ret,
             c_ret_precall_def,
             c_call_ret_args,
+            lifetime_cast,
+            unbounded_hrtb,
             ..
         } = &self.out;
         let def_args = self.to_c_def_args();
@@ -688,10 +767,17 @@ impl ParsedFunc {
         let safety = self.get_safety();
         let abi = self.abi.prefix();
 
+        let get_vfunc = if lifetime_cast.is_some() && *unbounded_hrtb {
+            let name_lifetimed = format_ident!("{}_lifetimed", name);
+            quote!(unsafe { self.get_vtbl().#name_lifetimed() })
+        } else {
+            quote!(self.get_vtbl().#name)
+        };
+
         let gen = quote! {
             #[inline(always)]
             #safety #abi fn #name (#args) #out {
-                let __cglue_vfunc = self.get_vtbl().#name;
+                let __cglue_vfunc = #get_vfunc;
                 #def_args
                 #c_ret_precall_def
                 let ret = __cglue_vfunc(#call_args #c_call_ret_args);
@@ -803,7 +889,9 @@ impl From<Option<Abi>> for FuncAbi {
 struct ParsedReturnType {
     ty: ReturnType,
     c_out: TokenStream,
+    c_cast_out: TokenStream,
     c_where_bounds: TokenStream,
+    c_where_bounds_cast: TokenStream,
     c_ret_params: TokenStream,
     c_ret_precall_def: TokenStream,
     c_call_ret_args: TokenStream,
@@ -818,6 +906,8 @@ struct ParsedReturnType {
     injected_ret_tmp_static: Option<GenericType>,
     use_hrtb: bool,
     lifetime: Option<Lifetime>,
+    lifetime_cast: Option<Lifetime>,
+    unbounded_hrtb: bool,
     return_self: bool,
     use_wrap: bool,
 }
@@ -864,7 +954,9 @@ impl ParsedReturnType {
         let mut ret = Self {
             ty: ty.clone(),
             c_out: ty.to_token_stream(),
+            c_cast_out: ty.to_token_stream(),
             c_where_bounds: quote!(),
+            c_where_bounds_cast: quote!(),
             c_ret_params: quote!(),
             c_ret_precall_def: quote!(),
             c_call_ret_args: quote!(),
@@ -874,11 +966,15 @@ impl ParsedReturnType {
             injected_ret_tmp_static: None,
             use_hrtb: false,
             lifetime: None,
+            lifetime_cast: None,
+            unbounded_hrtb: false,
             return_self: false,
             use_wrap: false,
         };
 
         if let ReturnType::Type(_, ty) = &mut ty {
+            let mut ty_cast = None;
+
             if let Some(wrapped) = wrap_type(&mut *ty, targets) {
                 let old_ty = wrapped.0;
                 let trait_ty = wrapped.1;
@@ -887,6 +983,7 @@ impl ParsedReturnType {
                     lifetime_bound,
                     lifetime_type_bound,
                     other_bounds,
+                    other_bounds_simple,
                     inject_ret_tmp,
                     impl_return_conv,
                     ty: new_ty,
@@ -904,12 +1001,30 @@ impl ParsedReturnType {
                     _ => panic!("Wrapped ref return currently only valid for references!"),
                 };
 
+                let unbounded_hrtb = lifetime.is_none() && lifetime_type_bound.is_none();
+
+                let cglue_b_lifetime = Lifetime {
+                    apostrophe: proc_macro2::Span::call_site(),
+                    ident: format_ident!("cglue_b"),
+                };
+
                 let lifetime = lifetime.or_else(|| lifetime_bound.clone()).or_else(|| {
                     Some(Lifetime {
                         apostrophe: proc_macro2::Span::call_site(),
                         ident: format_ident!("cglue_a"),
                     })
                 });
+
+                let lifetime_cast = if lifetime
+                    .as_ref()
+                    .filter(|lt| lt.ident == "cglue_a")
+                    .is_some()
+                {
+                    ty_cast = Some(ty.clone());
+                    Some(cglue_b_lifetime.clone())
+                } else {
+                    None
+                };
 
                 if let Some(lifetime) = &lifetime {
                     **ty = wrapped_lifetime(*ty.clone(), lifetime.clone());
@@ -918,10 +1033,7 @@ impl ParsedReturnType {
                 // TODO: should this inherit lifetime, or just fallback on lifetime?
                 let lifetime_type_bound = lifetime_type_bound.clone().map(|lt| {
                     if lt.ident != "static" {
-                        Lifetime {
-                            apostrophe: proc_macro2::Span::call_site(),
-                            ident: format_ident!("cglue_b"),
-                        }
+                        cglue_b_lifetime
                     } else {
                         lt
                     }
@@ -940,36 +1052,53 @@ impl ParsedReturnType {
 
                 // TODO: where do we need this bound?
 
-                let static_bound = if lifetime_type_bound.map(|l| l.ident == "static") == Some(true)
-                {
+                let is_static = lifetime_type_bound.map(|l| l.ident == "static") == Some(true);
+
+                let (static_bound, static_bound_simple) = if is_static {
                     if life_use.is_empty() {
-                        quote!(for<'cglue_b> <CGlueF as #trait_name<#gen_use>>::#trait_ty: 'static,)
+                        (
+                            quote!(for<'cglue_b> <CGlueF as #trait_name<#gen_use>>::#trait_ty: 'static,),
+                            quote!(for<'cglue_b> <CGlueF as #trait_name<#gen_use>>::#trait_ty: 'static,),
+                        )
                     } else {
-                        quote!(for<'cglue_b> <CGlueF as #trait_name<'cglue_b, #gen_use>>::#trait_ty: 'static,)
+                        (
+                            quote!(for<'cglue_b> <CGlueF as #trait_name<'cglue_b, #gen_use>>::#trait_ty: 'static,),
+                            quote!(<CGlueF as #trait_name<'cglue_a, #gen_use>>::#trait_ty: 'static,),
+                        )
                     }
                 } else {
-                    quote!()
+                    (quote!(), quote!())
                 };
 
                 let where_bound = quote!(#static_bound #other_bounds);
+                let where_bound_simple = quote!(#static_bound_simple #other_bounds_simple);
 
-                let (ret_type, injected_ret_tmp, tmp_type_def, tmp_impl_def, tmp_call_def) =
+                // Replace the lifetime of the type.
+                if let (true, Type::Reference(ty)) = (inject_ret_tmp, &mut **ty) {
+                    ty.lifetime = lifetime.clone();
+
+                    if let Some(ty_cast) = &mut ty_cast {
+                        if let Type::Reference(ty_cast) = &mut **ty_cast {
+                            ty_cast.lifetime = lifetime_cast.clone();
+                        }
+                    }
+                };
+
+                let (injected_ret_tmp, tmp_type_def, tmp_impl_def, tmp_call_def) =
                     match (inject_ret_tmp, mutable) {
                         (true, false) => (
-                            quote!(&#lifetime #new_ty),
                             Some(new_ty.clone()),
                             quote!(ret_tmp: &mut ::core::mem::MaybeUninit<#new_ty>,),
                             quote!(let ret_tmp = ret_tmp.#func_name();),
                             quote!(ret_tmp,),
                         ),
                         (true, true) => (
-                            quote!(&#lifetime mut #new_ty),
                             Some(new_ty.clone()),
                             quote!(ret_tmp: &mut ::core::mem::MaybeUninit<#new_ty>,),
                             quote!(let ret_tmp = ret_tmp.#func_name();),
                             quote!(ret_tmp,),
                         ),
-                        _ => (quote!(#ty), None, quote!(), quote!(), quote!()),
+                        _ => (None, quote!(), quote!(), quote!()),
                     };
 
                 let impl_return_conv = impl_return_conv
@@ -979,14 +1108,17 @@ impl ParsedReturnType {
 
                 let return_self = trait_ty == "Self";
 
+                ret.c_out = quote!(-> #ty);
+                ret.c_cast_out = quote!(-> #ty_cast);
+
                 // If we are returning self, do not actually change the return type.
                 // I know, messy :(
                 if return_self {
                     *ty = Box::new(old_ty);
                 }
 
-                ret.c_out = quote!(-> #ret_type);
                 ret.c_where_bounds = where_bound;
+                ret.c_where_bounds_cast = where_bound_simple;
                 ret.c_ret_params = tmp_type_def;
                 ret.c_ret_precall_def = tmp_impl_def;
                 ret.c_call_ret_args = tmp_call_def;
@@ -995,21 +1127,32 @@ impl ParsedReturnType {
                 ret.injected_ret_tmp = injected_ret_tmp;
                 ret.injected_ret_tmp_static = ty_static.clone();
                 ret.use_hrtb = true;
+                ret.unbounded_hrtb = unbounded_hrtb;
                 ret.return_self = return_self;
                 ret.use_wrap = true;
                 ret.lifetime = lifetime;
+                ret.lifetime_cast = lifetime_cast;
             }
 
-            if let Type::Path(p) = &**ty {
+            if let Type::Path(p) = &mut **ty {
                 let last = p.path.segments.last();
                 if let Some((PathArguments::AngleBracketed(args), last)) =
                     last.map(|l| (&l.arguments, l))
                 {
-                    match last.ident.to_string().as_str() {
+                    let ident = last.ident.to_string();
+                    match ident.as_str() {
                         "Option" => {
                             if let Some(GenericArgument::Type(a)) = args.args.first() {
                                 if !crate::util::is_null_pointer_optimizable(a, &[]) {
-                                    ret.c_out = quote!(-> #crate_path::option::COption<#a>);
+                                    let new_path: Path =
+                                        parse2(quote!(#crate_path::option::COption))
+                                            .expect("Failed to parse COption path");
+
+                                    replace_path_keep_final_args(Some(&mut **ty), new_path.clone());
+                                    replace_path_keep_final_args(ty_cast.as_deref_mut(), new_path);
+
+                                    ret.c_out = quote!(-> #ty);
+                                    ret.c_cast_out = quote!(-> #ty_cast);
                                     ret.c_ret.extend(quote!(.into()));
                                     ret.impl_func_ret.extend(quote!(.into()));
                                 }
@@ -1018,9 +1161,14 @@ impl ParsedReturnType {
                         "Result" => {
                             let mut args = args.args.iter();
 
-                            match (args.next(), args.next(), args.next(), int_result) {
+                            let to_match = (args.next(), args.next(), args.next(), int_result);
+
+                            std::mem::drop(args);
+
+                            match to_match {
                                 (Some(GenericArgument::Type(a)), _, None, true) => loop {
                                     ret.c_out = quote!(-> i32);
+                                    ret.c_cast_out = quote!(-> i32);
 
                                     let c_ret = &ret.c_ret;
 
@@ -1058,12 +1206,20 @@ impl ParsedReturnType {
                                     break;
                                 },
                                 (
-                                    Some(GenericArgument::Type(a)),
-                                    Some(GenericArgument::Type(b)),
+                                    Some(GenericArgument::Type(_)),
+                                    Some(GenericArgument::Type(_)),
                                     None,
                                     _,
                                 ) => {
-                                    ret.c_out = quote!(-> #crate_path::result::CResult<#a, #b>);
+                                    let new_path: Path =
+                                        parse2(quote!(#crate_path::result::CResult))
+                                            .expect("Failed to parse CResult path");
+
+                                    replace_path_keep_final_args(Some(&mut **ty), new_path.clone());
+                                    replace_path_keep_final_args(ty_cast.as_deref_mut(), new_path);
+
+                                    ret.c_out = quote!(-> #ty);
+                                    ret.c_cast_out = quote!(-> #ty_cast);
 
                                     let c_ret = &ret.c_ret;
 
@@ -1090,5 +1246,18 @@ impl ParsedReturnType {
         }
 
         ret
+    }
+}
+
+fn replace_path_keep_final_args(ty: Option<&mut Type>, new_path: Path) {
+    if let Some(ty) = ty {
+        if let Type::Path(path) = ty {
+            let old_path = std::mem::replace(&mut path.path, new_path);
+            if let Some(seg) = old_path.segments.into_iter().last() {
+                if let Some(new_seg) = path.path.segments.iter_mut().last() {
+                    new_seg.arguments = seg.arguments;
+                }
+            }
+        }
     }
 }

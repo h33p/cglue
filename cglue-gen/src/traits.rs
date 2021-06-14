@@ -23,6 +23,11 @@ pub fn process_item(
         ident: format_ident!("static"),
     };
 
+    let cglue_a_lifetime = Lifetime {
+        apostrophe: proc_macro2::Span::call_site(),
+        ident: format_ident!("cglue_a"),
+    };
+
     let cglue_b_lifetime = Lifetime {
         apostrophe: proc_macro2::Span::call_site(),
         ident: format_ident!("cglue_b"),
@@ -63,8 +68,10 @@ pub fn process_item(
                         lifetime_bound: None,
                         lifetime_type_bound: None,
                         other_bounds: None,
+                        other_bounds_simple: None,
                         impl_return_conv: None,
                         inject_ret_tmp: false,
+                        unbounded_hrtb: false,
                     },
                 );
             }
@@ -98,8 +105,20 @@ pub fn process_item(
                 // These variables model a `SomeGroup: From<CGlueF::#ty_ident>` bound.
                 let mut from_new_ty = new_ty.clone();
                 let mut from_new_ty_ref = TokenStream::new();
+                let mut from_new_ty_simple = new_ty.clone();
+                let mut from_new_ty_simple_ref = TokenStream::new();
 
                 let mut new_ty_static = new_ty.clone();
+
+                // Inject static bound when we wrap owned objects, because we can not ensure their
+                // safety like that.
+                let lifetime_bound = if lifetime_bound.is_none()
+                    && (x == "wrap_with_group" || x == "wrap_with_obj")
+                {
+                    Some(&static_lifetime)
+                } else {
+                    lifetime_bound
+                };
 
                 let lifetime = lifetime_bound.unwrap_or(&static_lifetime);
 
@@ -117,11 +136,21 @@ pub fn process_item(
 
                 from_new_ty.push_lifetime_start(from_lifetime);
 
+                let from_lifetime_simple = if (x == "wrap_with_group" || x == "wrap_with_obj")
+                    && lifetime == &static_lifetime
+                {
+                    lifetime
+                } else {
+                    &cglue_a_lifetime
+                };
+
+                from_new_ty_simple.push_lifetime_start(from_lifetime_simple);
+
                 let ty_ident = &ty.ident;
 
                 let gen_use = &generics.gen_use;
 
-                let type_bounds = {
+                let (type_bounds, type_bounds_simple) = {
                     // Here we must inject a lifetime, if the trait has no lifetime,
                     // and its a group we are wrapping
                     let hrtb_lifetime = quote!(#cglue_b_lifetime);
@@ -132,10 +161,20 @@ pub fn process_item(
                         quote!(#from_lifetime)
                     };
 
+                    let simple_lifetime_use = if generics.life_use.is_empty() {
+                        quote!()
+                    } else {
+                        quote!(#from_lifetime_simple)
+                    };
+
                     let cglue_f_ty_ident =
                         quote!(<CGlueF as #trait_name<#hrtb_lifetime_use #gen_use>>::#ty_ident);
 
+                    let cglue_f_ty_simple_ident =
+                        quote!(<CGlueF as #trait_name<#simple_lifetime_use #gen_use>>::#ty_ident);
+
                     let mut new_ty_hrtb = from_new_ty.clone();
+                    let mut new_ty_simple = from_new_ty_simple.clone();
 
                     if x == "wrap_with_group" || x == "wrap_with_obj" {
                         new_ty.push_types_start(
@@ -144,31 +183,52 @@ pub fn process_item(
                         new_ty_hrtb.push_types_start(
                             quote!(#crate_path::boxed::CBox<#from_lifetime, #c_void>, #c_void,),
                         );
+                        new_ty_simple.push_types_start(
+                            quote!(#crate_path::boxed::CBox<#from_lifetime_simple, #c_void>, #c_void,),
+                        );
                         new_ty_static.push_types_start(
                             quote!(#crate_path::boxed::CBox<'static, #c_void>, #c_void,),
                         );
                         from_new_ty.push_types_start(
                             quote!(#crate_path::boxed::CBox<#from_lifetime, #cglue_f_ty_ident>, #cglue_f_ty_ident,),
                         );
+                        from_new_ty_simple.push_types_start(
+                            quote!(#crate_path::boxed::CBox<#from_lifetime_simple, #cglue_f_ty_simple_ident>, #cglue_f_ty_simple_ident,),
+                        );
                     } else if x == "wrap_with_group_ref" || x == "wrap_with_obj_ref" {
                         new_ty.push_types_start(quote!(&#lifetime #c_void, #c_void,));
                         new_ty_hrtb.push_types_start(quote!(&#from_lifetime #c_void, #c_void,));
+                        new_ty_simple
+                            .push_types_start(quote!(&#from_lifetime_simple #c_void, #c_void,));
                         new_ty_static.push_types_start(quote!(&'static #c_void, #c_void,));
                         from_new_ty.push_types_start(
                             quote!(&#from_lifetime CGlueF::#ty_ident, #cglue_f_ty_ident,),
                         );
                         from_new_ty_ref.extend(quote!(&#from_lifetime));
+                        from_new_ty_simple.push_types_start(
+                            quote!(&#from_lifetime_simple CGlueF::#ty_ident, #cglue_f_ty_simple_ident,),
+                        );
+                        from_new_ty_simple_ref.extend(quote!(&#from_lifetime_simple));
                     } else if x == "wrap_with_group_mut" || x == "wrap_with_obj_mut" {
                         new_ty.push_types_start(quote!(&#lifetime mut #c_void, #c_void,));
                         new_ty_hrtb.push_types_start(quote!(&#from_lifetime mut #c_void, #c_void,));
+                        new_ty_simple
+                            .push_types_start(quote!(&#from_lifetime_simple mut #c_void, #c_void,));
                         new_ty_static.push_types_start(quote!(&'static mut #c_void, #c_void,));
                         from_new_ty.push_types_start(
                             quote!(&#from_lifetime mut #cglue_f_ty_ident, #cglue_f_ty_ident,),
                         );
                         from_new_ty_ref.extend(quote!(&#from_lifetime mut));
+                        from_new_ty_simple.push_types_start(
+                            quote!(&#from_lifetime_simple mut #cglue_f_ty_simple_ident, #cglue_f_ty_simple_ident,),
+                        );
+                        from_new_ty_simple_ref.extend(quote!(&#from_lifetime_simple mut));
                     }
 
-                    quote!(for<#hrtb_lifetime> #from_new_ty: From<#from_new_ty_ref #cglue_f_ty_ident> + #crate_path::trait_group::Opaquable<OpaqueTarget = #new_ty_hrtb>,)
+                    let type_bounds = quote!(for<#hrtb_lifetime> #from_new_ty: From<#from_new_ty_ref #cglue_f_ty_ident> + #crate_path::trait_group::Opaquable<OpaqueTarget = #new_ty_hrtb>,);
+                    let type_bounds_simple = quote!(#from_new_ty_simple: From<#from_new_ty_simple_ref #cglue_f_ty_simple_ident> + #crate_path::trait_group::Opaquable<OpaqueTarget = #new_ty_simple>,);
+
+                    (type_bounds, type_bounds_simple)
                 };
 
                 trait_type_defs.extend(quote!(type #ty_ident = #new_ty;));
@@ -192,7 +252,7 @@ pub fn process_item(
                                 ret_tmp.as_mut_ptr().write(std::mem::transmute(ret));
                             }
                         },
-                        quote!(),
+                        quote!('cglue_a),
                     )
                 };
 
@@ -256,7 +316,7 @@ pub fn process_item(
                     _ => unreachable!(),
                 };
 
-                let lifetime_type_bound = Some(lifetime.clone());
+                let lifetime_type_bound = lifetime_bound.cloned();
 
                 let lifetime_bound = if lifetime_bound != Some(&static_lifetime) {
                     lifetime_bound.cloned()
@@ -274,7 +334,9 @@ pub fn process_item(
                         lifetime_bound,
                         lifetime_type_bound,
                         other_bounds: Some(type_bounds),
+                        other_bounds_simple: Some(type_bounds_simple),
                         inject_ret_tmp,
+                        unbounded_hrtb: false,
                     },
                 );
             }
@@ -311,6 +373,7 @@ pub fn parse_trait(
             lifetime_bound: None,
             lifetime_type_bound: None,
             other_bounds: Some(quote!(CGlueT: From<CGlueF>,)),
+            other_bounds_simple: Some(quote!(CGlueT: From<CGlueF>,)),
             impl_return_conv: Some(quote! {
                 // SAFETY:
                 //
@@ -319,6 +382,7 @@ pub fn parse_trait(
                 unsafe { self.cobj_build(ret) }
             }),
             inject_ret_tmp: false,
+            unbounded_hrtb: true,
         },
     );
 
@@ -515,12 +579,12 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
     let (cglue_t_bounds, cglue_t_bounds_opaque) = if need_own {
         (
             quote!(: ::core::ops::Deref<Target = CGlueF> + #trg_path::IntoInner<InnerTarget = CGlueF>),
-            quote!(: ::core::ops::Deref<Target = #c_void> + #trg_path::IntoInner),
+            quote!(: 'cglue_a + ::core::ops::Deref<Target = #c_void> + #trg_path::IntoInner),
         )
     } else {
         (
             quote!(: ::core::ops::Deref<Target = CGlueF>),
-            quote!(: ::core::ops::Deref<Target = #c_void>),
+            quote!(: 'cglue_a + ::core::ops::Deref<Target = #c_void>),
         )
     };
 
@@ -657,12 +721,13 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
             ///
             /// This virtual function table contains ABI-safe interface for the given trait.
             #[repr(C)]
-            pub struct #vtbl_ident<CGlueT, CGlueF, #gen_declare_stripped> where #gen_where_bounds {
+            pub struct #vtbl_ident<'cglue_a, CGlueT, CGlueF, #gen_declare_stripped> where #gen_where_bounds {
                 #vtbl_func_defintions
                 #vtbl_phantom_def
+                _lt_cglue_a: ::core::marker::PhantomData<&'cglue_a CGlueT>,
             }
 
-            impl<CGlueT, CGlueF, #gen_declare_stripped> #vtbl_ident<CGlueT, CGlueF, #gen_use>
+            impl<'cglue_a, CGlueT, CGlueF, #gen_declare_stripped> #vtbl_ident<'cglue_a, CGlueT, CGlueF, #gen_use>
                 where #gen_where_bounds
             {
                 #vtbl_getter_defintions
@@ -673,12 +738,13 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
             /* Default implementation. */
 
             /// Default vtable reference creation.
-            impl<'cglue_a, CGlueT #cglue_t_bounds, CGlueF: for<#life_declare> #trait_name<#life_use #gen_use>, #gen_declare_stripped> Default for &'cglue_a #vtbl_ident<CGlueT, CGlueF, #gen_use> where #gen_where_bounds #trait_type_bounds {
+            impl<'cglue_a, CGlueT #cglue_t_bounds, CGlueF: for<#life_declare> #trait_name<#life_use #gen_use>, #gen_declare_stripped> Default for &'cglue_a #vtbl_ident<'cglue_a, CGlueT, CGlueF, #gen_use> where #gen_where_bounds #trait_type_bounds {
                 /// Create a static vtable for the given type.
                 fn default() -> Self {
                     &#vtbl_ident {
                         #vtbl_default_funcs
                         #vtbl_phantom_init
+                        _lt_cglue_a: ::core::marker::PhantomData,
                     }
                 }
             }
@@ -689,17 +755,17 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
             ///
             /// This virtual function table has type information destroyed, is used in CGlue objects
             /// and trait groups.
-            pub type #opaque_vtbl_ident<CGlueT, #gen_use> = #vtbl_ident<CGlueT, #c_void, #gen_use>;
+            pub type #opaque_vtbl_ident<'cglue_a, CGlueT, #gen_use> = #vtbl_ident<'cglue_a, CGlueT, #c_void, #gen_use>;
 
-            unsafe impl<CGlueT: #trg_path::Opaquable, CGlueF: for<#life_declare> #trait_name<#life_use #gen_use>, #gen_declare_stripped> #trg_path::CGlueBaseVtbl for #vtbl_ident<CGlueT, CGlueF, #gen_use> where #gen_where_bounds {
-                type OpaqueVtbl = #opaque_vtbl_ident<CGlueT::OpaqueTarget, #gen_use>;
+            unsafe impl<'cglue_a, CGlueT: #trg_path::Opaquable, CGlueF: for<#life_declare> #trait_name<#life_use #gen_use>, #gen_declare_stripped> #trg_path::CGlueBaseVtbl for #vtbl_ident<'cglue_a, CGlueT, CGlueF, #gen_use> where #gen_where_bounds {
+                type OpaqueVtbl = #opaque_vtbl_ident<'cglue_a, CGlueT::OpaqueTarget, #gen_use>;
                 type RetTmp = #ret_tmp_ident<#gen_use>;
             }
 
-            impl<CGlueT #cglue_t_bounds, CGlueF: for<#life_declare> #trait_name<#life_use #gen_use>, #gen_declare_stripped> #trg_path::CGlueVtbl<CGlueF> for #vtbl_ident<CGlueT, CGlueF, #gen_use> where #gen_where_bounds CGlueT: #trg_path::Opaquable {}
+            impl<'cglue_a, CGlueT #cglue_t_bounds, CGlueF: for<#life_declare> #trait_name<#life_use #gen_use>, #gen_declare_stripped> #trg_path::CGlueVtbl<CGlueF> for #vtbl_ident<'cglue_a, CGlueT, CGlueF, #gen_use> where #gen_where_bounds CGlueT: #trg_path::Opaquable {}
 
             #[doc = #trait_obj_doc]
-            pub type #trait_obj_ident<'cglue_a, CGlueT, CGlueF, #gen_use> = #trg_path::CGlueTraitObj::<'cglue_a, CGlueT, #vtbl_ident<CGlueT, CGlueF, #gen_use>, #ret_tmp_ident<#gen_use>>;
+            pub type #trait_obj_ident<'cglue_a, CGlueT, CGlueF, #gen_use> = #trg_path::CGlueTraitObj::<'cglue_a, CGlueT, #vtbl_ident<'cglue_a, CGlueT, CGlueF, #gen_use>, #ret_tmp_ident<#gen_use>>;
 
             #[doc = #opaque_owned_trait_obj_doc]
             pub type #opaque_owned_trait_obj_ident<'cglue_a, #gen_use> = #trait_obj_ident<'cglue_a, #crate_path::boxed::CBox<'cglue_a, #c_void>, #c_void, #gen_use>;
@@ -717,7 +783,7 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
             /* Trait implementation. */
 
             /// Implement the traits for any CGlue object.
-            impl<#life_declare CGlueT #cglue_t_bounds_opaque, CGlueO: #trg_path::GetVtbl<#opaque_vtbl_ident<CGlueT, #gen_use>> + #trg_path::#required_mutability<#ret_tmp_ident<#gen_use>, ObjType = #c_void, ContType = CGlueT> #return_self_bound #supertrait_bounds, #gen_declare> #trait_impl_name<#life_use #gen_use> for CGlueO where #gen_where_bounds {
+            impl<'cglue_a, #life_declare CGlueT #cglue_t_bounds_opaque, CGlueO: 'cglue_a + #trg_path::GetVtbl<#opaque_vtbl_ident<'cglue_a, CGlueT, #gen_use>> + #trg_path::#required_mutability<#ret_tmp_ident<#gen_use>, ObjType = #c_void, ContType = CGlueT> #return_self_bound #supertrait_bounds, #gen_declare> #trait_impl_name<#life_use #gen_use> for CGlueO where #gen_where_bounds {
                 #trait_type_defs
                 #trait_impl_fns
             }
