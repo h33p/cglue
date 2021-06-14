@@ -98,7 +98,7 @@ impl ParsedGenerics {
                     .life_declare
                     .iter()
                     .find(|ld| ld.lifetime.ident == lt.ident)
-                    .unwrap();
+                    .expect("Gen 1");
 
                 life_declare.push_value(decl.clone());
                 life_declare.push_punct(Default::default());
@@ -118,7 +118,7 @@ impl ParsedGenerics {
                     .iter()
                     .zip(self.gen_use.iter())
                     .find(|(_, ident)| *ident == ty)
-                    .unwrap();
+                    .expect("Gen 2");
 
                 gen_declare.push_value(decl.clone());
                 gen_declare.push_punct(Default::default());
@@ -496,7 +496,7 @@ impl GenericType {
             life_declare,
             gen_declare,
             ..
-        } = parse2::<ParsedGenerics>(quote!(<#generics>)).unwrap();
+        } = parse2::<ParsedGenerics>(quote!(<#generics>)).expect("Gen 3");
 
         self.generics
             .extend(quote!(#life_declare #types #gen_declare));
@@ -505,7 +505,8 @@ impl GenericType {
     fn from_type(target: &Type, cast_to_group: bool) -> Self {
         let (path, target, generics) = match target {
             Type::Path(ty) => {
-                let (path, target, generics) = crate::util::split_path_ident(&ty.path).unwrap();
+                let (path, target, generics) =
+                    crate::util::split_path_ident(&ty.path).expect("Gen 3");
                 (path, quote!(#target), generics)
             }
             x => (

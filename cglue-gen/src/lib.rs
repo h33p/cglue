@@ -4,6 +4,7 @@
 
 pub mod arc_wrap;
 pub mod ext;
+pub mod forward;
 pub mod func;
 pub mod generics;
 pub mod trait_groups;

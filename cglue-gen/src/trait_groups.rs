@@ -43,7 +43,7 @@ impl PartialOrd for TraitInfo {
 
 impl From<Path> for TraitInfo {
     fn from(in_path: Path) -> Self {
-        let (path, ident, gens) = split_path_ident(&in_path).unwrap();
+        let (path, ident, gens) = split_path_ident(&in_path).expect("Failuer 1");
 
         let lc_ident = ident.to_string().to_lowercase();
 

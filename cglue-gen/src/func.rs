@@ -794,6 +794,39 @@ impl ParsedFunc {
         )
     }
 
+    pub fn forward_wrapped_trait_impl(&self, tokens: &mut TokenStream) -> bool {
+        if self.receiver.reference.is_none() {
+            return false;
+        }
+
+        let name = &self.name;
+        let args = self.trait_args();
+        let passthrough_args = self.trait_passthrough_args(1);
+        let ParsedReturnType {
+            ty: out, use_wrap, ..
+        } = &self.out;
+        let safety = self.get_safety();
+        let abi = self.abi.prefix();
+
+        let return_out = if *use_wrap {
+            quote!(Self(ret))
+        } else {
+            quote!(ret)
+        };
+
+        let gen = quote! {
+            #[inline(always)]
+            #safety #abi fn #name (#args) #out {
+                let ret = (self.0).#name(#passthrough_args);
+                #return_out
+            }
+        };
+
+        tokens.extend(gen);
+
+        self.receiver.mutability.is_some()
+    }
+
     pub fn arc_wrapped_trait_impl(&self, tokens: &mut TokenStream) {
         let name = &self.name;
         let args = self.trait_args();

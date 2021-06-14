@@ -72,6 +72,21 @@ impl<T, E> CResult<T, E> {
     }
 }
 
+pub trait IntResult<T> {
+    fn into_int_result(self) -> i32;
+    fn into_int_out_result(self, ok_out: &mut MaybeUninit<T>) -> i32;
+}
+
+impl<T, E: IntError> IntResult<T> for Result<T, E> {
+    fn into_int_result(self) -> i32 {
+        into_int_result(self)
+    }
+
+    fn into_int_out_result(self, ok_out: &mut MaybeUninit<T>) -> i32 {
+        into_int_out_result(self, ok_out)
+    }
+}
+
 /// Represents an integer-convertable error value.
 ///
 /// This trait can be implemented for error types to allow for more

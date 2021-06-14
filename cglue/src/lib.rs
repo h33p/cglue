@@ -827,6 +827,7 @@
 pub mod arc;
 pub mod boxed;
 pub mod callback;
+pub mod forward;
 pub mod from2;
 pub mod option;
 pub mod repr_cstring;
@@ -834,10 +835,10 @@ pub mod result;
 pub mod trait_group;
 
 pub use ::cglue_macro::{
-    arc_wrap, as_mut, as_ref, cast, cglue_arc_wrappable, cglue_impl_group, cglue_trait,
-    cglue_trait_ext, cglue_trait_group, group_obj, int_result, into, no_int_result, return_wrap,
-    skip_func, trait_obj, wrap_with, wrap_with_group, wrap_with_group_mut, wrap_with_group_ref,
-    wrap_with_obj, wrap_with_obj_mut, wrap_with_obj_ref,
+    arc_wrap, as_mut, as_ref, cast, cglue_arc_wrappable, cglue_forward, cglue_impl_group,
+    cglue_trait, cglue_trait_ext, cglue_trait_group, group_obj, int_result, into, no_int_result,
+    return_wrap, skip_func, trait_obj, wrap_with, wrap_with_group, wrap_with_group_mut,
+    wrap_with_group_ref, wrap_with_obj, wrap_with_obj_mut, wrap_with_obj_ref,
 };
 
 pub mod ext {

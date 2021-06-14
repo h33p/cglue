@@ -4,6 +4,7 @@ extern crate proc_macro;
 
 use cglue_gen::arc_wrap::gen_wrap;
 use cglue_gen::ext::{ext_abs_remap, prelude_remap_with_ident};
+use cglue_gen::forward::gen_forward;
 use cglue_gen::generics::{GenericCastType, GenericType};
 use cglue_gen::trait_groups::*;
 use proc_macro::TokenStream;
@@ -302,6 +303,16 @@ pub fn cglue_builtin_ext_traits(_: TokenStream) -> TokenStream {
 pub fn cglue_arc_wrappable(_: TokenStream, input: TokenStream) -> TokenStream {
     let tr = parse_macro_input!(input as ItemTrait);
     gen_wrap(tr, None).into()
+}
+
+/// Generate trait implementation for ArcWrappable.
+///
+/// This is useful for building automatic resource unloading when a trait object gets dropped, for
+/// instance a plugin system.
+#[proc_macro_attribute]
+pub fn cglue_forward(_: TokenStream, input: TokenStream) -> TokenStream {
+    let tr = parse_macro_input!(input as ItemTrait);
+    gen_forward(tr, None).into()
 }
 
 /// Generate trait implementation for ArcWrappable.
