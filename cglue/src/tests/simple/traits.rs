@@ -25,11 +25,26 @@ pub trait WithIntResult {
     }
 }
 
+type AliasResult<T, E> = Result<T, E>;
+
+#[cglue_trait]
+#[int_result(AliasResult)]
+pub trait WithAliasIntResult {
+    fn waint_1(&self, val: usize) -> AliasResult<usize, std::io::Error> {
+        Ok(val)
+    }
+    #[no_int_result]
+    fn waint_2(&self, val: usize) -> AliasResult<usize, usize> {
+        Ok(val)
+    }
+}
+
 struct Implementor {}
 
 impl WithSlice for Implementor {}
 impl WithOptions for Implementor {}
 impl WithIntResult for Implementor {}
+impl WithAliasIntResult for Implementor {}
 
 #[test]
 fn slices_wrapped() {
@@ -68,4 +83,18 @@ fn no_int_result() {
     let vtbl = <&CGlueVtblWithIntResult<&Implementor, Implementor>>::default();
     let _: unsafe extern "C" fn(&Implementor, usize) -> crate::result::CResult<usize, usize> =
         vtbl.wint_2();
+}
+
+#[test]
+fn alias_int_result() {
+    let vtbl = <&CGlueVtblWithAliasIntResult<&Implementor, Implementor>>::default();
+    let _: unsafe extern "C" fn(&Implementor, usize, &mut core::mem::MaybeUninit<usize>) -> i32 =
+        vtbl.waint_1();
+}
+
+#[test]
+fn alias_no_int_result() {
+    let vtbl = <&CGlueVtblWithAliasIntResult<&Implementor, Implementor>>::default();
+    let _: unsafe extern "C" fn(&Implementor, usize) -> crate::result::CResult<usize, usize> =
+        vtbl.waint_2();
 }

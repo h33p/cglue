@@ -389,7 +389,12 @@ pub fn parse_trait(
     let int_result = tr
         .attrs
         .iter()
-        .any(|a| a.path.to_token_stream().to_string() == "int_result");
+        .filter(|a| a.path.to_token_stream().to_string() == "int_result")
+        .map(|a| {
+            a.parse_args::<Ident>()
+                .unwrap_or_else(|_| format_ident!("Result"))
+        })
+        .next();
 
     // Parse all functions in the trait
     for item in &tr.items {
@@ -421,10 +426,17 @@ pub fn parse_trait(
                     continue;
                 }
 
-                let int_result = match int_result {
-                    true => !attrs.iter().any(|i| i == "no_int_result"),
-                    false => attrs.iter().any(|i| i == "int_result"),
-                };
+                let int_result_new = m
+                    .attrs
+                    .iter()
+                    .filter(|a| a.path.to_token_stream().to_string() == "int_result")
+                    .map(|a| {
+                        a.parse_args::<Ident>()
+                            .unwrap_or_else(|_| format_ident!("Result"))
+                    })
+                    .next();
+
+                let int_result = int_result_new.as_ref().or(int_result.as_ref());
 
                 funcs.extend(ParsedFunc::new(
                     m.sig.clone(),
@@ -432,6 +444,9 @@ pub fn parse_trait(
                     &generics,
                     &types,
                     int_result,
+                    int_result
+                        .filter(|_| !attrs.iter().any(|i| i == "no_int_result"))
+                        .is_some(),
                     &crate_path,
                 ));
             }

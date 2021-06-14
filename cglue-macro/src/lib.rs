@@ -305,10 +305,9 @@ pub fn cglue_arc_wrappable(_: TokenStream, input: TokenStream) -> TokenStream {
     gen_wrap(tr, None).into()
 }
 
-/// Generate trait implementation for ArcWrappable.
+/// Generate forward trait implementation for Fwd.
 ///
-/// This is useful for building automatic resource unloading when a trait object gets dropped, for
-/// instance a plugin system.
+/// This is useful for using references of trait objects as generic parameters.
 #[proc_macro_attribute]
 pub fn cglue_forward(_: TokenStream, input: TokenStream) -> TokenStream {
     let tr = parse_macro_input!(input as ItemTrait);

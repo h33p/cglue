@@ -303,6 +303,7 @@ impl ParsedFunc {
         trait_name: Ident,
         generics: &ParsedGenerics,
         wrap_types: &BTreeMap<Ident, WrappedType>,
+        res_override: Option<&Ident>,
         int_result: bool,
         crate_path: &TokenStream,
     ) -> Option<Self> {
@@ -319,6 +320,7 @@ impl ParsedFunc {
         let out = ParsedReturnType::new(
             sig.output,
             wrap_types,
+            res_override,
             int_result,
             &unsafety,
             &name,
@@ -978,6 +980,7 @@ impl ParsedReturnType {
     fn new(
         mut ty: ReturnType,
         targets: &BTreeMap<Ident, WrappedType>,
+        res_override: Option<&Ident>,
         int_result: bool,
         unsafety: &TokenStream,
         func_name: &Ident,
@@ -1172,8 +1175,13 @@ impl ParsedReturnType {
                 if let Some((PathArguments::AngleBracketed(args), last)) =
                     last.map(|l| (&l.arguments, l))
                 {
-                    let ident = last.ident.to_string();
-                    match ident.as_str() {
+                    let ident = &last.ident;
+
+                    let result_ident = format_ident!("Result");
+
+                    let result_ident = res_override.unwrap_or(&result_ident);
+
+                    match ident.to_string().as_str() {
                         "Option" => {
                             if let Some(GenericArgument::Type(a)) = args.args.first() {
                                 if !crate::util::is_null_pointer_optimizable(a, &[]) {
@@ -1191,88 +1199,96 @@ impl ParsedReturnType {
                                 }
                             }
                         }
-                        "Result" => {
-                            let mut args = args.args.iter();
+                        _ => {
+                            if ident == result_ident {
+                                let mut args = args.args.iter();
 
-                            let to_match = (args.next(), args.next(), args.next(), int_result);
+                                let to_match = (args.next(), args.next(), args.next(), int_result);
 
-                            std::mem::drop(args);
+                                std::mem::drop(args);
 
-                            match to_match {
-                                (Some(GenericArgument::Type(a)), _, None, true) => loop {
-                                    ret.c_out = quote!(-> i32);
-                                    ret.c_cast_out = quote!(-> i32);
+                                match to_match {
+                                    (Some(GenericArgument::Type(a)), _, None, true) => loop {
+                                        ret.c_out = quote!(-> i32);
+                                        ret.c_cast_out = quote!(-> i32);
 
-                                    let c_ret = &ret.c_ret;
+                                        let c_ret = &ret.c_ret;
 
-                                    let mapped_ret = quote! {
-                                        let ret = ret.map(|ret| {
-                                            #c_ret
-                                        });
-                                    };
+                                        let mapped_ret = quote! {
+                                            let ret = ret.map(|ret| {
+                                                #c_ret
+                                            });
+                                        };
 
-                                    if let Type::Tuple(tup) = a {
-                                        if tup.elems.is_empty() {
-                                            ret.c_ret = quote! {
-                                                #mapped_ret
-                                                #crate_path::result::into_int_result(ret)
-                                            };
-                                            let impl_func_ret = &ret.impl_func_ret;
-                                            ret.impl_func_ret = quote!(#crate_path::result::from_int_result_empty(#impl_func_ret));
+                                        if let Type::Tuple(tup) = a {
+                                            if tup.elems.is_empty() {
+                                                ret.c_ret = quote! {
+                                                    #mapped_ret
+                                                    #crate_path::result::into_int_result(ret)
+                                                };
+                                                let impl_func_ret = &ret.impl_func_ret;
+                                                ret.impl_func_ret = quote!(#crate_path::result::from_int_result_empty(#impl_func_ret));
 
-                                            break;
+                                                break;
+                                            }
                                         }
+
+                                        ret.c_ret_params.extend(
+                                            quote!(ok_out: &mut ::core::mem::MaybeUninit<#a>,),
+                                        );
+                                        ret.c_ret_precall_def.extend(quote!(let mut ok_out = ::core::mem::MaybeUninit::uninit();));
+                                        ret.c_call_ret_args.extend(quote!(&mut ok_out,));
+
+                                        ret.c_ret = quote! {
+                                            #mapped_ret
+                                            #crate_path::result::into_int_out_result(ret, ok_out)
+                                        };
+                                        let impl_func_ret = &ret.impl_func_ret;
+                                        ret.impl_func_ret = quote!(#unsafety { #crate_path::result::from_int_result(#impl_func_ret, ok_out) });
+
+                                        break;
+                                    },
+                                    (
+                                        Some(GenericArgument::Type(_)),
+                                        Some(GenericArgument::Type(_)),
+                                        None,
+                                        _,
+                                    ) => {
+                                        let new_path: Path =
+                                            parse2(quote!(#crate_path::result::CResult))
+                                                .expect("Failed to parse CResult path");
+
+                                        replace_path_keep_final_args(
+                                            Some(&mut **ty),
+                                            new_path.clone(),
+                                        );
+                                        replace_path_keep_final_args(
+                                            ty_cast.as_deref_mut(),
+                                            new_path,
+                                        );
+
+                                        ret.c_out = quote!(-> #ty);
+                                        ret.c_cast_out = quote!(-> #ty_cast);
+
+                                        let c_ret = &ret.c_ret;
+
+                                        let mapped_ret = quote! {
+                                            let ret = ret.map(|ret| {
+                                                #c_ret
+                                            });
+                                        };
+
+                                        ret.c_ret = quote! {
+                                            #mapped_ret
+                                            ret.into()
+                                        };
+
+                                        ret.impl_func_ret.extend(quote!(.into()));
                                     }
-
-                                    ret.c_ret_params
-                                        .extend(quote!(ok_out: &mut ::core::mem::MaybeUninit<#a>,));
-                                    ret.c_ret_precall_def.extend(quote!(let mut ok_out = ::core::mem::MaybeUninit::uninit();));
-                                    ret.c_call_ret_args.extend(quote!(&mut ok_out,));
-
-                                    ret.c_ret = quote! {
-                                        #mapped_ret
-                                        #crate_path::result::into_int_out_result(ret, ok_out)
-                                    };
-                                    let impl_func_ret = &ret.impl_func_ret;
-                                    ret.impl_func_ret = quote!(#unsafety { #crate_path::result::from_int_result(#impl_func_ret, ok_out) });
-
-                                    break;
-                                },
-                                (
-                                    Some(GenericArgument::Type(_)),
-                                    Some(GenericArgument::Type(_)),
-                                    None,
-                                    _,
-                                ) => {
-                                    let new_path: Path =
-                                        parse2(quote!(#crate_path::result::CResult))
-                                            .expect("Failed to parse CResult path");
-
-                                    replace_path_keep_final_args(Some(&mut **ty), new_path.clone());
-                                    replace_path_keep_final_args(ty_cast.as_deref_mut(), new_path);
-
-                                    ret.c_out = quote!(-> #ty);
-                                    ret.c_cast_out = quote!(-> #ty_cast);
-
-                                    let c_ret = &ret.c_ret;
-
-                                    let mapped_ret = quote! {
-                                        let ret = ret.map(|ret| {
-                                            #c_ret
-                                        });
-                                    };
-
-                                    ret.c_ret = quote! {
-                                        #mapped_ret
-                                        ret.into()
-                                    };
-
-                                    ret.impl_func_ret.extend(quote!(.into()));
-                                }
-                                _ => {}
-                            };
+                                    _ => {}
+                                };
+                            }
                         }
-                        _ => {}
                     }
                 }
             }
