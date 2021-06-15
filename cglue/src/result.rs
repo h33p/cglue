@@ -1,4 +1,24 @@
 //! Describes a FFI safe result.
+//!
+//! This module contains several key parts:
+//!
+//! ## [CResult](crate::result::CResult)
+//!
+//! It is a simple `#[repr(C)]` enum that is equivalent and interchangeable with `Result`.
+//!
+//! ## [IntError](crate::result::IntError)
+//!
+//! [IntError](crate::result::IntError) is a type that allows for efficient FFI-boundary crossing
+//! and simple interop with C code. It takes a `Result<T, E>`, and splits it up to 2 distinct parts
+//! - `ok_out` pointer, and an integer return value. Value of zero always means success, and that
+//! `ok_out` was filled, whereas any other value can represent a specific meaning `E` must specify
+//! by itself.
+//!
+//! ## [IntResult](crate::result::IntResult)
+//!
+//! It is a helper trait that is implemented on all `Result<T, E>` types where `E` implements
+//! [IntError](crate::result::IntError).
+//!
 use core::mem::MaybeUninit;
 use core::num::NonZeroI32;
 
@@ -72,6 +92,10 @@ impl<T, E> CResult<T, E> {
     }
 }
 
+/// Helper trait for integer errors.
+///
+/// This trait essentially forwards [`into_int_result`](crate::result::into_int_result), and
+/// [`into_int_out_result`](crate::result::into_int_out_result) functions for easier access.
 pub trait IntResult<T> {
     fn into_int_result(self) -> i32;
     fn into_int_out_result(self, ok_out: &mut MaybeUninit<T>) -> i32;

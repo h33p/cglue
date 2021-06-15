@@ -36,6 +36,7 @@ CGlue offers an easy way to ABI (application binary interface) safety. Just a fe
 ```rust
 use cglue::*;
 
+// One annotation for the trait.
 #[cglue_trait]
 pub trait InfoPrinter {
     fn print_info(&self);
@@ -61,6 +62,7 @@ fn main() {
         value: 5
     };
 
+    // Here, the object is fully opaque, and is FFI and ABI safe.
     let obj = trait_obj!(&mut info as InfoPrinter);
 
     use_info_printer(&obj);
@@ -82,6 +84,8 @@ But that's not all, you can also group traits together!
 ```rust
 use cglue::*;
 
+// Extra trait definitions
+
 #[cglue_trait]
 pub trait InfoChanger {
     fn change_info(&mut self, new_val: usize);
@@ -98,8 +102,11 @@ pub trait InfoDeleter {
     fn delete_info(&mut self);
 }
 
-// Define a trait group with `InfoPrinter` as mandatory trait, and
-// `InfoChanger` with `InfoDeleter` as optional traits.
+// Define a trait group.
+//
+// Here, `InfoPrinter` is mandatory - always required to be implemented,
+// whereas `InfoChanger` with `InfoDeleter` are optional traits - a checked
+// cast must be performed to access them.
 cglue_trait_group!(InfoGroup, InfoPrinter, { InfoChanger, InfoDeleter });
 
 // Implement the group for `Info` structure, defining
@@ -146,7 +153,8 @@ from anywhere by using hidden submodules. However, unverifiable users (C librari
 be able to modify the tables. This library assumes they are not malicious and does not
 perform any runtime verification.
 
-Other than one more bit in [wrapping](#associated-type-wrapping), this crate should be safe.
+Other than 2 bits in [associated type wrapping](#associated-type-wrapping), this crate should
+be safe.
 
 The crate employs a number of `unsafe` traits that get auto-implemented, or traits with unsafe
 functions. Their usage inside the code generator should be safe, they are marked in such a way
@@ -158,23 +166,32 @@ so that manual implementations can not introduce undefined behaviour.
 
 | Name | Purpose |
 --- | ---
+| CGlueBaseMyTrait | Base typedef for a CGlue object. It allows for any container type, and is not opaque. |
+| CGlueBaseBoxMyTrait | Typedef for generic owned CGlue object. Its container is a [`CBox`](crate::boxed::CBox) |
+| CGlueBaseMutMyTrait | Typedef for generic by-mut-ref CGlue object. Its container is a `&mut c_void`. |
+| CGlueBaseRefMyTrait | Typedef for generic by-ref (const) CGlue object. Its container is a `&c_void`. |
 | CGlueBoxMyTrait | Typedef for opaque owned CGlue object. Its container is a [`CBox`](crate::boxed::CBox) |
 | CGlueMutMyTrait | Typedef for opaque by-mut-ref CGlue object. Its container is a `&mut c_void`. |
 | CGlueRefMyTrait | Typedef for opaque by-ref (const) CGlue object. Its container is a `&c_void`. |
-| CGlueBaseMyTrait | Base typedef for a CGlue object. It allows for any container type, and is not opaque. |
 | CGlueVtblMyTrait | Table of all functions of the trait. Should be opaque to the user. |
 | OpaqueCGlueVtblMyTrait | Opaque version of the table. This is the type every object's table will have. |
 | CGlueRetTmpMyTrait | Structure for temporary return values. It should be opaque to the user. |
+
+Only opaque types provide functionality. Non-opaque types can be used as `Into` trait bounds
+and are required to type check trait bounds.
 
 `cglue_trait_group!` macro for `MyGroup` will generate the following main types:
 
 | Name | Purpose |
 --- | ---
 | MyGroup | Base definiton of the group. It is not opaque and not usable yet. |
+| MyGroupBaseBox | Typedef for generic owned CGlue trait group. Its container is a [`CBox`](crate::boxed::CBox) |
+| MyGroupBaseMut | Typedef for generic by-mut-ref CGlue trait group. Its container is a `&mut c_void`. |
+| MyGroupBaseRef | Typedef for generic by-ref (const) CGlue trait group. Its container is a `&c_void`. |
+| MyGroupOpaque | Typedef for opaque CGlue trait group. It can have any container. |
 | MyGroupBox | Typedef for opaque owned CGlue trait group. Its container is a [`CBox`](crate::boxed::CBox) |
 | MyGroupMut | Typedef for opaque by-mut-ref CGlue trait group. Its container is a `&mut c_void`. |
 | MyGroupRef | Typedef for opaque by-ref (const) CGlue trait group. Its container is a `&c_void`. |
-| MyGroupOpaque | Typedef for opaque CGlue trait group. It can have any container. |
 | MyGroupVtableFiller | Trait that allows an object to specify which optional traits are available, through the use of `enable_trait` functions. |
 
 The macro generation will also generate structures for all combinations of optional traits
@@ -183,6 +200,9 @@ in alphabetical order. If not using macros, check `MyGroup` documentation for un
 conversion function definitions.
 
 ### Generics in groups
+
+Groups are fairly flexible - they are not limited to basic types. They can also contain generic
+parameters, associated types, and self returns (this also applies to single-trait objects).
 
 Use of generics in trait groups is rather straightforward, with a couple of tiny nuances.
 
@@ -241,7 +261,7 @@ the above 2 macro invocations expand to:
 impl<'cglue_a, CGlueT: Deref<Target = GA<T>>, T: Eq>
 GenGroupVtableFiller<'cglue_a, GA<T>, T> for CGlueT
 where
-&'cglue_a CGlueVtblTA<CGlueT, GA<T>>: 'cglue_a + Default,
+&'cglue_a CGlueVtblTA<'cglue_a, CGlueT, GA<T>>: 'cglue_a + Default,
 {
     fn fill_table(
         table: GenGroupVtables<'cglue_a, CGlueT, GA<T>, T>,
@@ -412,6 +432,22 @@ same reference, and it should be alright, but YOU HAVE BEEN WARNED. `TODO: Disal
 
 The above warning does not apply to `&mut self` functions, because the returned reference is
 bound to the same lifetime and can not be re-created while being borrowed.
+
+In addition, there is quite a bit of type safety being broken when when wrapping associated
+types in anonymous lifetime references. It should be okay, but the situation is as follows:
+
+1. Due to no GAT, `CGlueObjRef/Mut<'_>` is being promoted to `CGlueObjRef/Mut<'static>`. This
+   should be okay, given it is not possible to clone non-CBox objects, and these objects are
+   returned by-reference, not value.
+
+2. Trait bounds are only checked for one lifetime (lifetime of the vtable), and the C function
+   is being cast into a HRTB one unsafely. This is because it is not possible to specify the
+   HRTB upper bound (`for<'b: 'a>`). It should be okay, since the vtable can be created for the
+   vtable's lifetime, the returned reference will not outlive the vtable, and the C function is
+   fully type checked otherwise.
+
+However, if there is a glaring issue I am missing, and there is a solution to this unsafety,
+please file an issue report.
 
 Generally speaking, you will want to use `wrap_with_obj/wrap_with_group` in `Self::ReturnType`
 functions, `wrap_with_obj_mut/wrap_with_group_mut` in `&mut Self::ReturnType` functions, and
