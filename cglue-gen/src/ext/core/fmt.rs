@@ -9,7 +9,6 @@ pub fn get_impl(parent_path: &Path, out: &mut Vec<(Path, TokenStream)>) {
     out.push((
         cur_path,
         quote! {
-            #[cglue_arc_wrappable]
             pub trait Debug {
                 #[int_result]
                 fn fmt(&self, f: &mut ::core::fmt::Formatter) -> Result<(), ::core::fmt::Error>;

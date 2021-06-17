@@ -48,53 +48,53 @@ impl WithAliasIntResult for Implementor {}
 
 #[test]
 fn slices_wrapped() {
-    let vtbl = <&CGlueVtblWithSlice<&Implementor, Implementor>>::default();
+    let vtbl = <&WithSliceVtbl<&mut Implementor, Implementor, (), ()>>::default();
     let _: unsafe extern "C" fn(&mut Implementor, *const usize, usize) = vtbl.wslice_1();
 }
 
 #[test]
 fn npo_option_forwarded() {
-    let vtbl = <&CGlueVtblWithOptions<&Implementor, Implementor>>::default();
+    let vtbl = <&WithOptionsVtbl<&mut Implementor, Implementor, (), ()>>::default();
     let _: unsafe extern "C" fn(&Implementor, Option<&usize>) = vtbl.wopt_1();
 }
 
 #[test]
 fn non_npo_option_wrapped() {
-    let vtbl = <&CGlueVtblWithOptions<&Implementor, Implementor>>::default();
+    let vtbl = <&WithOptionsVtbl<&mut Implementor, Implementor, (), ()>>::default();
     let _: unsafe extern "C" fn(&Implementor, crate::option::COption<usize>) = vtbl.wopt_2();
 }
 
 #[test]
 fn mixed_options() {
-    let vtbl = <&CGlueVtblWithOptions<&Implementor, Implementor>>::default();
+    let vtbl = <&WithOptionsVtbl<&mut Implementor, Implementor, (), ()>>::default();
     let _: unsafe extern "C" fn(&mut Implementor, Option<&u128>, crate::option::COption<u128>) =
         vtbl.wopt_3();
 }
 
 #[test]
 fn int_result() {
-    let vtbl = <&CGlueVtblWithIntResult<&Implementor, Implementor>>::default();
+    let vtbl = <&WithIntResultVtbl<&Implementor, Implementor, (), ()>>::default();
     let _: unsafe extern "C" fn(&Implementor, usize, &mut core::mem::MaybeUninit<usize>) -> i32 =
         vtbl.wint_1();
 }
 
 #[test]
 fn no_int_result() {
-    let vtbl = <&CGlueVtblWithIntResult<&Implementor, Implementor>>::default();
+    let vtbl = <&WithIntResultVtbl<&Implementor, Implementor, (), ()>>::default();
     let _: unsafe extern "C" fn(&Implementor, usize) -> crate::result::CResult<usize, usize> =
         vtbl.wint_2();
 }
 
 #[test]
 fn alias_int_result() {
-    let vtbl = <&CGlueVtblWithAliasIntResult<&Implementor, Implementor>>::default();
+    let vtbl = <&WithAliasIntResultVtbl<&Implementor, Implementor, (), ()>>::default();
     let _: unsafe extern "C" fn(&Implementor, usize, &mut core::mem::MaybeUninit<usize>) -> i32 =
         vtbl.waint_1();
 }
 
 #[test]
 fn alias_no_int_result() {
-    let vtbl = <&CGlueVtblWithAliasIntResult<&Implementor, Implementor>>::default();
+    let vtbl = <&WithAliasIntResultVtbl<&Implementor, Implementor, (), ()>>::default();
     let _: unsafe extern "C" fn(&Implementor, usize) -> crate::result::CResult<usize, usize> =
         vtbl.waint_2();
 }

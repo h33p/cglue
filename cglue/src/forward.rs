@@ -4,9 +4,10 @@
 //! type.  Whether `Fwd` implements the trait depends purely on whether the trait has
 //! functions with mutable references or not.
 
-use core::ops::{Deref, DerefMut};
+use ::core::ops::{Deref, DerefMut};
 
 #[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
 pub struct Fwd<T>(pub T);
 
 impl<T: Deref<Target = F>, F> Deref for Fwd<T> {

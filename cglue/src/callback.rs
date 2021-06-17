@@ -92,3 +92,20 @@ impl<'a, T> std::iter::Extend<T> for OpaqueCallback<'a, T> {
         }
     }
 }
+
+pub trait FeedCallback<T> {
+    fn feed_into(self, callback: OpaqueCallback<T>) -> usize;
+}
+
+impl<'a, I: std::iter::IntoIterator<Item = T>, T> FeedCallback<T> for I {
+    fn feed_into(self, mut callback: OpaqueCallback<T>) -> usize {
+        let mut cnt = 0;
+        for v in self {
+            cnt += 1;
+            if !callback.call(v) {
+                break;
+            }
+        }
+        cnt
+    }
+}

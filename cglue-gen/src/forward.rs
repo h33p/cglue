@@ -26,6 +26,7 @@ pub fn gen_forward(tr: ItemTrait, ext_path: Option<TokenStream>) -> TokenStream 
             impl_return_conv: None,
             inject_ret_tmp: false,
             unbounded_hrtb: false,
+            needs_ctx: false,
         },
     );
 

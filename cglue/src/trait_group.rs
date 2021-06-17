@@ -1,6 +1,6 @@
 //! Core definitions for traits, and their groups.
 
-use crate::boxed::CBox;
+use crate::boxed::{CBox, CtxBox};
 use core::ffi::c_void;
 use core::mem::ManuallyDrop;
 use core::ops::{Deref, DerefMut};
@@ -59,10 +59,6 @@ unsafe impl<'a, T> Opaquable for &'a mut T {
     type OpaqueTarget = &'a mut c_void;
 }
 
-unsafe impl<'a, T> Opaquable for CBox<'a, T> {
-    type OpaqueTarget = CBox<'a, c_void>;
-}
-
 /// Opaque type of the trait object.
 pub type CGlueOpaqueTraitObjOutCBox<'a, V> = CGlueTraitObj<
     'a,
@@ -102,22 +98,7 @@ impl<T, V, S> GetVtbl<V> for CGlueTraitObj<'_, T, V, S> {
     }
 }
 
-impl<T: Deref<Target = F>, F, V, S> CGlueObjRef<S> for CGlueTraitObj<'_, T, V, S> {
-    type ObjType = F;
-    type ContType = T;
-
-    fn cobj_ref(&self) -> (&F, &S) {
-        (&self.instance, &self.ret_tmp)
-    }
-}
-
-impl<T: Deref<Target = F> + DerefMut, F, V, S> CGlueObjMut<S> for CGlueTraitObj<'_, T, V, S> {
-    fn cobj_mut(&mut self) -> (&mut F, &mut S) {
-        (&mut self.instance, &mut self.ret_tmp)
-    }
-}
-
-impl<'a, T: Deref<Target = F>, F: 'a, V: CGlueVtbl<F>> From<T>
+impl<'a, T: Deref<Target = F> + ContextRef<Context = C>, F, C: Clone, V: CGlueVtbl<F, C>> From<T>
     for CGlueTraitObj<'a, T, V, V::RetTmp>
 where
     &'a V: Default,
@@ -131,12 +112,22 @@ where
     }
 }
 
-impl<'a, T, V: CGlueVtbl<T>> From<T> for CGlueTraitObj<'a, CBox<'a, T>, V, V::RetTmp>
+impl<'a, T, V: CGlueVtbl<T, NoContext>> From<T> for CGlueTraitObj<'a, CBox<'a, T>, V, V::RetTmp>
 where
     &'a V: Default,
 {
     fn from(this: T) -> Self {
         Self::from(CBox::from(this))
+    }
+}
+
+impl<'a, T, V: CGlueVtbl<T, C>, C: Clone> From<(T, C)>
+    for CGlueTraitObj<'a, CtxBox<'a, T, C>, V, V::RetTmp>
+where
+    &'a V: Default,
+{
+    fn from((this, ctx): (T, C)) -> Self {
+        Self::from(CtxBox::from((this, ctx)))
     }
 }
 
@@ -151,15 +142,73 @@ pub trait CGlueObjBase {
 pub trait CGlueObjRef<S> {
     type ObjType;
     type ContType: ::core::ops::Deref<Target = Self::ObjType>;
+    type Context: Clone;
 
-    fn cobj_ref(&self) -> (&Self::ObjType, &S);
+    fn cobj_ref(&self) -> (&Self::ObjType, &S, &Self::Context);
+}
+
+impl<'a, T: ContextRef<ObjType = F> + Deref<Target = F>, F, V, S> CGlueObjRef<S>
+    for CGlueTraitObj<'_, T, V, S>
+{
+    type ObjType = F;
+    type ContType = T;
+    type Context = T::Context;
+
+    fn cobj_ref(&self) -> (&F, &S, &Self::Context) {
+        let (obj, ctx) = self.instance.split_ctx_ref();
+        (obj, &self.ret_tmp, ctx)
+    }
+}
+
+pub trait ContextRef {
+    type ObjType;
+    type Context: Clone;
+
+    fn split_ctx_ref(&self) -> (&Self::ObjType, &Self::Context);
+}
+
+impl<'a, T> ContextRef for &'a T {
+    type ObjType = T;
+    type Context = NoContext;
+
+    fn split_ctx_ref(&self) -> (&Self::ObjType, &Self::Context) {
+        (self, &std::marker::PhantomData)
+    }
+}
+
+impl<'a, T> ContextRef for &'a mut T {
+    type ObjType = T;
+    type Context = NoContext;
+
+    fn split_ctx_ref(&self) -> (&Self::ObjType, &Self::Context) {
+        (self, &std::marker::PhantomData)
+    }
 }
 
 /// CGlue compatible object.
 ///
 /// This trait allows to retrieve the mutable `this` pointer on the structure.
 pub trait CGlueObjMut<S>: CGlueObjRef<S> {
-    fn cobj_mut(&mut self) -> (&mut Self::ObjType, &mut S);
+    fn cobj_mut(&mut self) -> (&mut Self::ObjType, &mut S, &Self::Context);
+}
+
+impl<'a, T: ContextRef<ObjType = F> + ContextMut + Deref<Target = F> + DerefMut, F, V, S>
+    CGlueObjMut<S> for CGlueTraitObj<'_, T, V, S>
+{
+    fn cobj_mut(&mut self) -> (&mut F, &mut S, &Self::Context) {
+        let (obj, ctx) = self.instance.split_ctx_mut();
+        (obj, &mut self.ret_tmp, ctx)
+    }
+}
+
+pub trait ContextMut: ContextRef {
+    fn split_ctx_mut(&mut self) -> (&mut Self::ObjType, &Self::Context);
+}
+
+impl<'a, T> ContextMut for &'a mut T {
+    fn split_ctx_mut(&mut self) -> (&mut Self::ObjType, &Self::Context) {
+        (self, &std::marker::PhantomData)
+    }
 }
 
 /// CGlue compatible object.
@@ -169,12 +218,27 @@ pub trait CGlueObjOwned<S>: CGlueObjMut<S> {
     fn cobj_owned(self) -> Self::ContType;
 }
 
-impl<T: Deref<Target = F> + DerefMut + IntoInner<InnerTarget = F>, F, V, S> CGlueObjOwned<S>
-    for CGlueTraitObj<'_, T, V, S>
+impl<
+        'a,
+        T: ContextRef<ObjType = F> + ContextMut + ContextOwned + Deref<Target = F> + DerefMut,
+        F,
+        V,
+        S,
+    > CGlueObjOwned<S> for CGlueTraitObj<'_, T, V, S>
 {
     fn cobj_owned(self) -> T {
         self.instance
     }
+}
+
+pub trait ContextOwned: ContextMut {
+    /// Split the container into its underlying object and the context.
+    ///
+    /// # Safety
+    ///
+    /// It is crucial to invoke this method where type information is known and
+    /// was not destroyed.
+    unsafe fn split_ctx_owned(self) -> (Self::ObjType, Self::Context);
 }
 
 pub trait CGlueObjBuild<S>: CGlueObjRef<S> {
@@ -187,7 +251,9 @@ pub trait CGlueObjBuild<S>: CGlueObjRef<S> {
     unsafe fn cobj_build(&self, new: Self::ContType) -> Self;
 }
 
-impl<T: Deref<Target = F>, F, V, S: Default> CGlueObjBuild<S> for CGlueTraitObj<'_, T, V, S> {
+impl<T: Deref<Target = F> + ContextRef<ObjType = F>, F, V, S: Default> CGlueObjBuild<S>
+    for CGlueTraitObj<'_, T, V, S>
+{
     unsafe fn cobj_build(&self, instance: Self::ContType) -> Self {
         Self {
             instance,
@@ -212,7 +278,7 @@ pub trait IntoInner {
 }
 
 /// Trait for CGlue vtables.
-pub trait CGlueVtbl<T>: CGlueBaseVtbl {}
+pub trait CGlueVtbl<T, C>: CGlueBaseVtbl {}
 
 /// Trait for CGlue vtables.
 ///
@@ -228,4 +294,21 @@ pub unsafe trait CGlueBaseVtbl: Sized {
     fn as_opaque(&self) -> &Self::OpaqueVtbl {
         unsafe { &*(self as *const Self as *const Self::OpaqueVtbl) }
     }
+}
+
+/// Describes absence of a context.
+///
+/// This context is used for regular `CBox` trait objects as well as by-ref or by-mut objects.
+pub type NoContext = std::marker::PhantomData<c_void>;
+
+unsafe impl Opaquable for NoContext {
+    type OpaqueTarget = NoContext;
+}
+
+unsafe impl Opaquable for () {
+    type OpaqueTarget = ();
+}
+
+unsafe impl Opaquable for c_void {
+    type OpaqueTarget = c_void;
 }

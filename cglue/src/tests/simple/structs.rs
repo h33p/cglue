@@ -57,7 +57,7 @@ fn call_a() {
 fn get_b() {
     let b = SB {};
 
-    let objb = trait_obj!(b as TB);
+    let objb = trait_obj!(crate::boxed::CBox::from(b) as TB);
 
     assert_eq!(objb.tb_2(objb.tb_1(10)), 400);
 }

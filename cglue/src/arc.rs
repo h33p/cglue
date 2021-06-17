@@ -1,4 +1,6 @@
 //! Describes an FFI-safe Arc.
+use crate::trait_group::Opaquable;
+use std::ffi::c_void;
 use std::sync::Arc;
 
 /// FFI-Safe Arc
@@ -28,6 +30,12 @@ impl<T> From<Arc<T>> for CArc<T> {
     }
 }
 
+impl<T> CArc<T> {
+    pub fn into_opt(self) -> COptArc<T> {
+        Some(self).into()
+    }
+}
+
 unsafe impl<T: Sync + Send> Send for CArc<T> {}
 unsafe impl<T: Sync + Send> Sync for CArc<T> {}
 
@@ -50,6 +58,10 @@ impl<T> AsRef<T> for CArc<T> {
     fn as_ref(&self) -> &T {
         self.inner.unwrap()
     }
+}
+
+unsafe impl<T> Opaquable for CArc<T> {
+    type OpaqueTarget = CArc<c_void>;
 }
 
 unsafe impl<T: Sync + Send> Send for COptArc<T> {}
@@ -144,80 +156,13 @@ impl<T> From<COptArc<T>> for Option<CArc<T>> {
     }
 }
 
-/// CArc wrapped object.
-///
-/// This object is useful when building a plugin system. The user can supply a `COptArc<Library>`
-/// reference to the plugin, that the plugin would then clone and wrap the returned plugin instance
-/// with.
-///
-/// The trait needs to implement itself on this object, but that can be automated with the
-/// `#[cglue_arc_wrappable]` macro.
-#[repr(C)]
-//#[derive(Clone)]
-pub struct ArcWrapped<T, A: 'static> {
-    pub inner: T,
-    arc: COptArc<A>,
+unsafe impl<T> Opaquable for COptArc<T> {
+    type OpaqueTarget = COptArc<c_void>;
 }
 
-// Forward all builtin types for `ArcWrapped`.
-cglue_macro::cglue_builtin_ext_wrappable!();
-
-impl<T, A: 'static> ArcWrapped<T, A> {
-    pub fn into_inner(self) -> (T, COptArc<A>) {
-        (self.inner, self.arc)
-    }
-
-    pub fn as_ref(&self) -> (&T, &COptArc<A>) {
-        (&self.inner, &self.arc)
-    }
-
-    pub fn as_mut(&mut self) -> (&mut T, &COptArc<A>) {
-        (&mut self.inner, &self.arc)
-    }
-}
-
-impl<T, O, A: 'static> From<(T, &ArcWrapped<O, A>)> for ArcWrapped<T, A> {
-    fn from((inner, other): (T, &ArcWrapped<O, A>)) -> Self {
-        Self {
-            inner,
-            arc: other.arc.clone(),
-        }
-    }
-}
-
-impl<T, A: 'static> From<(T, &COptArc<A>)> for ArcWrapped<T, A> {
-    fn from((inner, arc): (T, &COptArc<A>)) -> Self {
-        Self {
-            inner,
-            arc: arc.clone(),
-        }
-    }
-}
-
-impl<T, A: 'static> From<(T, COptArc<A>)> for ArcWrapped<T, A> {
-    fn from((inner, arc): (T, COptArc<A>)) -> Self {
-        Self { inner, arc }
-    }
-}
-
-impl<T, A: 'static> From<(T, CArc<A>)> for ArcWrapped<T, A> {
-    fn from((inner, arc): (T, CArc<A>)) -> Self {
-        (inner, COptArc::from(Some(arc))).into()
-    }
-}
-
-impl<T, A: 'static> From<(T, Arc<A>)> for ArcWrapped<T, A> {
-    fn from((inner, arc): (T, Arc<A>)) -> Self {
-        (inner, CArc::from(arc)).into()
-    }
-}
-
-impl<T, A: 'static> From<T> for ArcWrapped<T, A> {
-    fn from(inner: T) -> Self {
-        Self {
-            inner,
-            arc: None.into(),
-        }
+impl<T> Default for COptArc<T> {
+    fn default() -> Self {
+        None.into()
     }
 }
 
@@ -236,7 +181,7 @@ unsafe extern "C" fn c_clone<T: Sized + 'static>(
 
 unsafe extern "C" fn c_drop<T: Sized + 'static>(ptr_to_arc: &mut Option<&T>) {
     if let Some(p) = ptr_to_arc.take() {
-        Arc::from_raw(p);
+        let _ = Arc::from_raw(p);
     }
 }
 

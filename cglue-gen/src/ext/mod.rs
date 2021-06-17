@@ -164,13 +164,14 @@ pub fn ext_abs_remap(path: Path) -> Path {
     }
 }
 
-pub fn impl_ext_wrappable() -> TokenStream {
+pub fn impl_ext_forward() -> TokenStream {
     impl_inner(
         |_, _| quote!(),
-        |p, _| quote!(#[cglue_arc_wrappable_ext(::#p)]),
+        |p, _| quote!(#[cglue_forward_ext(::#p)]),
         |_, _| {},
     )
 }
+
 /// Implement the external trait store.
 pub fn impl_store() -> TokenStream {
     impl_inner(
@@ -184,16 +185,26 @@ pub fn impl_store() -> TokenStream {
                 for ident in [
                     "",
                     "Ext",
-                    "CGlueVtbl",
-                    "CGlueRetTmp",
-                    "OpaqueCGlueVtbl",
-                    "CGlueBase",
-                    "CGlueBox",
-                    "CGlueMut",
-                    "CGlueRef",
+                    "Vtbl",
+                    "RetTmp",
+                    "OpaqueVtbl",
+                    "Any",
+                    "Box",
+                    "CtxBox",
+                    "NoCtxBox",
+                    "ArcBox",
+                    "Mut",
+                    "Ref",
+                    "Base",
+                    "BaseBox",
+                    "BaseCtxBox",
+                    "BaseNoCtxBox",
+                    "BaseArcBox",
+                    "BaseMut",
+                    "BaseRef",
                 ]
                 .iter()
-                .map(|p| format_ident!("{}{}", p, k))
+                .map(|p| format_ident!("{}{}", k, p))
                 {
                     out.extend(quote!(pub use self:: #subpath #ident;));
                 }

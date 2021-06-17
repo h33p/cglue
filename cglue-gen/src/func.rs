@@ -17,6 +17,7 @@ pub struct WrappedType {
     pub impl_return_conv: Option<TokenStream>,
     pub inject_ret_tmp: bool,
     pub unbounded_hrtb: bool,
+    pub needs_ctx: bool,
 }
 
 /// TraitArg stores implementations for Unstable-C-Unstable ABI transitions.
@@ -140,7 +141,7 @@ impl TraitArg {
                     )
                 } else if r.mutability.is_some() {
                     (
-                        quote!(let (thisptr, ret_tmp) = self.cobj_mut();),
+                        quote!(let (thisptr, ret_tmp, cglue_ctx) = self.cobj_mut();),
                         quote!(thisptr,),
                         quote!(thisptr: &#lifetime mut CGlueF,),
                         quote!(thisptr: &#lifetime_cast mut CGlueF,),
@@ -149,7 +150,7 @@ impl TraitArg {
                     )
                 } else {
                     (
-                        quote!(let (thisptr, ret_tmp) = self.cobj_ref();),
+                        quote!(let (thisptr, ret_tmp, cglue_ctx) = self.cobj_ref();),
                         quote!(thisptr,),
                         quote!(thisptr: &#lifetime CGlueF,),
                         quote!(thisptr: &#lifetime_cast CGlueF,),
@@ -295,6 +296,7 @@ pub struct ParsedFunc {
     args: Vec<TraitArg>,
     out: ParsedReturnType,
     generics: ParsedGenerics,
+    sig_generics: ParsedGenerics,
 }
 
 impl ParsedFunc {
@@ -317,22 +319,25 @@ impl ParsedFunc {
 
         let unsafety = if safe { quote!(unsafe) } else { quote!() };
 
+        for input in sig.inputs.iter() {
+            if let FnArg::Receiver(r) = &input {
+                receiver = Some(r.clone());
+            }
+        }
+
+        let receiver = receiver?;
+
         let out = ParsedReturnType::new(
             sig.output,
             wrap_types,
             res_override,
             int_result,
             &unsafety,
-            &name,
-            crate_path,
-            (&trait_name, generics),
+            (&name, &receiver),
+            (crate_path, &trait_name, generics),
         );
 
         for input in sig.inputs.into_iter() {
-            if let FnArg::Receiver(r) = &input {
-                receiver = Some(r.clone());
-            }
-
             let func = TraitArg::new(
                 input,
                 wrap_types,
@@ -347,9 +352,9 @@ impl ParsedFunc {
             args.push(func);
         }
 
-        let receiver = receiver?;
-
         let generics = generics.clone();
+
+        let sig_generics = ParsedGenerics::from(&sig.generics);
 
         Some(Self {
             name,
@@ -361,6 +366,7 @@ impl ParsedFunc {
             args,
             out,
             generics,
+            sig_generics,
         })
     }
 
@@ -550,20 +556,23 @@ impl ParsedFunc {
             ..
         } = &self.out;
 
+        let ParsedGenerics {
+            life_declare: sig_life_declare,
+            ..
+        } = &self.sig_generics;
+
         let (hrtb, args, c_out) = match (
             lifetime.as_ref().filter(|lt| lt.ident != "cglue_a"),
             lifetime_cast,
             *unbounded_hrtb,
         ) {
-            (_, Some(lifetime), false) => {
-                (quote!(for<#lifetime>), self.vtbl_args_cast(), c_cast_out)
-            }
-            (Some(lifetime), _, _) => (quote!(for<#lifetime>), args, c_out),
+            (_, Some(lifetime), false) => (quote!(#lifetime), self.vtbl_args_cast(), c_cast_out),
+            (Some(lifetime), _, _) => (quote!(#lifetime), args, c_out),
             _ => (quote!(), args, c_out),
         };
 
         let gen = quote! {
-            #name: #hrtb extern "C" fn(#args #c_ret_params) #c_out,
+            #name: for<#sig_life_declare #hrtb> extern "C" fn(#args #c_ret_params) #c_out,
         };
 
         stream.extend(gen);
@@ -583,15 +592,18 @@ impl ParsedFunc {
             ..
         } = &self.out;
 
+        let ParsedGenerics {
+            life_declare: sig_life_declare,
+            ..
+        } = &self.sig_generics;
+
         let (hrtb, args, c_out) = match (
             lifetime.as_ref().filter(|lt| lt.ident != "cglue_a"),
             lifetime_cast,
             *unbounded_hrtb,
         ) {
-            (_, Some(lifetime), false) => {
-                (quote!(for<#lifetime>), self.vtbl_args_cast(), c_cast_out)
-            }
-            (Some(lifetime), _, _) => (quote!(for<#lifetime>), args, c_out),
+            (_, Some(lifetime), false) => (quote!(#lifetime), self.vtbl_args_cast(), c_cast_out),
+            (Some(lifetime), _, _) => (quote!(#lifetime), args, c_out),
             _ => (quote!(), args, c_out),
         };
 
@@ -602,7 +614,7 @@ impl ParsedFunc {
             ///
             /// Note that this function is wrapped into unsafe, because if already were is an
             /// opaque one, it would allow to invoke undefined behaviour.
-            pub fn #name(&self) -> #hrtb unsafe extern "C" fn(#args #c_ret_params) #c_out {
+            pub fn #name(&self) -> for<#sig_life_declare #hrtb> unsafe extern "C" fn(#args #c_ret_params) #c_out {
                 unsafe { ::core::mem::transmute(self.#name) }
             }
         };
@@ -646,9 +658,9 @@ impl ParsedFunc {
         &self,
         tokens: &mut TokenStream,
         trg_path: &TokenStream,
-    ) -> Option<&TokenStream> {
+    ) -> (Option<&TokenStream>, bool) {
         if !self.is_wrapped() {
-            return None;
+            return (None, false);
         }
 
         let name = &self.name;
@@ -658,12 +670,14 @@ impl ParsedFunc {
             c_where_bounds,
             c_where_bounds_cast,
             c_ret,
+            c_pre_call,
             c_ret_params,
             use_hrtb,
             return_self,
             lifetime,
             lifetime_cast,
             unbounded_hrtb,
+            needs_ctx,
             ..
         } = &self.out;
         let call_args = self.to_trait_call_args();
@@ -681,6 +695,11 @@ impl ParsedFunc {
             ..
         } = &self.generics;
 
+        let ParsedGenerics {
+            life_declare: sig_life_declare,
+            ..
+        } = &self.sig_generics;
+
         let tmp_lifetime = if *use_hrtb && !life_use.is_empty() {
             quote!('cglue_b, )
         } else {
@@ -697,11 +716,50 @@ impl ParsedFunc {
 
         let mut container_bound = TokenStream::new();
 
-        let this = if self.receiver.reference.is_none() {
+        let (c_pre_call, this) = if self.receiver.reference.is_none() {
             container_bound.extend(quote!(#trg_path::IntoInner<InnerTarget = CGlueF> + ));
-            quote!(unsafe { thisobj.into_inner() })
+            if *needs_ctx {
+                (
+                    quote!(
+                        let (thisobj, cglue_ctx) = unsafe { thisobj.split_ctx_owned() };
+                        #c_pre_call
+                    ),
+                    quote!(thisobj),
+                )
+            } else {
+                (
+                    quote!(
+                        let thisobj = unsafe { thisobj.into_inner() };
+                        #c_pre_call
+                    ),
+                    quote!(thisobj),
+                )
+            }
         } else {
-            quote!(thisptr)
+            (quote!(#c_pre_call), quote!(thisptr))
+        };
+
+        let cglue_c = if *needs_ctx {
+            container_bound
+                .extend(quote!(#trg_path::ContextRef<Context = CGlueC, ObjType = CGlueF> + ));
+
+            if self.receiver.reference.is_some() {
+                container_bound.extend(quote!(::core::ops::Deref<Target = CGlueF>+));
+
+                if self.receiver.mutability.is_some() {
+                    container_bound.extend(quote!(::core::ops::DerefMut+));
+                    container_bound.extend(quote!(#trg_path::ContextMut + ));
+                }
+            } else {
+                container_bound.extend(quote!(#trg_path::ContextMut + ));
+                container_bound.extend(quote!(#trg_path::ContextOwned + ));
+            }
+
+            Some(
+                quote!(CGlueC: 'static + Clone + #trg_path::Opaquable, CGlueD: 'static + Clone + #trg_path::Opaquable, ),
+            )
+        } else {
+            None
         };
 
         let container_bound = if !container_bound.is_empty() {
@@ -719,7 +777,8 @@ impl ParsedFunc {
         };
 
         let gen = quote! {
-            #safety extern "C" fn #fnname<#life_declare #container_bound CGlueF: for<'cglue_b> #trname<#tmp_lifetime #gen_use>, #gen_declare>(#args #c_ret_params) #c_out where #gen_where_bounds #c_where_bounds {
+            #safety extern "C" fn #fnname<#sig_life_declare #life_declare #container_bound #cglue_c CGlueF: for<'cglue_b> #trname<#tmp_lifetime #gen_use>, #gen_declare>(#args #c_ret_params) #c_out where #gen_where_bounds #c_where_bounds {
+                #c_pre_call
                 let ret = #this.#name(#call_args);
                 #c_ret
             }
@@ -727,14 +786,22 @@ impl ParsedFunc {
 
         tokens.extend(gen);
 
-        Some(c_where_bounds)
+        (Some(c_where_bounds), *needs_ctx)
     }
 
     pub fn vtbl_default_def(&self, tokens: &mut TokenStream) {
         let name = &self.name;
 
         let fnname: TokenStream = if self.is_wrapped() {
-            format!("{}{}", FN_PREFIX, name)
+            let generics = if self.out.needs_ctx {
+                let gen_use = &self.generics.gen_use;
+
+                quote!(::<CGlueT, CGlueC, CGlueD, CGlueF, #gen_use>)
+            } else {
+                quote!()
+            };
+
+            format!("{}{}{}", FN_PREFIX, name, generics)
         } else {
             format!("CGlueF::{}", name)
         }
@@ -769,6 +836,11 @@ impl ParsedFunc {
         let safety = self.get_safety();
         let abi = self.abi.prefix();
 
+        let ParsedGenerics {
+            life_declare: sig_life_declare,
+            ..
+        } = &self.sig_generics;
+
         let get_vfunc = if lifetime_cast.is_some() && *unbounded_hrtb {
             let name_lifetimed = format_ident!("{}_lifetimed", name);
             quote!(unsafe { self.get_vtbl().#name_lifetimed() })
@@ -778,11 +850,11 @@ impl ParsedFunc {
 
         let gen = quote! {
             #[inline(always)]
-            #safety #abi fn #name (#args) #out {
+            #safety #abi fn #name <#sig_life_declare> (#args) #out {
                 let __cglue_vfunc = #get_vfunc;
                 #def_args
                 #c_ret_precall_def
-                let ret = __cglue_vfunc(#call_args #c_call_ret_args);
+                let mut ret = __cglue_vfunc(#call_args #c_call_ret_args);
                 #impl_func_ret
             }
         };
@@ -810,6 +882,12 @@ impl ParsedFunc {
         let safety = self.get_safety();
         let abi = self.abi.prefix();
 
+        let ParsedGenerics {
+            life_declare,
+            gen_declare,
+            ..
+        } = &self.sig_generics;
+
         let return_out = if *use_wrap {
             quote!(Self(ret))
         } else {
@@ -818,7 +896,7 @@ impl ParsedFunc {
 
         let gen = quote! {
             #[inline(always)]
-            #safety #abi fn #name (#args) #out {
+            #safety #abi fn #name <#life_declare #gen_declare> (#args) #out {
                 let ret = (self.0).#name(#passthrough_args);
                 #return_out
             }
@@ -839,6 +917,12 @@ impl ParsedFunc {
         let safety = self.get_safety();
         let abi = self.abi.prefix();
 
+        let ParsedGenerics {
+            life_declare,
+            gen_declare,
+            ..
+        } = &self.sig_generics;
+
         let get_inner = if self.receiver.reference.is_none() {
             quote!(self.into_inner())
         } else if self.receiver.mutability.is_some() {
@@ -855,7 +939,7 @@ impl ParsedFunc {
 
         let gen = quote! {
             #[inline(always)]
-            #safety #abi fn #name (#args) #out {
+            #safety #abi fn #name <#life_declare #gen_declare> (#args) #out {
                 let (inner, arc) = #get_inner;
                 let ret = inner.#name(#passthrough_args);
                 #return_out
@@ -930,6 +1014,7 @@ struct ParsedReturnType {
     c_ret_params: TokenStream,
     c_ret_precall_def: TokenStream,
     c_call_ret_args: TokenStream,
+    c_pre_call: Option<TokenStream>,
     c_ret: TokenStream,
     impl_func_ret: TokenStream,
     /// Whether HRTB and tmp stack should be injected.
@@ -945,6 +1030,7 @@ struct ParsedReturnType {
     unbounded_hrtb: bool,
     return_self: bool,
     use_wrap: bool,
+    needs_ctx: bool,
 }
 
 // TODO: handle more cases
@@ -983,9 +1069,8 @@ impl ParsedReturnType {
         res_override: Option<&Ident>,
         int_result: bool,
         unsafety: &TokenStream,
-        func_name: &Ident,
-        crate_path: &TokenStream,
-        (trait_name, trait_generics): (&Ident, &ParsedGenerics),
+        (func_name, receiver): (&Ident, &Receiver),
+        (crate_path, trait_name, trait_generics): (&TokenStream, &Ident, &ParsedGenerics),
     ) -> Self {
         let mut ret = Self {
             ty: ty.clone(),
@@ -996,6 +1081,7 @@ impl ParsedReturnType {
             c_ret_params: quote!(),
             c_ret_precall_def: quote!(),
             c_call_ret_args: quote!(),
+            c_pre_call: None,
             c_ret: quote!(ret),
             impl_func_ret: quote!(ret),
             injected_ret_tmp: None,
@@ -1006,6 +1092,7 @@ impl ParsedReturnType {
             unbounded_hrtb: false,
             return_self: false,
             use_wrap: false,
+            needs_ctx: false,
         };
 
         if let ReturnType::Type(_, ty) = &mut ty {
@@ -1024,6 +1111,7 @@ impl ParsedReturnType {
                     impl_return_conv,
                     ty: new_ty,
                     ty_static,
+                    needs_ctx,
                     ..
                 } = wrapped.2;
 
@@ -1137,6 +1225,17 @@ impl ParsedReturnType {
                         _ => (None, quote!(), quote!(), quote!()),
                     };
 
+                let (tmp_type_def, c_pre_call, tmp_call_def) =
+                    if *needs_ctx && receiver.reference.is_some() {
+                        (
+                            quote!(#tmp_type_def cglue_ctx: &CGlueC,),
+                            Some(quote!(#tmp_impl_def let cglue_ctx = cglue_ctx.clone();)),
+                            quote!(#tmp_call_def cglue_ctx,),
+                        )
+                    } else {
+                        (tmp_type_def, None, tmp_call_def)
+                    };
+
                 let impl_return_conv = impl_return_conv
                     .as_ref()
                     .cloned()
@@ -1158,6 +1257,7 @@ impl ParsedReturnType {
                 ret.c_ret_params = tmp_type_def;
                 ret.c_ret_precall_def = tmp_impl_def;
                 ret.c_call_ret_args = tmp_call_def;
+                ret.c_pre_call = c_pre_call;
                 ret.c_ret = quote!(#ret_wrap);
                 ret.impl_func_ret = impl_return_conv;
                 ret.injected_ret_tmp = injected_ret_tmp;
@@ -1168,6 +1268,7 @@ impl ParsedReturnType {
                 ret.use_wrap = true;
                 ret.lifetime = lifetime;
                 ret.lifetime_cast = lifetime_cast;
+                ret.needs_ctx = *needs_ctx;
             }
 
             if let Type::Path(p) = &mut **ty {
@@ -1299,13 +1400,11 @@ impl ParsedReturnType {
 }
 
 fn replace_path_keep_final_args(ty: Option<&mut Type>, new_path: Path) {
-    if let Some(ty) = ty {
-        if let Type::Path(path) = ty {
-            let old_path = std::mem::replace(&mut path.path, new_path);
-            if let Some(seg) = old_path.segments.into_iter().last() {
-                if let Some(new_seg) = path.path.segments.iter_mut().last() {
-                    new_seg.arguments = seg.arguments;
-                }
+    if let Some(Type::Path(path)) = ty {
+        let old_path = std::mem::replace(&mut path.path, new_path);
+        if let Some(seg) = old_path.segments.into_iter().last() {
+            if let Some(new_seg) = path.path.segments.iter_mut().last() {
+                new_seg.arguments = seg.arguments;
             }
         }
     }

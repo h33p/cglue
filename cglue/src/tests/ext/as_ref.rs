@@ -1,7 +1,7 @@
 use super::super::simple::structs::*;
 use cglue_macro::*;
 
-cglue_trait_group!(MaybeAsRef<T>, {}, ::ext::core::convert::AsRef<T>);
+cglue_trait_group!(MaybeAsRef<T>, {}, ::ext::core::convert::AsRef<T>, {}, false);
 cglue_impl_group!(SA, MaybeAsRef<SA>, ::ext::core::convert::AsRef<SA>);
 
 #[test]

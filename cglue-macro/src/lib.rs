@@ -2,7 +2,6 @@
 
 extern crate proc_macro;
 
-use cglue_gen::arc_wrap::gen_wrap;
 use cglue_gen::ext::{ext_abs_remap, prelude_remap_with_ident};
 use cglue_gen::forward::gen_forward;
 use cglue_gen::generics::{GenericCastType, GenericType};
@@ -35,7 +34,7 @@ pub fn cglue_trait(_args: TokenStream, input: TokenStream) -> TokenStream {
 pub fn cglue_trait_ext(_args: TokenStream, input: TokenStream) -> TokenStream {
     let tr = parse_macro_input!(input as ItemTrait);
 
-    let ext_ident = format_ident!("Ext{}", tr.ident);
+    let ext_ident = format_ident!("{}Ext", tr.ident);
 
     let trait_def = cglue_gen::traits::gen_trait(tr, Some(&ext_ident));
 
@@ -72,7 +71,7 @@ pub fn trait_obj(args: TokenStream) -> TokenStream {
         path
     };
 
-    let target = format_ident!("CGlueBase{}", target.to_token_stream().to_string());
+    let target = format_ident!("{}Base", target.to_token_stream().to_string());
 
     let gen = quote! {
         #crate_path::trait_group::Opaquable::into_opaque({
@@ -295,16 +294,6 @@ pub fn cglue_builtin_ext_traits(_: TokenStream) -> TokenStream {
     cglue_gen::ext::impl_store().into()
 }
 
-/// Generate trait implementation for ArcWrappable.
-///
-/// This is useful for building automatic resource unloading when a trait object gets dropped, for
-/// instance a plugin system.
-#[proc_macro_attribute]
-pub fn cglue_arc_wrappable(_: TokenStream, input: TokenStream) -> TokenStream {
-    let tr = parse_macro_input!(input as ItemTrait);
-    gen_wrap(tr, None).into()
-}
-
 /// Generate forward trait implementation for Fwd.
 ///
 /// This is useful for using references of trait objects as generic parameters.
@@ -314,21 +303,20 @@ pub fn cglue_forward(_: TokenStream, input: TokenStream) -> TokenStream {
     gen_forward(tr, None).into()
 }
 
-/// Generate trait implementation for ArcWrappable.
+/// Generate forward trait implementation for Fwd.
 ///
-/// This is useful for building automatic resource unloading when a trait object gets dropped, for
-/// instance a plugin system.
+/// This is useful for using references of trait objects as generic parameters.
 #[proc_macro_attribute]
-pub fn cglue_arc_wrappable_ext(args: TokenStream, input: TokenStream) -> TokenStream {
+pub fn cglue_forward_ext(args: TokenStream, input: TokenStream) -> TokenStream {
     let path = parse_macro_input!(args as proc_macro2::TokenStream);
     let tr = parse_macro_input!(input as ItemTrait);
-    gen_wrap(tr, Some(path)).into()
+    gen_forward(tr, Some(path)).into()
 }
 
-/// Implement #[cglue_arc_wrappable] for all builtin external traits.
+/// Implement #[cglue_forward_ext] for all builtin external traits.
 #[proc_macro]
-pub fn cglue_builtin_ext_wrappable(_: TokenStream) -> TokenStream {
-    cglue_gen::ext::impl_ext_wrappable().into()
+pub fn cglue_builtin_ext_forward(_: TokenStream) -> TokenStream {
+    cglue_gen::ext::impl_ext_forward().into()
 }
 
 // Marker macros for wrapping
@@ -411,11 +399,5 @@ pub fn wrap_with_group_ref(_: TokenStream, input: TokenStream) -> TokenStream {
 /// Wrap the associated type with a CGlue trait group mutable reference.
 #[proc_macro_attribute]
 pub fn wrap_with_group_mut(_: TokenStream, input: TokenStream) -> TokenStream {
-    input
-}
-
-/// Wrap the associated type with ArcWrappable (used by #[cglue_arc_wrappable]).
-#[proc_macro_attribute]
-pub fn arc_wrap(_: TokenStream, input: TokenStream) -> TokenStream {
     input
 }

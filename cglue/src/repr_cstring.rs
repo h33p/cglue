@@ -92,6 +92,20 @@ impl std::fmt::Debug for ReprCString {
     }
 }
 
+impl std::hash::Hash for ReprCString {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.as_ref().hash(state);
+    }
+}
+
+impl std::cmp::PartialEq for ReprCString {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_ref().eq(other.as_ref())
+    }
+}
+
+impl std::cmp::Eq for ReprCString {}
+
 #[cfg(feature = "serde")]
 impl serde::Serialize for ReprCString {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>

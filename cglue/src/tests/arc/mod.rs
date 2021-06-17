@@ -1,9 +1,9 @@
 use super::simple::structs::*;
 use crate::arc::*;
+use crate::boxed::*;
 use crate::*;
 use std::sync::Arc;
 
-#[cglue_arc_wrappable]
 #[cglue_trait]
 pub trait DoThings {
     fn dt_1(&self) -> usize;
@@ -15,7 +15,6 @@ impl DoThings for SA {
     }
 }
 
-#[cglue_arc_wrappable]
 #[cglue_trait]
 pub trait DoThingsSend: Send {
     fn dts_1(&self) -> usize;
@@ -27,41 +26,8 @@ impl DoThingsSend for SA {
     }
 }
 
-#[cglue_arc_wrappable]
-pub trait DoThingsAssoc {
-    type ReturnType;
-
-    fn dta_1(&self) -> Self::ReturnType;
-}
-
-impl DoThingsAssoc for SA {
-    type ReturnType = usize;
-
-    fn dta_1(&self) -> Self::ReturnType {
-        56
-    }
-}
-
-#[cglue_arc_wrappable]
-pub trait DoThingsAssocWrapped {
-    #[arc_wrap]
-    type ReturnType;
-
-    fn dtaw_1(&self) -> Self::ReturnType;
-}
-
-impl DoThingsAssocWrapped for SA {
-    type ReturnType = usize;
-
-    fn dtaw_1(&self) -> Self::ReturnType {
-        57
-    }
-}
-
-#[cglue_arc_wrappable]
 #[cglue_trait]
 pub trait DoerGetter {
-    #[arc_wrap]
     #[wrap_with_obj(DoThings)]
     type ReturnType: DoThings;
 
@@ -79,22 +45,8 @@ impl DoerGetter for SA {
 #[test]
 fn use_dothings() {
     let sa = SA {};
-    let wrapped: ArcWrapped<SA, ()> = (sa, Arc::new(())).into();
+    let wrapped = CtxBox::from((sa, CArc::from(()).into_opt()));
     assert_eq!(wrapped.dt_1(), 55);
-}
-
-#[test]
-fn use_dothings_assoc() {
-    let sa = SA {};
-    let wrapped: ArcWrapped<SA, ()> = (sa, Arc::new(())).into();
-    assert_eq!(wrapped.dta_1(), 56);
-}
-
-#[test]
-fn use_dothings_assoc_wrapped() {
-    let sa = SA {};
-    let wrapped: ArcWrapped<SA, ()> = (sa, Arc::new(())).into();
-    assert_eq!(wrapped.dtaw_1().inner, 57);
 }
 
 #[test]
@@ -105,13 +57,13 @@ fn use_getter_obj() {
 
     assert_eq!(Arc::strong_count(&arc), 1);
 
-    let opt_arc = COptArc::from(Some(CArc::from(arc.clone())));
+    let opt_arc = COptArc::from(Some(CArc::<()>::from(arc.clone())));
 
     assert_eq!(Arc::strong_count(&arc), 2);
 
-    let wrapped: ArcWrapped<SA, ()> = (sa, opt_arc).into();
+    let wrapped = CtxBox::from((sa, opt_arc));
 
-    let getter = trait_obj!(wrapped as DoerGetter);
+    let getter: DoerGetterArcBox = trait_obj!(wrapped as DoerGetter);
 
     assert_eq!(Arc::strong_count(&arc), 2);
 
@@ -140,13 +92,11 @@ fn use_clone_obj() {
 
     assert_eq!(Arc::strong_count(&arc), 1);
 
-    let opt_arc = COptArc::from(Some(CArc::from(arc.clone())));
+    let opt_arc = CArc::<()>::from(arc.clone()).into_opt();
 
     assert_eq!(Arc::strong_count(&arc), 2);
 
-    let wrapped: ArcWrapped<SA, ()> = (sa, opt_arc).into();
-
-    assert_eq!(Arc::strong_count(&arc), 2);
+    let wrapped = CtxBox::from((sa, opt_arc));
 
     let obj = trait_obj!(wrapped as Clone);
 
@@ -173,11 +123,11 @@ fn use_debug_obj() {
 
     assert_eq!(Arc::strong_count(&arc), 1);
 
-    let opt_arc = COptArc::from(Some(CArc::from(arc.clone())));
+    let opt_arc = CArc::<()>::from(arc.clone()).into_opt();
 
     assert_eq!(Arc::strong_count(&arc), 2);
 
-    let wrapped: ArcWrapped<SA, ()> = (sa, opt_arc).into();
+    let wrapped = CtxBox::from((sa, opt_arc));
 
     assert_eq!(Arc::strong_count(&arc), 2);
 
