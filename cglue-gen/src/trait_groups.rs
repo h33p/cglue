@@ -1462,7 +1462,7 @@ impl TraitGroup {
                     }
                 }
 
-                impl<CGlueT: ::core::ops::Deref<Target = CGlueF> + crate::trait_group::ContextRef<ObjType = CGlueF, Context = CGlueC>, CGlueF, CGlueC: 'static + Clone + #crate_path::trait_group::Opaquable<OpaqueTarget = CGlueD>, CGlueD: #crate_path::trait_group::Opaquable<OpaqueTarget = CGlueD> + 'static + Clone, #all_gen_declare>
+                impl<CGlueT: ::core::ops::Deref<Target = CGlueF> + #crate_path::trait_group::ContextRef<ObjType = CGlueF, Context = CGlueC>, CGlueF, CGlueC: 'static + Clone + #crate_path::trait_group::Opaquable<OpaqueTarget = CGlueD>, CGlueD: #crate_path::trait_group::Opaquable<OpaqueTarget = CGlueD> + 'static + Clone, #all_gen_declare>
                     #trg_path::CGlueObjBuild<#path #ret_tmp_typename<#gen_use>> for #name<'_, CGlueT, CGlueF, CGlueC, CGlueD, #all_gen_use> where #all_gen_where_bounds
                 {
                     unsafe fn cobj_build(&self, instance: Self::ContType) -> Self {
