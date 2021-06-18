@@ -296,9 +296,9 @@ impl<
         // Container type
         CGlueT: ContextRef<Context = CGlueC> + Deref<Target = GA<T>>,
         // Base context type, that opaques to `CGlueD`
-        CGlueC: 'static + Clone + Opaquable<OpaqueTarget = CGlueD>,
+        CGlueC: 'static + Clone + Send + Sync + Opaquable<OpaqueTarget = CGlueD>,
         // Opaque context type, that has been short-circuit to opaque to self
-        CGlueD: 'static + Clone + Opaquable<OpaqueTarget = CGlueD>,
+        CGlueD: 'static + Clone + Send + Sync + Opaquable<OpaqueTarget = CGlueD>,
         // This is the user-provided Eq bound
         T: Eq,
     > GenGroupVtableFiller<'cglue_a, CGlueT, CGlueC, CGlueD, T> for GA<T>
@@ -317,9 +317,9 @@ impl<
         // Container type
         CGlueT: ContextRef<Context = CGlueC> + Deref<Target = GA<u64>>,
         // Base context type, that opaques to `CGlueD`
-        CGlueC: 'static + Clone + Opaquable<OpaqueTarget = CGlueD>,
+        CGlueC: 'static + Clone + Send + Sync + Opaquable<OpaqueTarget = CGlueD>,
         // Opaque context type, that has been short-circuit to opaque to self
-        CGlueD: 'static + Clone + Opaquable<OpaqueTarget = CGlueD>,
+        CGlueD: 'static + Clone + Send + Sync + Opaquable<OpaqueTarget = CGlueD>,
     > GenGroupVtableFiller<'cglue_a, CGlueT, CGlueC, CGlueD, u64> for GA<u64>
 {
     fn fill_table(

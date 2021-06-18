@@ -313,7 +313,7 @@ pub fn cglue_forward_ext(args: TokenStream, input: TokenStream) -> TokenStream {
     gen_forward(tr, Some(path)).into()
 }
 
-/// Implement #[cglue_forward_ext] for all builtin external traits.
+/// Implement [macro@cglue_forward_ext] for all builtin external traits.
 #[proc_macro]
 pub fn cglue_builtin_ext_forward(_: TokenStream) -> TokenStream {
     cglue_gen::ext::impl_ext_forward().into()

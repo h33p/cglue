@@ -13,6 +13,16 @@ pub fn ctx_bound() -> TokenStream {
     quote!(#crate_path::trait_group::ContextRef<Context = CGlueC> + )
 }
 
+// TODO: Add dynamic setting of Send / Sync
+pub fn cd_bounds() -> TokenStream {
+    quote!('static + Clone + Send + Sync)
+}
+
+pub fn cd_opaque_bound() -> TokenStream {
+    let crate_path = crate::util::crate_path();
+    quote!(#crate_path::trait_group::Opaquable<OpaqueTarget = CGlueD>)
+}
+
 pub fn cglue_c_opaque_bound() -> TokenStream {
     let crate_path = crate::util::crate_path();
     quote!(CGlueC::OpaqueTarget: #crate_path::trait_group::Opaquable,)
@@ -283,12 +293,14 @@ pub fn process_item(
                         (type_bounds, type_bounds_simple)
                     };
 
+                    let cd_bounds = cd_bounds();
+
                     // Inject opaquable to CGlueC's opaque target, to form an infinitely opaquable
                     // chain. Needed when CGlueC is used.
                     let (type_bounds, type_bounds_simple) = if needs_ctx {
                         (
-                            quote!(#type_bounds CGlueD: 'static + Clone + #crate_path::trait_group::Opaquable, ),
-                            quote!(#type_bounds_simple CGlueD: 'static + Clone + #crate_path::trait_group::Opaquable, ),
+                            quote!(#type_bounds CGlueD: #cd_bounds + #crate_path::trait_group::Opaquable, ),
+                            quote!(#type_bounds_simple CGlueD: #cd_bounds + #crate_path::trait_group::Opaquable, ),
                         )
                     } else {
                         (type_bounds, type_bounds_simple)
@@ -590,6 +602,8 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
     let (funcs, generics, trait_type_defs) = parse_trait(&tr, &crate_path, process_item);
 
     let cglue_c_opaque_bound = cglue_c_opaque_bound();
+    let cd_bounds = cd_bounds();
+    let cd_opaque_bound = cd_opaque_bound();
 
     tr.ident = trait_impl_name.clone();
 
@@ -920,7 +934,7 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
                 _lt_cglue_a: ::core::marker::PhantomData<&'cglue_a CGlueT>,
             }
 
-            impl<'cglue_a, CGlueT, CGlueF, CGlueC: 'static + #trg_path::Opaquable<OpaqueTarget = CGlueD>, CGlueD: 'static, #gen_declare_stripped> #vtbl_ident<'cglue_a, CGlueT, CGlueF, CGlueC, CGlueD, #gen_use>
+            impl<'cglue_a, CGlueT, CGlueF, CGlueC: 'static + #cd_opaque_bound, CGlueD: 'static, #gen_declare_stripped> #vtbl_ident<'cglue_a, CGlueT, CGlueF, CGlueC, CGlueD, #gen_use>
                 where #gen_where_bounds
             {
                 #vtbl_getter_defintions
@@ -931,7 +945,7 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
             /* Default implementation. */
 
             /// Default vtable reference creation.
-            impl<'cglue_a, CGlueT #cglue_t_bounds, CGlueF: for<#life_declare> #trait_name<#life_use #gen_use>, CGlueC: 'static + Clone + #trg_path::Opaquable<OpaqueTarget = CGlueD>, CGlueD: 'static + Clone + #trg_path::Opaquable<OpaqueTarget = CGlueD>, #gen_declare_stripped> Default for &'cglue_a #vtbl_ident<'cglue_a, CGlueT, CGlueF, CGlueC, CGlueD, #gen_use> where #gen_where_bounds #trait_type_bounds {
+            impl<'cglue_a, CGlueT #cglue_t_bounds, CGlueF: for<#life_declare> #trait_name<#life_use #gen_use>, CGlueC: #cd_bounds + #cd_opaque_bound, CGlueD: #cd_bounds + #cd_opaque_bound, #gen_declare_stripped> Default for &'cglue_a #vtbl_ident<'cglue_a, CGlueT, CGlueF, CGlueC, CGlueD, #gen_use> where #gen_where_bounds #trait_type_bounds {
                 /// Create a static vtable for the given type.
                 fn default() -> Self {
                     &#vtbl_ident {
@@ -950,12 +964,12 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
             /// and trait groups.
             pub type #opaque_vtbl_ident<'cglue_a, CGlueT, CGlueD, #gen_use> = #vtbl_ident<'cglue_a, CGlueT, #c_void, CGlueD, CGlueD, #gen_use>;
 
-            unsafe impl<'cglue_a, CGlueT: #trg_path::Opaquable + 'cglue_a, CGlueF: for<#life_declare> #trait_name<#life_use #gen_use>, CGlueC: #trg_path::Opaquable<OpaqueTarget = CGlueD> + 'static, CGlueD: 'static, #gen_declare_stripped> #trg_path::CGlueBaseVtbl for #vtbl_ident<'cglue_a, CGlueT, CGlueF, CGlueC, CGlueD, #gen_use> where #gen_where_bounds #cglue_c_opaque_bound {
+            unsafe impl<'cglue_a, CGlueT: #trg_path::Opaquable + 'cglue_a, CGlueF: for<#life_declare> #trait_name<#life_use #gen_use>, CGlueC: #cd_opaque_bound + 'static, CGlueD: 'static, #gen_declare_stripped> #trg_path::CGlueBaseVtbl for #vtbl_ident<'cglue_a, CGlueT, CGlueF, CGlueC, CGlueD, #gen_use> where #gen_where_bounds #cglue_c_opaque_bound {
                 type OpaqueVtbl = #opaque_vtbl_ident<'cglue_a, CGlueT::OpaqueTarget, CGlueD, #gen_use>;
                 type RetTmp = #ret_tmp_ident<#gen_use>;
             }
 
-            impl<'cglue_a, CGlueT #cglue_t_bounds, CGlueF: for<#life_declare> #trait_name<#life_use #gen_use>, CGlueC: 'static + Clone + #trg_path::Opaquable<OpaqueTarget = CGlueD>, CGlueD: 'static + Clone + #trg_path::Opaquable<OpaqueTarget = CGlueD>, #gen_declare_stripped> #trg_path::CGlueVtbl<CGlueF, CGlueC> for #vtbl_ident<'cglue_a, CGlueT, CGlueF, CGlueC, CGlueD, #gen_use> where #gen_where_bounds CGlueT: #trg_path::Opaquable, #cglue_c_opaque_bound {}
+            impl<'cglue_a, CGlueT #cglue_t_bounds, CGlueF: for<#life_declare> #trait_name<#life_use #gen_use>, CGlueC: #cd_bounds + #cd_opaque_bound, CGlueD: #cd_bounds + #cd_opaque_bound, #gen_declare_stripped> #trg_path::CGlueVtbl<CGlueF, CGlueC> for #vtbl_ident<'cglue_a, CGlueT, CGlueF, CGlueC, CGlueD, #gen_use> where #gen_where_bounds CGlueT: #trg_path::Opaquable, #cglue_c_opaque_bound {}
 
             #[doc = #base_box_trait_obj_doc]
             pub type #base_box_trait_obj_ident<'cglue_a, CGlueF, #gen_use>
@@ -1019,7 +1033,7 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
 
             /* Trait implementation. */
 
-            impl<'cglue_a, #life_declare CGlueT #cglue_t_bounds_opaque, #cglue_f_in_impl CGlueD: 'static + Clone + #trg_path::Opaquable<OpaqueTarget = CGlueD>, CGlueO: 'cglue_a + #trg_path::GetVtbl<#opaque_vtbl_ident<'cglue_a, CGlueT, CGlueD, #gen_use>> + #trg_path::#required_mutability<#ret_tmp_ident<#gen_use>, ObjType = #c_void, ContType = CGlueT, Context = CGlueD> #return_self_bound #supertrait_bounds, #gen_declare> #trait_impl_name<#life_use #gen_use> for CGlueO where #gen_where_bounds
+            impl<'cglue_a, #life_declare CGlueT #cglue_t_bounds_opaque, #cglue_f_in_impl CGlueD: #cd_bounds + #cd_opaque_bound, CGlueO: 'cglue_a + #trg_path::GetVtbl<#opaque_vtbl_ident<'cglue_a, CGlueT, CGlueD, #gen_use>> + #trg_path::#required_mutability<#ret_tmp_ident<#gen_use>, ObjType = #c_void, ContType = CGlueT, Context = CGlueD> #return_self_bound #supertrait_bounds, #gen_declare> #trait_impl_name<#life_use #gen_use> for CGlueO where #gen_where_bounds
             {
                 #trait_type_defs
                 #trait_impl_fns

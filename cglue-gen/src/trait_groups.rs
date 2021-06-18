@@ -307,6 +307,8 @@ impl TraitGroupImpl {
         let crate_path = crate_path();
 
         let ctx_bound = super::traits::ctx_bound();
+        let cd_bounds = super::traits::cd_bounds();
+        let cd_opaque_bound = super::traits::cd_opaque_bound();
         let cglue_c_opaque_bound = super::traits::cglue_c_opaque_bound();
 
         let ty_path = &self.ty_path;
@@ -346,7 +348,7 @@ impl TraitGroupImpl {
         );
 
         let gen = quote! {
-            impl<'cglue_a, CGlueT: #ctx_bound ::core::ops::Deref<Target = #full_ty>, CGlueC: 'static + Clone + #crate_path::trait_group::Opaquable<OpaqueTarget = CGlueD>, CGlueD: 'static + Clone + #crate_path::trait_group::Opaquable<OpaqueTarget = CGlueD>, #gen_declare> #group_path #filler_trait<'cglue_a, CGlueT, CGlueC, CGlueD, #gen_use> for #full_ty
+            impl<'cglue_a, CGlueT: #ctx_bound ::core::ops::Deref<Target = #full_ty>, CGlueC: #cd_bounds + #cd_opaque_bound, CGlueD: #cd_bounds + #cd_opaque_bound, #gen_declare> #group_path #filler_trait<'cglue_a, CGlueT, CGlueC, CGlueD, #gen_use> for #full_ty
             where #gen_where_bounds #vtbl_where_bounds #cglue_c_opaque_bound {
                 fn fill_table(table: #group_path #vtable_type<'cglue_a, CGlueT, #full_ty, CGlueC, CGlueD, #gen_use>) -> #group_path #vtable_type<'cglue_a, CGlueT, #full_ty, CGlueC, CGlueD, #gen_use> {
                     table #implemented_tables
@@ -371,7 +373,7 @@ impl TraitGroupImpl {
             quote! {
                 #gen
 
-                impl<'cglue_a, CGlueT: #ctx_bound ::core::ops::Deref<Target = #fwd_ty>, CGlueC: 'static + Clone + #crate_path::trait_group::Opaquable<OpaqueTarget = CGlueD>, CGlueD: 'static + Clone + #crate_path::trait_group::Opaquable<OpaqueTarget = CGlueD>, #gen_declare> #group_path #fwd_filler_trait<'cglue_a, CGlueT, CGlueC, CGlueD, #gen_use> for #full_ty
+                impl<'cglue_a, CGlueT: #ctx_bound ::core::ops::Deref<Target = #fwd_ty>, CGlueC: #cd_bounds + #cd_opaque_bound, CGlueD: #cd_bounds + #cd_opaque_bound, #gen_declare> #group_path #fwd_filler_trait<'cglue_a, CGlueT, CGlueC, CGlueD, #gen_use> for #full_ty
                     where #gen_where_bounds #vtbl_where_bounds #cglue_c_opaque_bound {
                         fn fill_fwd_table(table: #group_path #vtable_type<'cglue_a, CGlueT, #fwd_ty, CGlueC, CGlueD, #gen_use>) -> #group_path #vtable_type<'cglue_a, CGlueT, #fwd_ty, CGlueC, CGlueD, #gen_use> {
                             table #implemented_tables
@@ -518,6 +520,8 @@ impl TraitGroup {
         let crate_path = crate::util::crate_path();
 
         let ctx_bound = super::traits::ctx_bound();
+        let cd_bounds = super::traits::cd_bounds();
+        let cd_opaque_bound = super::traits::cd_opaque_bound();
 
         let trg_path: TokenStream = quote!(#crate_path::trait_group);
 
@@ -912,11 +916,11 @@ impl TraitGroup {
 
         let (extra_filler_traits, extra_filler_trait_imports) = if self.extra_filler_traits {
             let traits = quote! {
-                pub trait #fwd_filler_trait<'cglue_a, CGlueT: #ctx_bound ::core::ops::Deref<Target = #crate_path::forward::Fwd<&'cglue_a mut Self>>, CGlueC: 'static + Clone + #crate_path::trait_group::Opaquable<OpaqueTarget = CGlueD>, CGlueD: #crate_path::trait_group::Opaquable<OpaqueTarget = CGlueD>, #gen_declare>: 'cglue_a + Sized where #gen_where_bounds {
+                pub trait #fwd_filler_trait<'cglue_a, CGlueT: #ctx_bound ::core::ops::Deref<Target = #crate_path::forward::Fwd<&'cglue_a mut Self>>, CGlueC: #cd_bounds + #cd_opaque_bound, CGlueD: #cd_opaque_bound, #gen_declare>: 'cglue_a + Sized where #gen_where_bounds {
                     fn fill_fwd_table(table: #vtable_type<'cglue_a, CGlueT, CGlueT::Target, CGlueC, CGlueD, #gen_use>) -> #vtable_type<'cglue_a, CGlueT, CGlueT::Target, CGlueC, CGlueD, #gen_use>;
                 }
 
-                impl<'cglue_a, CGlueT: #ctx_bound ::core::ops::Deref<Target = #crate_path::forward::Fwd<&'cglue_a mut CGlueF>>, CGlueF: #fwd_filler_trait<'cglue_a, CGlueT, CGlueC, CGlueD, #gen_use>, CGlueC: 'static + Clone + #crate_path::trait_group::Opaquable<OpaqueTarget = CGlueD>, CGlueD: #crate_path::trait_group::Opaquable<OpaqueTarget = CGlueD>, #gen_declare>
+                impl<'cglue_a, CGlueT: #ctx_bound ::core::ops::Deref<Target = #crate_path::forward::Fwd<&'cglue_a mut CGlueF>>, CGlueF: #fwd_filler_trait<'cglue_a, CGlueT, CGlueC, CGlueD, #gen_use>, CGlueC: #cd_bounds + #cd_opaque_bound, CGlueD: #cd_opaque_bound, #gen_declare>
                     #filler_trait<'cglue_a, CGlueT, CGlueC, CGlueD, #gen_use> for #crate_path::forward::Fwd<&'cglue_a mut CGlueF>
                     where #gen_where_bounds
                 {
@@ -993,7 +997,7 @@ impl TraitGroup {
                     #optional_vtbl_defs
                 }
 
-                impl<'cglue_a, CGlueT, CGlueF, CGlueC: 'static + #crate_path::trait_group::Opaquable<OpaqueTarget = CGlueD>, CGlueD: #crate_path::trait_group::Opaquable<OpaqueTarget = CGlueD> + 'static, #gen_declare> Default for #vtable_type<'cglue_a, CGlueT, CGlueF, CGlueC, CGlueD, #gen_use>
+                impl<'cglue_a, CGlueT, CGlueF, CGlueC: 'static + #cd_opaque_bound, CGlueD: #cd_opaque_bound + 'static, #gen_declare> Default for #vtable_type<'cglue_a, CGlueT, CGlueF, CGlueC, CGlueD, #gen_use>
                     where #vtbl_where_bounds #gen_where_bounds
                 {
                     fn default() -> Self {
@@ -1004,19 +1008,19 @@ impl TraitGroup {
                     }
                 }
 
-                impl<'cglue_a, CGlueT: ::core::ops::Deref<Target = CGlueF>, CGlueF, CGlueC: 'static + #crate_path::trait_group::Opaquable<OpaqueTarget = CGlueD>, CGlueD: #crate_path::trait_group::Opaquable<OpaqueTarget = CGlueD>, #gen_declare> #name<'cglue_a, CGlueT, CGlueF, CGlueC, CGlueD, #gen_use>
+                impl<'cglue_a, CGlueT: ::core::ops::Deref<Target = CGlueF>, CGlueF, CGlueC: 'static + #cd_opaque_bound, CGlueD: #cd_opaque_bound, #gen_declare> #name<'cglue_a, CGlueT, CGlueF, CGlueC, CGlueD, #gen_use>
                     where #gen_where_bounds
                 {
                     #enable_funcs
                 }
 
-                impl<'cglue_a, CGlueT: ::core::ops::Deref<Target = CGlueF>, CGlueF, CGlueC: 'static + #crate_path::trait_group::Opaquable<OpaqueTarget = CGlueD>, CGlueD: #crate_path::trait_group::Opaquable<OpaqueTarget = CGlueD>, #gen_declare> #vtable_type<'cglue_a, CGlueT, CGlueF, CGlueC, CGlueD, #gen_use>
+                impl<'cglue_a, CGlueT: ::core::ops::Deref<Target = CGlueF>, CGlueF, CGlueC: 'static + #cd_opaque_bound, CGlueD: #cd_opaque_bound, #gen_declare> #vtable_type<'cglue_a, CGlueT, CGlueF, CGlueC, CGlueD, #gen_use>
                     where #gen_where_bounds
                 {
                     #enable_funcs
                 }
 
-                pub trait #filler_trait<'cglue_a, CGlueT: #ctx_bound ::core::ops::Deref<Target = Self>, CGlueC: 'static + Clone + #crate_path::trait_group::Opaquable<OpaqueTarget = CGlueD>, CGlueD: #crate_path::trait_group::Opaquable<OpaqueTarget = CGlueD>, #gen_declare>: Sized where #gen_where_bounds {
+                pub trait #filler_trait<'cglue_a, CGlueT: #ctx_bound ::core::ops::Deref<Target = Self>, CGlueC: #cd_bounds + #cd_opaque_bound, CGlueD: #cd_opaque_bound, #gen_declare>: Sized where #gen_where_bounds {
                     fn fill_table(table: #vtable_type<'cglue_a, CGlueT, CGlueT::Target, CGlueC, CGlueD, #gen_use>) -> #vtable_type<'cglue_a, CGlueT, CGlueT::Target, CGlueC, CGlueD, #gen_use>;
                 }
 
@@ -1061,7 +1065,7 @@ impl TraitGroup {
                 pub type #opaque_name<'cglue_a, CGlueT: ::core::ops::Deref<Target = #c_void>, CGlueD, #gen_use>
                     = #name<'cglue_a, CGlueT, CGlueT::Target, CGlueD, CGlueD, #gen_use>;
 
-                impl<'cglue_a, CGlueT: #ctx_bound ::core::ops::Deref<Target = CGlueF>, CGlueF: #filler_trait<'cglue_a, CGlueT, CGlueC, CGlueD, #gen_use>, CGlueC: 'static + Clone + #crate_path::trait_group::Opaquable<OpaqueTarget = CGlueD>, CGlueD: #crate_path::trait_group::Opaquable<OpaqueTarget = CGlueD>, #gen_declare> From<CGlueT> for #name<'cglue_a, CGlueT, CGlueF, CGlueC, CGlueD, #gen_use>
+                impl<'cglue_a, CGlueT: #ctx_bound ::core::ops::Deref<Target = CGlueF>, CGlueF: #filler_trait<'cglue_a, CGlueT, CGlueC, CGlueD, #gen_use>, CGlueC: #cd_bounds + #cd_opaque_bound, CGlueD: #cd_opaque_bound, #gen_declare> From<CGlueT> for #name<'cglue_a, CGlueT, CGlueF, CGlueC, CGlueD, #gen_use>
                     where #vtbl_where_bounds #gen_where_bounds
                 {
                     fn from(instance: CGlueT) -> Self {
@@ -1090,7 +1094,7 @@ impl TraitGroup {
                     }
                 }
 
-                impl<'cglue_a, CGlueF, CGlueC: 'static + Clone + #crate_path::trait_group::Opaquable<OpaqueTarget = CGlueD>, CGlueD: #crate_path::trait_group::Opaquable<OpaqueTarget = CGlueD> + 'static + Clone, #gen_declare> From<(CGlueF, CGlueC)> for #name<'cglue_a, #crate_path::boxed::CtxBox<'cglue_a, CGlueF, CGlueC>, CGlueF, CGlueC, CGlueD, #gen_use>
+                impl<'cglue_a, CGlueF, CGlueC: #cd_bounds + #cd_opaque_bound, CGlueD: #cd_opaque_bound + #cd_bounds, #gen_declare> From<(CGlueF, CGlueC)> for #name<'cglue_a, #crate_path::boxed::CtxBox<'cglue_a, CGlueF, CGlueC>, CGlueF, CGlueC, CGlueD, #gen_use>
                     where CGlueF: #filler_trait<'cglue_a, #crate_path::boxed::CtxBox<'cglue_a, CGlueF, CGlueC>, CGlueC, CGlueD, #gen_use>, #vtbl_where_bounds_ctxboxed #gen_where_bounds
                 {
                     fn from((instance, ctx): (CGlueF, CGlueC)) -> Self {
@@ -1098,7 +1102,7 @@ impl TraitGroup {
                     }
                 }
 
-                impl<'cglue_a, CGlueT: ::core::ops::Deref<Target = CGlueF>, CGlueF: 'cglue_a, CGlueC: 'static + #crate_path::trait_group::Opaquable<OpaqueTarget = CGlueD>, CGlueD: #crate_path::trait_group::Opaquable<OpaqueTarget = CGlueD>, #gen_declare> #name<'cglue_a, CGlueT, CGlueF, CGlueC, CGlueD, #gen_use>
+                impl<'cglue_a, CGlueT: ::core::ops::Deref<Target = CGlueF>, CGlueF: 'cglue_a, CGlueC: 'static + #cd_opaque_bound, CGlueD: #cd_opaque_bound, #gen_declare> #name<'cglue_a, CGlueT, CGlueF, CGlueC, CGlueD, #gen_use>
                     where #vtbl_where_bounds #gen_where_bounds
                 {
                     #[doc = #new_doc]
@@ -1137,13 +1141,13 @@ impl TraitGroup {
                 /// Convert into opaque object.
                 ///
                 /// This is the prerequisite for using underlying trait implementations.
-                unsafe impl<'cglue_a, CGlueT: #ctx_bound #trg_path::Opaquable + ::core::ops::Deref<Target = CGlueF>, CGlueF, CGlueC: 'static + Clone + #trg_path::Opaquable<OpaqueTarget = CGlueD>, CGlueD: #crate_path::trait_group::Opaquable<OpaqueTarget = CGlueD> + 'static + Clone, #gen_declare> #trg_path::Opaquable for #name<'cglue_a, CGlueT, CGlueF, CGlueC, CGlueD, #gen_use>
+                unsafe impl<'cglue_a, CGlueT: #ctx_bound #trg_path::Opaquable + ::core::ops::Deref<Target = CGlueF>, CGlueF, CGlueC: #cd_bounds + #cd_opaque_bound, CGlueD: #cd_opaque_bound + #cd_bounds, #gen_declare> #trg_path::Opaquable for #name<'cglue_a, CGlueT, CGlueF, CGlueC, CGlueD, #gen_use>
                     where #gen_where_bounds CGlueT::OpaqueTarget: #ctx_bound,
                 {
                     type OpaqueTarget = #name<'cglue_a, CGlueT::OpaqueTarget, #c_void, CGlueD, CGlueD, #gen_use>;
                 }
 
-                impl<'cglue_a, CGlueT: #ctx_bound, CGlueF, CGlueC: 'static + Clone + #crate_path::trait_group::Opaquable<OpaqueTarget = CGlueD>, CGlueD: #crate_path::trait_group::Opaquable<OpaqueTarget = CGlueD>, #gen_declare> #name<'cglue_a, CGlueT, CGlueF, CGlueC, CGlueD, #gen_use>
+                impl<'cglue_a, CGlueT: #ctx_bound, CGlueF, CGlueC: #cd_bounds + #cd_opaque_bound, CGlueD: #cd_opaque_bound, #gen_declare> #name<'cglue_a, CGlueT, CGlueF, CGlueC, CGlueD, #gen_use>
                     where #gen_where_bounds
                 {
                     #trait_funcs
@@ -1168,6 +1172,8 @@ impl TraitGroup {
         let mut ret = TokenStream::new();
 
         let ctx_bound = super::traits::ctx_bound();
+        let cd_bounds = super::traits::cd_bounds();
+        let cd_opaque_bound = super::traits::cd_opaque_bound();
 
         let ParsedGenerics { gen_use, .. } = all_generics;
 
@@ -1196,7 +1202,7 @@ impl TraitGroup {
                 }
 
                 let gen = quote! {
-                    impl<'cglue_a, CGlueT: #ctx_bound, CGlueF, CGlueC: 'static + Clone + #crate_path::trait_group::Opaquable<OpaqueTarget = CGlueD>, CGlueD: 'static + Clone + #crate_path::trait_group::Opaquable<OpaqueTarget = CGlueD>, #gen_use> #path #ident <#tr_life_use #tr_gen_use> for #self_ident<'cglue_a, CGlueT, CGlueF, CGlueC, CGlueD, #gen_use> where Self: #ext_path #ext_name<#tr_life_use #tr_gen_use> {
+                    impl<'cglue_a, CGlueT: #ctx_bound, CGlueF, CGlueC: #cd_bounds + #cd_opaque_bound, CGlueD: #cd_bounds + #cd_opaque_bound, #gen_use> #path #ident <#tr_life_use #tr_gen_use> for #self_ident<'cglue_a, CGlueT, CGlueF, CGlueC, CGlueD, #gen_use> where Self: #ext_path #ext_name<#tr_life_use #tr_gen_use> {
                         #impls
                     }
                 };
@@ -1421,6 +1427,9 @@ impl TraitGroup {
         let mand_vtbl_copy = self.vtbl_copy_list(self.mandatory_vtbl.iter());
         let mand_ret_tmp_default = self.mandatory_ret_tmp_defaults();
 
+        let cd_bounds = super::traits::cd_bounds();
+        let cd_opaque_bound = super::traits::cd_opaque_bound();
+
         for TraitInfo {
             vtbl_name,
             path,
@@ -1432,7 +1441,7 @@ impl TraitGroup {
         } in traits
         {
             ret.extend(quote! {
-                impl<CGlueT: ::core::ops::Deref<Target = CGlueF> + #crate_path::trait_group::ContextRef<Context = CGlueC, ObjType = CGlueF>, CGlueF, CGlueC: 'static + Clone + #crate_path::trait_group::Opaquable<OpaqueTarget = CGlueD>, CGlueD: #crate_path::trait_group::Opaquable<OpaqueTarget = CGlueD> + 'static + Clone, #all_gen_declare>
+                impl<CGlueT: ::core::ops::Deref<Target = CGlueF> + #crate_path::trait_group::ContextRef<Context = CGlueC, ObjType = CGlueF>, CGlueF, CGlueC: #cd_bounds + #cd_opaque_bound, CGlueD: #cd_opaque_bound + #cd_bounds, #all_gen_declare>
                     #trg_path::CGlueObjRef<#path #ret_tmp_typename<#gen_use>> for #name<'_, CGlueT, CGlueF, CGlueC, CGlueD, #all_gen_use> where #all_gen_where_bounds
                 {
                     type ObjType = CGlueF;
@@ -1445,7 +1454,7 @@ impl TraitGroup {
                     }
                 }
 
-                impl<CGlueT: ::core::ops::Deref<Target = CGlueF> + #crate_path::trait_group::ContextRef<Context = CGlueC, ObjType = CGlueF> + #crate_path::trait_group::ContextMut, CGlueF, CGlueC: 'static + Clone + #crate_path::trait_group::Opaquable<OpaqueTarget = CGlueD>, CGlueD: #crate_path::trait_group::Opaquable<OpaqueTarget = CGlueD> + 'static + Clone, #all_gen_declare>
+                impl<CGlueT: ::core::ops::Deref<Target = CGlueF> + #crate_path::trait_group::ContextRef<Context = CGlueC, ObjType = CGlueF> + #crate_path::trait_group::ContextMut, CGlueF, CGlueC: #cd_bounds + #cd_opaque_bound, CGlueD: #cd_opaque_bound + #cd_bounds, #all_gen_declare>
                     #trg_path::CGlueObjMut<#path #ret_tmp_typename<#gen_use>> for #name<'_, CGlueT, CGlueF, CGlueC, CGlueD, #all_gen_use> where #all_gen_where_bounds
                 {
                     fn cobj_mut(&mut self) -> (&mut CGlueF, &mut #path #ret_tmp_typename<#gen_use>, &CGlueC) {
@@ -1454,7 +1463,7 @@ impl TraitGroup {
                     }
                 }
 
-                impl<CGlueT: ::core::ops::Deref<Target = CGlueF> + ::core::ops::DerefMut + #crate_path::trait_group::ContextRef<Context = CGlueC, ObjType = CGlueF> + #crate_path::trait_group::ContextMut + #crate_path::trait_group::ContextOwned, CGlueF, CGlueC: 'static + Clone + #crate_path::trait_group::Opaquable<OpaqueTarget = CGlueD>, CGlueD: #crate_path::trait_group::Opaquable<OpaqueTarget = CGlueD> + 'static + Clone, #all_gen_declare>
+                impl<CGlueT: ::core::ops::Deref<Target = CGlueF> + ::core::ops::DerefMut + #crate_path::trait_group::ContextRef<Context = CGlueC, ObjType = CGlueF> + #crate_path::trait_group::ContextMut + #crate_path::trait_group::ContextOwned, CGlueF, CGlueC: #cd_bounds + #cd_opaque_bound, CGlueD: #cd_opaque_bound + #cd_bounds, #all_gen_declare>
                     #trg_path::CGlueObjOwned<#path #ret_tmp_typename<#gen_use>> for #name<'_, CGlueT, CGlueF, CGlueC, CGlueD, #all_gen_use> where #all_gen_where_bounds
                 {
                     fn cobj_owned(self) -> CGlueT {
@@ -1462,7 +1471,7 @@ impl TraitGroup {
                     }
                 }
 
-                impl<CGlueT: ::core::ops::Deref<Target = CGlueF> + #crate_path::trait_group::ContextRef<ObjType = CGlueF, Context = CGlueC>, CGlueF, CGlueC: 'static + Clone + #crate_path::trait_group::Opaquable<OpaqueTarget = CGlueD>, CGlueD: #crate_path::trait_group::Opaquable<OpaqueTarget = CGlueD> + 'static + Clone, #all_gen_declare>
+                impl<CGlueT: ::core::ops::Deref<Target = CGlueF> + #crate_path::trait_group::ContextRef<ObjType = CGlueF, Context = CGlueC>, CGlueF, CGlueC: #cd_bounds + #cd_opaque_bound, CGlueD: #cd_opaque_bound + #cd_bounds, #all_gen_declare>
                     #trg_path::CGlueObjBuild<#path #ret_tmp_typename<#gen_use>> for #name<'_, CGlueT, CGlueF, CGlueC, CGlueD, #all_gen_use> where #all_gen_where_bounds
                 {
                     unsafe fn cobj_build(&self, instance: Self::ContType) -> Self {
@@ -1476,7 +1485,7 @@ impl TraitGroup {
                     }
                 }
 
-                impl<'cglue_a, CGlueT, CGlueF, CGlueC: 'static + #crate_path::trait_group::Opaquable<OpaqueTarget = CGlueD>, CGlueD: #crate_path::trait_group::Opaquable<OpaqueTarget = CGlueD>, #all_gen_declare> #trg_path::GetVtbl<#path #vtbl_typename<'cglue_a, CGlueT, CGlueF, CGlueC, CGlueD, #gen_use>>
+                impl<'cglue_a, CGlueT, CGlueF, CGlueC: 'static + #cd_opaque_bound, CGlueD: #cd_opaque_bound, #all_gen_declare> #trg_path::GetVtbl<#path #vtbl_typename<'cglue_a, CGlueT, CGlueF, CGlueC, CGlueD, #gen_use>>
                     for #name<'cglue_a, CGlueT, CGlueF, CGlueC, CGlueD, #all_gen_use>
                     where #all_gen_where_bounds
                 {
