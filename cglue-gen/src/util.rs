@@ -14,15 +14,16 @@ pub fn crate_path() -> TokenStream {
 
 pub fn crate_path_ident() -> (Option<Colon2>, Ident) {
     match crate_path_fixed() {
-        FoundCrate::Itself => (None, format_ident!("crate")),
-        FoundCrate::Name(name) => (Some(Default::default()), format_ident!("{}", name)),
+        Some(FoundCrate::Itself) => (None, format_ident!("crate")),
+        Some(FoundCrate::Name(name)) => (Some(Default::default()), format_ident!("{}", name)),
+        None => (None, format_ident!("cglue")),
     }
 }
 
-pub fn crate_path_fixed() -> FoundCrate {
-    let found_crate = crate_name("cglue").expect("cglue found in `Cargo.toml`");
+pub fn crate_path_fixed() -> Option<FoundCrate> {
+    let found_crate = crate_name("cglue").ok()?;
 
-    match found_crate {
+    let ret = match found_crate {
         FoundCrate::Itself => {
             let has_doc_env = std::env::vars().any(|(k, _)| {
                 k == "UNSTABLE_RUSTDOC_TEST_LINE" || k == "UNSTABLE_RUSTDOC_TEST_PATH"
@@ -35,7 +36,9 @@ pub fn crate_path_fixed() -> FoundCrate {
             }
         }
         x => x,
-    }
+    };
+
+    Some(ret)
 }
 
 /// Parse an input stream that is either a single Ident, or a list of Idents surrounded by braces.
