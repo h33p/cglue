@@ -3,19 +3,20 @@
 use std::prelude::v1::*;
 use std::slice::*;
 use std::str::from_utf8_unchecked;
+use std::os::raw::c_char;
 
 /// Wrapper around null-terminated C-style strings.
 ///
-/// Analog to Rust's `String` & `str`, [`ReprCString`] owns the underlying data.
+/// Analog to Rust's `String`, [`ReprCString`] owns the underlying data.
 #[repr(transparent)]
-pub struct ReprCString(*mut i8);
+pub struct ReprCString(*mut c_char);
 
 // The underlying pointer isn't being mutated after construction,
 // hence it is safe to assume access to the raw pointer is both Send + Sync
 unsafe impl Send for ReprCString {}
 unsafe impl Sync for ReprCString {}
 
-unsafe fn string_size(mut ptr: *const i8) -> usize {
+unsafe fn string_size(mut ptr: *const c_char) -> usize {
     (1..)
         .take_while(|_| {
             let ret = *ptr;
@@ -49,6 +50,12 @@ impl From<&str> for ReprCString {
 impl From<String> for ReprCString {
     fn from(from: String) -> Self {
         from.as_str().into()
+    }
+}
+
+impl<'a> std::borrow::Borrow<ReprCStr<'a>> for ReprCString {
+    fn borrow(&self) -> &ReprCStr<'a> {
+        unsafe { std::mem::transmute(self) }
     }
 }
 
@@ -152,5 +159,91 @@ mod tests {
         assert_eq!(0, ReprCString::from("").as_ref().len());
         assert_eq!(1, ReprCString::from("1").as_ref().len());
         assert_eq!(5, ReprCString::from("12345").as_ref().len());
+    }
+}
+
+/// Wrapper around null-terminated C-style strings.
+///
+/// Analog to Rust's `str`, [`ReprCStr`] borrows the underlying data.
+#[repr(transparent)]
+#[derive(Copy, Clone)]
+pub struct ReprCStr<'a>(&'a c_char);
+
+use std::ffi::CStr;
+
+impl<'a> From<&'a CStr> for ReprCStr<'a> {
+    fn from(from: &'a CStr) -> Self {
+        Self(unsafe {(from.as_ptr() as *const c_char).as_ref()}.unwrap())
+    }
+}
+
+impl<'a> AsRef<str> for ReprCStr<'a> {
+    fn as_ref(&self) -> &str {
+        unsafe { from_utf8_unchecked(from_raw_parts(self.0 as *const _ as *const _, string_size(self.0) - 1)) }
+    }
+}
+
+impl<'a> std::fmt::Display for ReprCStr<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.pad(self.as_ref())
+    }
+}
+
+impl<'a> std::fmt::Debug for ReprCStr<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ReprCStr<'a>")
+            .field("0", &self.as_ref())
+            .finish()
+    }
+}
+
+impl<'a> std::hash::Hash for ReprCStr<'a> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.as_ref().hash(state);
+    }
+}
+
+impl<'a> std::cmp::PartialEq for ReprCStr<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_ref().eq(other.as_ref())
+    }
+}
+
+impl<'a> std::cmp::Eq for ReprCStr<'a> {}
+
+#[cfg(feature = "serde")]
+impl<'a> serde::Serialize for ReprCStr<'a> {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.as_ref())
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'a, 'de> serde::Deserialize<'de> for ReprCStr<'a> {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<ReprCStr<'a>, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct ReprCStrVisitor;
+
+        impl<'de> ::serde::de::Visitor<'de> for ReprCStrVisitor {
+            type Value = ReprCStr<'a>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a string")
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: ::serde::de::Error,
+            {
+                Ok(v.into())
+            }
+        }
+
+        deserializer.deserialize_str(ReprCStrVisitor)
     }
 }

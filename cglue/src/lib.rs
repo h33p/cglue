@@ -607,11 +607,11 @@
 //! `Result` is automatically wrapped into [CResult](crate::result::CResult):
 //!
 //! ```ignore
-//! fn with_cresult(&self) -> Result<usize, ()> {}
+//! fn with_cresult(&self) -> Result<usize, usize> {}
 //!
 //! // Generated vtable entry:
 //!
-//! with_cresult: extern "C" fn(&CGlueF) -> CResult<usize, ()>,
+//! with_cresult: extern "C" fn(&CGlueF) -> CResult<usize, usize>,
 //! ```
 //!
 //! `Result` with [IntError](crate::result::IntError) type can return an integer code with `Ok` value written to a variable:
@@ -816,10 +816,14 @@
 //!
 //! #### Setup
 //!
-//! Firstly, create a `cbindgen.toml`, and make sure both cglue, and any crates using cglue have
-//! macro expansion enabled:
+//! Firstly, create a `cbindgen.toml`, and make sure both cglue, and any crates using cglue are
+//! included and have macro expansion enabled:
 //!
 //! ```toml
+//! [parse]
+//! parse_deps = true
+//! include = ["cglue", "your-crate"]
+//!
 //! [parse.expand]
 //! crates = ["cglue", "your-crate"]
 //! ```
@@ -858,7 +862,7 @@
 //!  * custom type for CGlueTraitObj that does not have `ret_tmp` defined, and change all
 //!  * type aliases of this trait to use that particular structure.
 //!  */
-//! typedef struct CGlueRetTmpClone CGlueRetTmpClone;
+//! typedef struct CloneRetTmp CloneRetTmp;
 //! ```
 //!
 //! Remove all usage of these types. Any variables in the structures with these types should not be
@@ -872,20 +876,39 @@
 //!
 //! Similar error is present in C++ headers, but due to templates, cleanup is slightly different.
 //!
-//! Perform the same cleanup as in C headers. But now, you may encounter generic typedefs to
-//! `CGlueTraitObj`. It will be necessary to define a new type without the final value:
+//! 1. Remove all references to the incomplete types in the generated group structures.
+//!
+//! 2. Change all incomplete `struct TraitRetTmp;` definitions to `typedef void TraitRetTmp;`
+//!
+//! 3. Define a specialized type for `CGlueTraitObj` without the final value:
 //!
 //! ```cpp
+//! template<typename T, typename V, typename S>
+//! struct CGlueTraitObj {
+//!     T instance;
+//!     const V *vtbl;
+//!     S ret_tmp;
+//! };
+//!
+//! // Make sure it goes after the original declaration.
+//!
 //! template<typename T, typename V>
-//! struct CGlueTraitObjSimple {
+//! struct CGlueTraitObj<T, V, void> {
 //!     T instance;
 //!     const V *vtbl;
 //! };
 //! ```
 //!
-//! Make all typedefs that use non-existent types use `CGlueTraitObjSimple`.
+//! Similar specialization should be done for the `CtxBox` type:
 //!
-//! Finally, there is a wrongly generated `MaybeUninit` typedef. Replace it from this:
+//! ```cpp
+//! template<typename T>
+//! struct CtxBox<T, void> {
+//!     CBox<T> inner;
+//! };
+//! ```
+//!
+//! Finally, there usually is a wrongly generated `MaybeUninit` typedef. Replace it from this:
 //!
 //! ```cpp
 //! template<typename T = void>
@@ -944,7 +967,7 @@ pub mod prelude {
             callback::{Callback, FeedCallback, OpaqueCallback},
             forward::{Forward, ForwardMut, Fwd},
             option::COption,
-            repr_cstring::ReprCString,
+            repr_cstring::{ReprCString, ReprCStr},
             result::{CResult, IntError, IntResult},
             trait_group::Opaquable,
             *,

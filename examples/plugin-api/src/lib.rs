@@ -14,7 +14,7 @@ pub trait PluginInner<'a> {
 }
 
 #[repr(C)]
-pub struct KeyValue<'a>(pub &'a ReprCString, pub usize);
+pub struct KeyValue<'a>(pub ReprCStr<'a>, pub usize);
 
 pub type KeyValueCallback<'a> = OpaqueCallback<'a, KeyValue<'a>>;
 
@@ -27,8 +27,8 @@ pub trait MainFeature {
 #[cglue_trait]
 #[cglue_forward]
 pub trait KeyValueStore {
-    fn write_key_value(&mut self, name: &ReprCString, val: usize);
-    fn get_key_value(&self, name: &ReprCString) -> usize;
+    fn write_key_value(&mut self, name: ReprCStr<'_>, val: usize);
+    fn get_key_value(&self, name: ReprCStr<'_>) -> usize;
 }
 
 #[cglue_trait]
@@ -41,7 +41,6 @@ cglue_trait_group!(FeaturesGroup, {
 }, {
     KeyValueStore,
     KeyValueDumper,
-    Debug,
     Clone
 });
 
@@ -56,7 +55,7 @@ cglue_trait_group!(FeaturesGroup, {
 ///
 /// Where `T` is any type, since it's opaque.
 #[no_mangle]
-pub unsafe extern "C" fn load_plugin(name: &ReprCString) -> PluginInnerArcBox<'static> {
+pub unsafe extern "C" fn load_plugin(name: ReprCStr<'_>) -> PluginInnerArcBox<'static> {
     let mut current_exe = std::env::current_exe().unwrap();
     current_exe.set_file_name(library_filename(name.as_ref()));
     let lib = Library::new(current_exe).unwrap();

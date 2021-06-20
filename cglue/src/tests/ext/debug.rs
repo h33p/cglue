@@ -2,7 +2,8 @@ use super::super::simple::structs::*;
 use super::super::simple::trait_defs::*;
 use cglue_macro::*;
 
-cglue_trait_group!(MaybeDebug, { TA }, { ::ext::core::fmt::Debug });
+// Currently not FFI-safe
+/*cglue_trait_group!(MaybeDebug, { TA }, { ::ext::core::fmt::Debug });
 cglue_impl_group!(SA, MaybeDebug, Debug);
 
 #[test]
@@ -27,4 +28,4 @@ fn use_debug_group() {
 #[cfg(test)]
 fn impl_debug(t: &impl ::core::fmt::Debug) {
     let _ = format!("{:?}", t);
-}
+}*/

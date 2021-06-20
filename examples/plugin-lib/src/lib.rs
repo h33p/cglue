@@ -1,6 +1,7 @@
 use cglue::prelude::v1::*;
 use plugin_api::*;
 use std::collections::HashMap;
+use std::borrow::Borrow;
 
 #[derive(Default)]
 struct KvRoot {
@@ -32,12 +33,12 @@ impl MainFeature for KvStore {
 }
 
 impl KeyValueStore for KvStore {
-    fn write_key_value(&mut self, name: &ReprCString, val: usize) {
-        self.map.insert(name.clone(), val);
+    fn write_key_value(&mut self, name: ReprCStr<'_>, val: usize) {
+        self.map.insert(name.to_string().into(), val);
     }
 
-    fn get_key_value(&self, name: &ReprCString) -> usize {
-        self.map.get(name).copied().unwrap_or(0)
+    fn get_key_value(&self, name: ReprCStr<'_>) -> usize {
+        self.map.get(&name).copied().unwrap_or(0)
     }
 }
 
@@ -45,7 +46,7 @@ impl KeyValueDumper for KvStore {
     fn dump_key_values<'a>(&'a self, callback: KeyValueCallback<'a>) {
         self.map
             .iter()
-            .map(|(k, v)| KeyValue(k, *v))
+            .map(|(k, v)| KeyValue(*k.borrow(), *v))
             .feed_into(callback);
     }
 }
@@ -55,13 +56,11 @@ cglue_impl_group!(KvStore, FeaturesGroup,
 {
     KeyValueStore,
     KeyValueDumper,
-    Debug,
     Clone
 },
 // The forward type can not be cloned, and KeyValueDumper is not implemented
 {
     KeyValueStore,
-    Debug
 });
 
 #[no_mangle]

@@ -130,8 +130,4 @@ fn use_debug_obj() {
     let wrapped = CtxBox::from((sa, opt_arc));
 
     assert_eq!(Arc::strong_count(&arc), 2);
-
-    let obj = trait_obj!(wrapped as Debug);
-
-    assert_eq!(&format!("{:?}", obj), "SA");
 }

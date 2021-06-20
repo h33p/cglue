@@ -585,8 +585,10 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
 
     let base_box_trait_obj_ident = format_ident!("{}BaseBox", trait_name);
     let base_ctx_trait_obj_ident = format_ident!("{}BaseCtxBox", trait_name);
+    let base2_ctx_trait_obj_ident = format_ident!("{}Base2CtxBox", trait_name);
     let base_no_ctx_trait_obj_ident = format_ident!("{}BaseNoCtxBox", trait_name);
     let base_arc_trait_obj_ident = format_ident!("{}BaseArcBox", trait_name);
+    let base2_arc_trait_obj_ident = format_ident!("{}Base2ArcBox", trait_name);
     let base_mut_trait_obj_ident = format_ident!("{}BaseMut", trait_name);
     let base_ref_trait_obj_ident = format_ident!("{}BaseRef", trait_name);
     let base_trait_obj_ident = format_ident!("{}Base", trait_name);
@@ -903,8 +905,10 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
 
             #base_box_trait_obj_ident,
             #base_ctx_trait_obj_ident,
+            #base2_ctx_trait_obj_ident,
             #base_no_ctx_trait_obj_ident,
             #base_arc_trait_obj_ident,
+            #base2_arc_trait_obj_ident,
             #base_mut_trait_obj_ident,
             #base_ref_trait_obj_ident,
             #base_trait_obj_ident,
@@ -977,15 +981,23 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
 
             #[doc = #base_ctx_trait_obj_doc]
             pub type #base_ctx_trait_obj_ident<'cglue_a, CGlueF, CGlueC, #gen_use>
-                = #base_trait_obj_ident<'cglue_a, #crate_path::boxed::CtxBox<'cglue_a, CGlueF, CGlueC>, CGlueF, CGlueC, <CGlueC as #trg_path::Opaquable>::OpaqueTarget, #gen_use>;
+                = #base2_ctx_trait_obj_ident<'cglue_a, CGlueF, CGlueC, <CGlueC as #crate_path::trait_group::Opaquable>::OpaqueTarget, #gen_use>;
+
+            #[doc = #base_ctx_trait_obj_doc]
+            pub type #base2_ctx_trait_obj_ident<'cglue_a, CGlueF, CGlueC, CGlueD, #gen_use>
+                = #base_trait_obj_ident<'cglue_a, #crate_path::boxed::CtxBox<'cglue_a, CGlueF, CGlueC>, CGlueF, CGlueC, CGlueD, #gen_use>;
 
             #[doc = #base_no_ctx_trait_obj_doc]
             pub type #base_no_ctx_trait_obj_ident<'cglue_a, CGlueF, #gen_use>
-                = #base_ctx_trait_obj_ident<'cglue_a, CGlueF, #trg_path::NoContext, #gen_use>;
+                = #base2_ctx_trait_obj_ident<'cglue_a, CGlueF, #trg_path::NoContext, #trg_path::NoContext, #gen_use>;
 
             #[doc = #base_arc_trait_obj_doc]
             pub type #base_arc_trait_obj_ident<'cglue_a, CGlueF, CGlueC, #gen_use>
                 = #base_ctx_trait_obj_ident<'cglue_a, CGlueF, #crate_path::arc::COptArc<CGlueC>, #gen_use>;
+
+            #[doc = #base_arc_trait_obj_doc]
+            pub type #base2_arc_trait_obj_ident<'cglue_a, CGlueF, CGlueC, CGlueD, #gen_use>
+                = #base2_ctx_trait_obj_ident<'cglue_a, CGlueF, #crate_path::arc::COptArc<CGlueC>, #crate_path::arc::COptArc<CGlueD>, #gen_use>;
 
             #[doc = #base_mut_trait_obj_doc]
             pub type #base_mut_trait_obj_ident<'cglue_a, CGlueF, #gen_use>
@@ -1005,7 +1017,7 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
 
             #[doc = #opaque_ctx_trait_obj_doc]
             pub type #opaque_ctx_trait_obj_ident<'cglue_a, CGlueD, #gen_use>
-                = #base_ctx_trait_obj_ident<'cglue_a, #c_void, CGlueD, #gen_use>;
+                = #base2_ctx_trait_obj_ident<'cglue_a, #c_void, CGlueD, CGlueD, #gen_use>;
 
             #[doc = #opaque_no_ctx_trait_obj_doc]
             pub type #opaque_no_ctx_trait_obj_ident<'cglue_a, #gen_use>
@@ -1013,7 +1025,7 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
 
             #[doc = #opaque_arc_trait_obj_doc]
             pub type #opaque_arc_trait_obj_ident<'cglue_a, #gen_use>
-                = #base_arc_trait_obj_ident<'cglue_a, #c_void, #c_void, #gen_use>;
+                = #base2_arc_trait_obj_ident<'cglue_a, #c_void, #c_void, #c_void, #gen_use>;
 
             #[doc = #opaque_mut_trait_obj_doc]
             pub type #opaque_mut_trait_obj_ident<'cglue_a, #gen_use>

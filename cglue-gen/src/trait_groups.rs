@@ -626,8 +626,10 @@ impl TraitGroup {
         let base_name_mut = format_ident!("{}BaseMut", name);
         let base_name_boxed = format_ident!("{}BaseBox", name);
         let base_name_arc_box = format_ident!("{}BaseArcBox", name);
+        let base2_name_arc_box = format_ident!("{}Base2ArcBox", name);
         let base_name_no_ctx_box = format_ident!("{}BaseNoCtxBox", name);
         let base_name_ctx_box = format_ident!("{}BaseCtxBox", name);
+        let base2_name_ctx_box = format_ident!("{}Base2CtxBox", name);
         let opaque_name = format_ident!("{}Opaque", name);
         let opaque_name_ref = format_ident!("{}Ref", name);
         let opaque_name_mut = format_ident!("{}Mut", name);
@@ -952,8 +954,10 @@ impl TraitGroup {
                 #base_name_mut,
                 #base_name_boxed,
                 #base_name_arc_box,
+                #base2_name_arc_box,
                 #base_name_no_ctx_box,
                 #base_name_ctx_box,
+                #base2_name_ctx_box,
                 #opaque_name,
                 #opaque_name_ref,
                 #opaque_name_mut,
@@ -1030,13 +1034,19 @@ impl TraitGroup {
                     = #name<'cglue_a, #crate_path::boxed::CBox<'cglue_a, CGlueF>, CGlueF, #crate_path::trait_group::NoContext, #crate_path::trait_group::NoContext, #gen_use>;
 
                 pub type #base_name_ctx_box<'cglue_a, CGlueF, CGlueC, #gen_use>
-                    = #name<'cglue_a, #crate_path::boxed::CtxBox<'cglue_a, CGlueF, CGlueC>, CGlueF, CGlueC, <CGlueC as #crate_path::trait_group::Opaquable>::OpaqueTarget, #gen_use>;
+                    = #base2_name_ctx_box<'cglue_a, CGlueF, CGlueC, <CGlueC as #crate_path::trait_group::Opaquable>::OpaqueTarget, #gen_use>;
+
+                pub type #base2_name_ctx_box<'cglue_a, CGlueF, CGlueC, CGlueD, #gen_use>
+                    = #name<'cglue_a, #crate_path::boxed::CtxBox<'cglue_a, CGlueF, CGlueC>, CGlueF, CGlueC, CGlueD, #gen_use>;
 
                 pub type #base_name_no_ctx_box<'cglue_a, CGlueF, #gen_use>
-                    = #base_name_ctx_box<'cglue_a, CGlueF, #crate_path::trait_group::NoContext, #gen_use>;
+                    = #base2_name_ctx_box<'cglue_a, CGlueF, #crate_path::trait_group::NoContext, #crate_path::trait_group::NoContext, #gen_use>;
 
                 pub type #base_name_arc_box<'cglue_a, CGlueF, CGlueC, #gen_use>
                     = #base_name_ctx_box<'cglue_a, CGlueF, #crate_path::arc::COptArc<CGlueC>, #gen_use>;
+
+                pub type #base2_name_arc_box<'cglue_a, CGlueF, CGlueC, CGlueD, #gen_use>
+                    = #base2_name_ctx_box<'cglue_a, CGlueF, #crate_path::arc::COptArc<CGlueC>, #crate_path::arc::COptArc<CGlueD>, #gen_use>;
 
                 pub type #base_name_ref<'cglue_a, CGlueF, #gen_use>
                     = #name<'cglue_a, &'cglue_a CGlueF, CGlueF, #crate_path::trait_group::NoContext, #crate_path::trait_group::NoContext, #gen_use>;
@@ -1054,13 +1064,13 @@ impl TraitGroup {
                     = #base_name_mut<'cglue_a, #c_void, #gen_use>;
 
                 pub type #opaque_name_ctx_box<'cglue_a, CGlueD, #gen_use>
-                    = #base_name_ctx_box<'cglue_a, #c_void, CGlueD, #gen_use>;
+                    = #base2_name_ctx_box<'cglue_a, #c_void, CGlueD, CGlueD, #gen_use>;
 
                 pub type #opaque_name_no_ctx_box<'cglue_a, #gen_use>
                     = #base_name_no_ctx_box<'cglue_a, #c_void, #gen_use>;
 
                 pub type #opaque_name_arc_box<'cglue_a, #gen_use>
-                    = #base_name_arc_box<'cglue_a, #c_void, #c_void, #gen_use>;
+                    = #base2_name_arc_box<'cglue_a, #c_void, #c_void, #c_void, #gen_use>;
 
                 pub type #opaque_name<'cglue_a, CGlueT: ::core::ops::Deref<Target = #c_void>, CGlueD, #gen_use>
                     = #name<'cglue_a, CGlueT, CGlueT::Target, CGlueD, CGlueD, #gen_use>;

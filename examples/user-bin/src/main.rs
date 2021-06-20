@@ -1,6 +1,7 @@
 use cglue::prelude::v1::*;
 use plugin_api::*;
 use std::io;
+use std::ffi::CString;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -15,7 +16,7 @@ fn main() -> Result<()> {
         lib = "plugin_lib".to_string();
     }
 
-    let mut obj = unsafe { load_plugin(&lib.trim().into()) };
+    let mut obj = unsafe { load_plugin(CString::new(lib.trim()).unwrap().as_c_str().into()) };
 
     {
         let mut borrowed = obj.borrow_features();
@@ -45,13 +46,9 @@ fn main() -> Result<()> {
             use_kvstore(obj)?;
         }
 
-        if let Some(obj) = as_mut!(owned impl KeyValueDumper) {
+        if let Some(mut obj) = cast!(owned impl KeyValueDumper) {
             println!("Dumping owned kvstore:");
-            kvdump(obj);
-        }
-
-        if let Some(obj) = cast!(owned impl Debug) {
-            println!("{:?}", obj);
+            kvdump(&mut obj);
         }
 
         println!("Owned done.");
@@ -67,16 +64,16 @@ fn use_kvstore(obj: &mut impl KeyValueStore) -> Result<()> {
 
     println!("Enter key:");
     io::stdin().read_line(&mut buf)?;
-    let key = buf.trim().into();
+    let key = CString::new(buf.trim()).unwrap();
 
-    println!("Cur val: {}", obj.get_key_value(&key));
+    println!("Cur val: {}", obj.get_key_value(key.as_c_str().into()));
 
     buf.clear();
     println!("Enter value:");
     io::stdin().read_line(&mut buf)?;
 
     let new_val = buf.trim().parse::<usize>()?;
-    obj.write_key_value(&key, new_val);
+    obj.write_key_value(CString::new(key).unwrap().as_c_str().into(), new_val);
 
     Ok(())
 }
