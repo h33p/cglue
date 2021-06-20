@@ -945,6 +945,7 @@ pub mod from2;
 pub mod option;
 pub mod repr_cstring;
 pub mod result;
+pub mod slice;
 pub mod trait_group;
 
 pub use ::cglue_macro::{
@@ -969,6 +970,7 @@ pub mod prelude {
             option::COption,
             repr_cstring::{ReprCStr, ReprCString},
             result::{CResult, IntError, IntResult},
+            slice::{CSliceMut, CSliceRef},
             trait_group::Opaquable,
             *,
         };
