@@ -15,8 +15,12 @@ unsafe impl<'a, T> Send for CSliceRef<'a, T> where T: Send {}
 unsafe impl<'a, T> Sync for CSliceRef<'a, T> where T: Sync {}
 
 impl<'a, T> CSliceRef<'a, T> {
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.len
+    }
+
+    pub const fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     pub const fn as_ptr(&self) -> *const T {
@@ -52,7 +56,7 @@ impl<T> std::ops::Deref for CSliceRef<'_, T> {
     type Target = [T];
 
     fn deref(&self) -> &Self::Target {
-        unsafe { core::slice::from_raw_parts(self.data, self.len) }.into()
+        unsafe { core::slice::from_raw_parts(self.data, self.len) }
     }
 }
 
@@ -69,8 +73,12 @@ unsafe impl<'a, T> Send for CSliceMut<'a, T> where T: Send {}
 unsafe impl<'a, T> Sync for CSliceMut<'a, T> where T: Sync {}
 
 impl<'a, T> CSliceMut<'a, T> {
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.len
+    }
+
+    pub const fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     pub const fn as_ptr(&self) -> *const T {
@@ -81,7 +89,11 @@ impl<'a, T> CSliceMut<'a, T> {
         self.data
     }
 
-    pub fn as_slice(&'a self) -> &'a mut [T] {
+    pub fn as_slice(&'a self) -> &'a [T] {
+        unsafe { core::slice::from_raw_parts(self.data, self.len) }
+    }
+
+    pub fn as_slice_mut(&'a mut self) -> &'a mut [T] {
         unsafe { core::slice::from_raw_parts_mut(self.data, self.len) }
     }
 }
@@ -112,12 +124,12 @@ impl<'a, T> std::ops::Deref for CSliceMut<'a, T> {
     type Target = [T];
 
     fn deref(&self) -> &Self::Target {
-        unsafe { core::slice::from_raw_parts(self.data, self.len) }.into()
+        unsafe { core::slice::from_raw_parts(self.data, self.len) }
     }
 }
 
 impl<'a, T> std::ops::DerefMut for CSliceMut<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { core::slice::from_raw_parts_mut(self.data, self.len) }.into()
+        unsafe { core::slice::from_raw_parts_mut(self.data, self.len) }
     }
 }
