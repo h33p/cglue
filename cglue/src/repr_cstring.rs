@@ -1,9 +1,9 @@
 //! Describes null-terminated transparent C-strings.
 
+use std::os::raw::c_char;
 use std::prelude::v1::*;
 use std::slice::*;
 use std::str::from_utf8_unchecked;
-use std::os::raw::c_char;
 
 /// Wrapper around null-terminated C-style strings.
 ///
@@ -173,13 +173,18 @@ use std::ffi::CStr;
 
 impl<'a> From<&'a CStr> for ReprCStr<'a> {
     fn from(from: &'a CStr) -> Self {
-        Self(unsafe {(from.as_ptr() as *const c_char).as_ref()}.unwrap())
+        Self(unsafe { (from.as_ptr() as *const c_char).as_ref() }.unwrap())
     }
 }
 
 impl<'a> AsRef<str> for ReprCStr<'a> {
     fn as_ref(&self) -> &str {
-        unsafe { from_utf8_unchecked(from_raw_parts(self.0 as *const _ as *const _, string_size(self.0) - 1)) }
+        unsafe {
+            from_utf8_unchecked(from_raw_parts(
+                self.0 as *const _ as *const _,
+                string_size(self.0) - 1,
+            ))
+        }
     }
 }
 
@@ -218,32 +223,5 @@ impl<'a> serde::Serialize for ReprCStr<'a> {
         S: serde::Serializer,
     {
         serializer.serialize_str(self.as_ref())
-    }
-}
-
-#[cfg(feature = "serde")]
-impl<'a, 'de> serde::Deserialize<'de> for ReprCStr<'a> {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<ReprCStr<'a>, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        struct ReprCStrVisitor;
-
-        impl<'de> ::serde::de::Visitor<'de> for ReprCStrVisitor {
-            type Value = ReprCStr<'a>;
-
-            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                formatter.write_str("a string")
-            }
-
-            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-            where
-                E: ::serde::de::Error,
-            {
-                Ok(v.into())
-            }
-        }
-
-        deserializer.deserialize_str(ReprCStrVisitor)
     }
 }

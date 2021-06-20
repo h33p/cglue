@@ -1,7 +1,7 @@
 use cglue::prelude::v1::*;
 use plugin_api::*;
-use std::collections::HashMap;
 use std::borrow::Borrow;
+use std::collections::HashMap;
 
 #[derive(Default)]
 struct KvRoot {

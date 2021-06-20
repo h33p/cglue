@@ -967,7 +967,7 @@ pub mod prelude {
             callback::{Callback, FeedCallback, OpaqueCallback},
             forward::{Forward, ForwardMut, Fwd},
             option::COption,
-            repr_cstring::{ReprCString, ReprCStr},
+            repr_cstring::{ReprCStr, ReprCString},
             result::{CResult, IntError, IntResult},
             trait_group::Opaquable,
             *,

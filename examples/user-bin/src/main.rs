@@ -1,7 +1,7 @@
 use cglue::prelude::v1::*;
 use plugin_api::*;
-use std::io;
 use std::ffi::CString;
+use std::io;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
