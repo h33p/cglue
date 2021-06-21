@@ -4,9 +4,15 @@ version = "0.1.0"
 authors = ["Aurimas Blažulionis <0x60@pm.me>"]
 edition = "2018"
 description = "FFI safe abstractions for making plugins and C-compatible libraries"
+license = "MIT"
+documentation = "https://docs.rs/cglue"
+repository = "https://github.com/h33p/cglue"
+keywords = [ "cglue", "abi", "ffi", "cbindgen", "macro" ]
+categories = [ "api-bindings", "accessibility", "parsing" ]
+readme = "../README.md"
 
 [dependencies]
-cglue-macro = { path = "../cglue-macro" }
+cglue-macro = { version = "0.1", path = "../cglue-macro" }
 serde = { version = "1", optional = true }
 
 [features]

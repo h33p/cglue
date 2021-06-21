@@ -24,6 +24,7 @@ If all code is glued together, our glue is the safest on the market.
   - [Plugin system](#plugin-system)
   - [Working with cbindgen](#working-with-cbindgen)
     - [Setup](#setup)
+    - [Automatic cleanup](#automatic-cleanup)
     - [Cleanup C](#cleanup-c)
     - [Cleanup C++](#cleanup-c-1)
 - [Limitations](#limitations)
@@ -617,10 +618,22 @@ in the toml:
 language = "C"
 ```
 
-#### Cleanup C
+#### Automatic cleanup
 
 cbindgen will generate mostly clean output, however, there is one special case it does not
 handle well - empty typedefs.
+
+[`cglue-bindgen`](https://crates.io/crates/cglue-bindgen) is a cbindgen wrapper that attempts
+to automatically clean up the headers. It also adds an ability to automatically invoke nightly
+rust with `+nightly` flag. The change is simple - just move all cbindgen arguments after `--`:
+
+```sh
+cglue-bindgen +nightly -- --config cbindgen.toml --crate your_crate --output output_header.h
+```
+
+If something does not work, below are the steps for manual cleanup in both C and C++ modes.
+
+#### Cleanup C
 
 Open the output header, and notice these typedefs:
 
@@ -643,9 +656,18 @@ typedef struct CloneRetTmp CloneRetTmp;
 Remove all usage of these types. Any variables in the structures with these types should not be
 generated as they are intentionally zero-sized. Finally, remove the typedefs.
 
-Automating this step would be very nice, but for now, if editing the headers is not easily
-available, enable the `no_empty_retwrap` feature, which will inject 1 byte padding to these
-structures.
+Then, you might notice the following typedef:
+
+```c
+/**
+ * Describes absence of a context.
+ *
+ * This context is used for regular `CBox` trait objects as well as by-ref or by-mut objects.
+ */
+typedef struct NoContext NoContext;
+```
+
+Remove it, as well as any usages of it. It works the same way as zero-sized RetTmp variables.
 
 #### Cleanup C++
 

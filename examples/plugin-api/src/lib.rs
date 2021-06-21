@@ -11,10 +11,14 @@ pub trait PluginInner<'a> {
     type BorrowedType: MainFeature + 'a;
     #[wrap_with_group(FeaturesGroup)]
     type OwnedType: MainFeature + 'static;
+    #[wrap_with_group_mut(FeaturesGroup)]
+    type OwnedTypeMut: MainFeature + 'a;
 
     fn borrow_features(&'a mut self) -> Self::BorrowedType;
 
     fn into_features(self) -> Self::OwnedType;
+
+    fn mut_features(&'a mut self) -> &'a mut Self::OwnedTypeMut;
 }
 
 /// Having the inner type with a lifetime allows to borrow features for any lifetime.

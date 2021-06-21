@@ -15,6 +15,7 @@ struct KvRoot {
 impl<'a> PluginInner<'a> for KvRoot {
     type BorrowedType = Fwd<&'a mut KvStore>;
     type OwnedType = KvStore;
+    type OwnedTypeMut = KvStore;
 
     fn borrow_features(&'a mut self) -> Self::BorrowedType {
         self.store.forward_mut()
@@ -22,6 +23,10 @@ impl<'a> PluginInner<'a> for KvRoot {
 
     fn into_features(self) -> Self::OwnedType {
         self.store
+    }
+
+    fn mut_features(&'a mut self) -> &'a mut Self::OwnedTypeMut {
+        &mut self.store
     }
 }
 
@@ -60,7 +65,6 @@ cglue_impl_group!(KvStore, FeaturesGroup,
 {
     KeyValueStore,
     KeyValueDumper,
-    Clone
 },
 // The forward type can not be cloned, and KeyValueDumper is not implemented
 {

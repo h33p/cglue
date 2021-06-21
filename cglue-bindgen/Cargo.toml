@@ -1,0 +1,15 @@
+[package]
+name = "cglue-bindgen"
+version = "0.1.0"
+authors = ["Aurimas Blažulionis <0x60@pm.me>"]
+edition = "2018"
+license = "MIT"
+documentation = "https://docs.rs/cglue-bindgen"
+repository = "https://github.com/h33p/cglue"
+description = "cleanup cbindgen headers for CGlue"
+keywords = [ "cglue", "abi", "ffi", "cbindgen" ]
+categories = [ "text-processing", "command-line-interface" ]
+readme = "./README.md"
+
+[dependencies]
+regex = "1"

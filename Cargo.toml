@@ -4,6 +4,7 @@ members = [
     "cglue",
 	"cglue-gen",
 	"cglue-macro",
+	"cglue-bindgen",
 	"examples/plugin-api",
 	"examples/plugin-lib",
 	"examples/user-bin"
@@ -13,6 +14,7 @@ default-members = [
     "cglue",
     "cglue-gen",
 	"cglue-macro",
+	"cglue-bindgen",
 	"examples/plugin-api",
 	"examples/plugin-lib",
 	"examples/user-bin"
