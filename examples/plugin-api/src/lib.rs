@@ -1,3 +1,7 @@
+//! This is the main plugin API
+//!
+//! This crate is shared by plugins and users.
+
 use cglue::prelude::v1::*;
 use libloading::{library_filename, Library, Symbol};
 
@@ -13,8 +17,14 @@ pub trait PluginInner<'a> {
     fn into_features(self) -> Self::OwnedType;
 }
 
+/// Having the inner type with a lifetime allows to borrow features for any lifetime.
+///
+/// This could be avoided with [GAT](https://rust-lang.github.io/rfcs/1598-generic_associated_types.html)
+pub trait Plugin: for<'a> PluginInner<'a> {}
+impl<T: for<'a> PluginInner<'a>> Plugin for T {}
+
 #[repr(C)]
-pub struct KeyValue<'a>(pub ReprCStr<'a>, pub usize);
+pub struct KeyValue<'a>(pub CSliceRef<'a, u8>, pub usize);
 
 pub type KeyValueCallback<'a> = OpaqueCallback<'a, KeyValue<'a>>;
 
@@ -27,8 +37,8 @@ pub trait MainFeature {
 #[cglue_trait]
 #[cglue_forward]
 pub trait KeyValueStore {
-    fn write_key_value(&mut self, name: ReprCStr<'_>, val: usize);
-    fn get_key_value(&self, name: ReprCStr<'_>) -> usize;
+    fn write_key_value(&mut self, name: &str, val: usize);
+    fn get_key_value(&self, name: &str) -> usize;
 }
 
 #[cglue_trait]

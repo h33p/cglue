@@ -1,6 +1,10 @@
+//! Example plugin library.
+//!
+//! This plugin crate will not be known to the user, both parties will interact with the help of
+//! the shared plugin API.
+
 use cglue::prelude::v1::*;
 use plugin_api::*;
-use std::borrow::Borrow;
 use std::collections::HashMap;
 
 #[derive(Default)]
@@ -23,7 +27,7 @@ impl<'a> PluginInner<'a> for KvRoot {
 
 #[derive(Debug, Default, Clone)]
 struct KvStore {
-    map: HashMap<ReprCString, usize>,
+    map: HashMap<String, usize>,
 }
 
 impl MainFeature for KvStore {
@@ -33,12 +37,12 @@ impl MainFeature for KvStore {
 }
 
 impl KeyValueStore for KvStore {
-    fn write_key_value(&mut self, name: ReprCStr<'_>, val: usize) {
+    fn write_key_value(&mut self, name: &str, val: usize) {
         self.map.insert(name.to_string().into(), val);
     }
 
-    fn get_key_value(&self, name: ReprCStr<'_>) -> usize {
-        self.map.get(&name).copied().unwrap_or(0)
+    fn get_key_value(&self, name: &str) -> usize {
+        self.map.get(name).copied().unwrap_or(0)
     }
 }
 
@@ -46,7 +50,7 @@ impl KeyValueDumper for KvStore {
     fn dump_key_values<'a>(&'a self, callback: KeyValueCallback<'a>) {
         self.map
             .iter()
-            .map(|(k, v)| KeyValue(*k.borrow(), *v))
+            .map(|(k, v)| KeyValue(k.as_str().into(), *v))
             .feed_into(callback);
     }
 }

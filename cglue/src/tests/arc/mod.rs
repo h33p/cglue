@@ -114,20 +114,3 @@ fn use_clone_obj() {
 
     assert_eq!(Arc::strong_count(&arc), 1);
 }
-
-#[test]
-fn use_debug_obj() {
-    let sa = SA {};
-
-    let arc = std::sync::Arc::from(());
-
-    assert_eq!(Arc::strong_count(&arc), 1);
-
-    let opt_arc = CArc::<()>::from(arc.clone()).into_opt();
-
-    assert_eq!(Arc::strong_count(&arc), 2);
-
-    let wrapped = CtxBox::from((sa, opt_arc));
-
-    assert_eq!(Arc::strong_count(&arc), 2);
-}

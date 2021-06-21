@@ -55,7 +55,7 @@ impl From<String> for ReprCString {
 
 impl<'a> std::borrow::Borrow<ReprCStr<'a>> for ReprCString {
     fn borrow(&self) -> &ReprCStr<'a> {
-        unsafe { std::mem::transmute(self) }
+        unsafe { &*(self as *const _ as *const _) }
     }
 }
 

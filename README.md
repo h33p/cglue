@@ -151,7 +151,9 @@ This crate relies on the assumption that opaque objects will not be tampered wit
 vtable functions will not be modified. It is being ensured through encapsulation of fields
 from anywhere by using hidden submodules. However, unverifiable users (C libraries) may still
 be able to modify the tables. This library assumes they are not malicious and does not
-perform any runtime verification.
+perform any runtime verification. Currently there is no verification of API version mismatches,
+but it is in the plans to attempt to integrate with version checking systems available in
+[abi\_stable](https://crates.io/crates/abi_stable) crate.
 
 Other than 2 bits in [associated type wrapping](#associated-type-wrapping), this crate should
 be safe.
@@ -390,14 +392,14 @@ include them.
 As for details, commonly used Rust structures are automatically wrapped in a way that works
 effectively.
 
-For instance, slices get split up into pointer and size pairs:
+For instance, slices and `str` types get converted to C-compatible slices.
 
 ```rust
 fn with_slice(&self, slice: &[usize]) {}
 
 // Generated vtable entry:
 
-with_slice: extern "C" fn(&CGlueF, slice: *const usize, slice_size: usize),
+with_slice: extern "C" fn(&CGlueF, slice: CSlice<usize>),
 ```
 
 `Option` types that can not have [nullable pointer optimization](https://doc.rust-lang.org/nomicon/ffi.html#the-nullable-pointer-optimization) are wrapped into [COption](crate::option::COption):
@@ -707,5 +709,9 @@ Other than that, everything should be good to go!
 3. Custom generic arguments for cglue traits are not yet supported, but this is to be improved
    upon.
 
-4. There probably are some corner cases when it comes to path imports. If you find any, please
+4. There is no runtime validation of ABI differences caused by API changes. It is planned
+   for a future release, perhaps integrating with
+   [abi\_stable](https://crates.io/crates/abi_stable).
+
+5. There probably are some corner cases when it comes to path imports. If you find any, please
    file an issue report :)

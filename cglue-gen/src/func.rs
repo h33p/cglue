@@ -120,7 +120,6 @@ impl TraitArg {
     fn new(
         mut arg: FnArg,
         targets: &BTreeMap<Ident, WrappedType>,
-        unsafety: &TokenStream,
         crate_path: &TokenStream,
         inject_lifetime: Option<&Lifetime>,
         inject_lifetime_cast: Option<&Lifetime>,
@@ -181,26 +180,38 @@ impl TraitArg {
                 match ty {
                     Type::Reference(r) => {
                         let is_mut = r.mutability.is_some();
-                        if let Type::Slice(s) = &*r.elem {
-                            let szname =
-                                format_ident!("{}_size", name.to_token_stream().to_string());
-                            let ty = &*s.elem;
-                            let (as_ptr, from_raw_parts, ptrt) = if is_mut {
-                                (
-                                    quote!(as_mut_ptr),
-                                    quote!(from_raw_parts_mut),
-                                    quote!(*mut #ty),
-                                )
-                            } else {
-                                (quote!(as_ptr), quote!(from_raw_parts), quote!(*const #ty))
-                            };
+                        let new_ty = match &*r.elem {
+                            Type::Slice(s) => {
+                                let ty = &*s.elem;
+                                Some(if is_mut {
+                                    quote!(#crate_path::slice::CSliceMut<#ty>)
+                                } else {
+                                    quote!(#crate_path::slice::CSliceRef<#ty>)
+                                })
+                            }
+                            Type::Path(p) => {
+                                if let Some("str") =
+                                    p.path.get_ident().map(|i| i.to_string()).as_deref()
+                                {
+                                    Some(if is_mut {
+                                        quote!(#crate_path::slice::CSliceMut<u8>)
+                                    } else {
+                                        quote!(#crate_path::slice::CSliceRef<u8>)
+                                    })
+                                } else {
+                                    None
+                                }
+                            }
+                            _ => None,
+                        };
 
+                        if let Some(slty) = new_ty {
                             ret = Some((
-                                quote!(let (#name, #szname) = (#name.#as_ptr(), #name.len());),
-                                quote!(#name, #szname,),
-                                quote!(#name: #ptrt, #szname: usize,),
-                                quote!(#name: #ptrt, #szname: usize,),
-                                quote!(#unsafety { ::core::slice::#from_raw_parts(#name, #szname) },),
+                                quote!(),
+                                quote!(#name.into(),),
+                                quote!(#name: #slty,),
+                                quote!(#name: #slty,),
+                                quote!(#name.into(),),
                                 false,
                             ))
                         }
@@ -341,7 +352,6 @@ impl ParsedFunc {
             let func = TraitArg::new(
                 input,
                 wrap_types,
-                &unsafety,
                 crate_path,
                 out.lifetime.as_ref(),
                 out.lifetime_cast.as_ref(),

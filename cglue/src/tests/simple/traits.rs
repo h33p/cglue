@@ -1,9 +1,11 @@
 //! These tests are intended to check more complex casting behaviour.
+use crate::slice::*;
 use cglue_macro::*;
 
 #[cglue_trait]
 pub trait WithSlice {
     fn wslice_1(&mut self, _slc: &[usize]) {}
+    fn wslice_2(&mut self, _str: &str) {}
 }
 
 #[cglue_trait]
@@ -49,7 +51,8 @@ impl WithAliasIntResult for Implementor {}
 #[test]
 fn slices_wrapped() {
     let vtbl = <&WithSliceVtbl<&mut Implementor, Implementor, (), ()>>::default();
-    let _: unsafe extern "C" fn(&mut Implementor, *const usize, usize) = vtbl.wslice_1();
+    let _: unsafe extern "C" fn(&mut Implementor, CSliceRef<usize>) = vtbl.wslice_1();
+    let _: unsafe extern "C" fn(&mut Implementor, CSliceRef<u8>) = vtbl.wslice_2();
 }
 
 #[test]

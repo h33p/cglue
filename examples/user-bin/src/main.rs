@@ -1,3 +1,8 @@
+//! The user of the plugin API.
+//!
+//! This crate loads binary plugins using the API, and performs some operations with mandatory and
+//! optional traits.
+
 use cglue::prelude::v1::*;
 use plugin_api::*;
 use std::ffi::CString;
@@ -46,9 +51,13 @@ fn main() -> Result<()> {
             use_kvstore(obj)?;
         }
 
-        if let Some(mut obj) = cast!(owned impl KeyValueDumper) {
+        // Casting can be combined with a multiple of optional traits.
+        if let Some(mut obj) = cast!(owned impl KeyValueDumper + KeyValueStore) {
             println!("Dumping owned kvstore:");
             kvdump(&mut obj);
+
+            // You can still use the mandatory traits.
+            obj.print_self();
         }
 
         println!("Owned done.");
@@ -64,23 +73,22 @@ fn use_kvstore(obj: &mut impl KeyValueStore) -> Result<()> {
 
     println!("Enter key:");
     io::stdin().read_line(&mut buf)?;
-    let key = CString::new(buf.trim()).unwrap();
 
-    println!("Cur val: {}", obj.get_key_value(key.as_c_str().into()));
+    println!("Cur val: {}", obj.get_key_value(buf.trim().into()));
 
     buf.clear();
     println!("Enter value:");
     io::stdin().read_line(&mut buf)?;
 
     let new_val = buf.trim().parse::<usize>()?;
-    obj.write_key_value(CString::new(key).unwrap().as_c_str().into(), new_val);
+    obj.write_key_value(buf.trim().into(), new_val);
 
     Ok(())
 }
 
 fn kvdump(obj: &mut impl KeyValueDumper) {
     let callback = &mut |KeyValue(key, value)| {
-        println!("{} : {}", key.as_ref(), value);
+        println!("{} : {}", key.as_str(), value);
         true
     };
 

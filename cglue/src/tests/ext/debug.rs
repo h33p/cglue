@@ -1,6 +1,6 @@
-use super::super::simple::structs::*;
+/*use super::super::simple::structs::*;
 use super::super::simple::trait_defs::*;
-use cglue_macro::*;
+use cglue_macro::*;*/
 
 // Currently not FFI-safe
 /*cglue_trait_group!(MaybeDebug, { TA }, { ::ext::core::fmt::Debug });
