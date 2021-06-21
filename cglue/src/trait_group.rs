@@ -1,5 +1,7 @@
 //! Core definitions for traits, and their groups.
 
+// TODO: split everything up
+
 use crate::boxed::{CBox, CtxBox};
 use core::ffi::c_void;
 use core::mem::ManuallyDrop;
@@ -29,6 +31,10 @@ pub struct CGlueTraitObj<'a, T, V, S> {
 /// Implementor of this trait must ensure the same layout of regular and opaque data. Generally,
 /// this means using the same structure, but taking type T and converting it to c_void, but it is
 /// not limited to that.
+///
+/// In addition, it is key to know that any functions on the type that expect a concrete type
+/// parameter become undefined behaviour. For instance, moving out of a opaque `Box` is
+/// undefined behaviour.
 pub unsafe trait Opaquable: Sized {
     type OpaqueTarget;
 
@@ -131,17 +137,15 @@ where
     }
 }
 
-pub trait CGlueObjBase {
-    type ObjType;
-    type ContType: ::core::ops::Deref<Target = Self::ObjType>;
-}
-
 /// CGlue compatible object.
 ///
 /// This trait allows to retrieve the constant `this` pointer on the structure.
 pub trait CGlueObjRef<S> {
+    /// Type of the underlying object.
     type ObjType;
+    /// Type of the container housing the object.
     type ContType: ::core::ops::Deref<Target = Self::ObjType>;
+    /// Type of the context associated with the container.
     type Context: Clone;
 
     fn cobj_ref(&self) -> (&Self::ObjType, &S, &Self::Context);
@@ -160,6 +164,7 @@ impl<'a, T: ContextRef<ObjType = F> + Deref<Target = F>, F, V, S> CGlueObjRef<S>
     }
 }
 
+/// Represents a reference type with context.
 pub trait ContextRef {
     type ObjType;
     type Context: Clone;
@@ -201,6 +206,7 @@ impl<'a, T: ContextRef<ObjType = F> + ContextMut + Deref<Target = F> + DerefMut,
     }
 }
 
+/// Represents a mutable reference type with context.
 pub trait ContextMut: ContextRef {
     fn split_ctx_mut(&mut self) -> (&mut Self::ObjType, &Self::Context);
 }
@@ -231,6 +237,7 @@ impl<
     }
 }
 
+/// Represents an owned container type with context.
 pub trait ContextOwned: ContextMut {
     /// Split the container into its underlying object and the context.
     ///
