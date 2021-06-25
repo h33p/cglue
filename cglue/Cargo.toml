@@ -20,4 +20,3 @@ serde = { version = "1", optional = true, default-features = false, features = [
 default = ["std"]
 no_empty_retwrap = ["cglue-macro/no_empty_retwrap"]
 std = ["no-std-compat/std"]
-alloc = []
