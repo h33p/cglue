@@ -965,6 +965,9 @@
 //! 5. There probably are some corner cases when it comes to path imports. If you find any, please
 //!    file an issue report :)
 
+#![cfg_attr(not(feature = "std"), no_std)]
+extern crate no_std_compat as std;
+
 pub mod arc;
 pub mod boxed;
 pub mod callback;
@@ -983,6 +986,7 @@ pub use ::cglue_macro::{
     wrap_with_obj, wrap_with_obj_mut, wrap_with_obj_ref,
 };
 
+#[cfg(feature = "std")]
 pub mod ext {
     // Built-in external traits.
     cglue_macro::cglue_builtin_ext_traits!();

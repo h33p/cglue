@@ -1,9 +1,14 @@
 //! Describes null-terminated transparent C-strings.
 
-use std::os::raw::c_char;
 use std::prelude::v1::*;
 use std::slice::*;
 use std::str::from_utf8_unchecked;
+
+#[cfg(feature = "std")]
+use std::os::raw::c_char;
+#[cfg(not(feature = "std"))]
+#[allow(non_camel_case_types)]
+pub type c_char = i8;
 
 /// Wrapper around null-terminated C-style strings.
 ///
@@ -169,8 +174,10 @@ mod tests {
 #[derive(Copy, Clone)]
 pub struct ReprCStr<'a>(&'a c_char);
 
+#[cfg(feature = "std")]
 use std::ffi::CStr;
 
+#[cfg(feature = "std")]
 impl<'a> From<&'a CStr> for ReprCStr<'a> {
     fn from(from: &'a CStr) -> Self {
         Self(unsafe { (from.as_ptr() as *const c_char).as_ref() }.unwrap())
