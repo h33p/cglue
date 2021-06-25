@@ -1,7 +1,7 @@
 
 [workspace]
 members = [
-    "cglue",
+	"cglue",
 	"cglue-gen",
 	"cglue-macro",
 	"cglue-bindgen",
@@ -11,8 +11,8 @@ members = [
 ]
 
 default-members = [
-    "cglue",
-    "cglue-gen",
+	"cglue",
+	"cglue-gen",
 	"cglue-macro",
 	"cglue-bindgen",
 ]
