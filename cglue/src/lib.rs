@@ -965,6 +965,9 @@
 //! 5. There probably are some corner cases when it comes to path imports. If you find any, please
 //!    file an issue report :)
 
+#![cfg_attr(not(feature = "std"), no_std)]
+extern crate no_std_compat as std;
+
 pub mod arc;
 pub mod boxed;
 pub mod callback;

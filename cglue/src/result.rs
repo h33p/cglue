@@ -120,6 +120,7 @@ pub trait IntError {
     fn from_int_err(err: NonZeroI32) -> Self;
 }
 
+#[cfg(feature = "std")]
 impl IntError for std::io::Error {
     fn into_int_err(self) -> NonZeroI32 {
         let err = self.raw_os_error().unwrap_or(0);

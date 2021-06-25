@@ -13,8 +13,10 @@ readme = "../README.md"
 
 [dependencies]
 cglue-macro = { version = "0.1", path = "../cglue-macro" }
-serde = { version = "1", optional = true }
+no-std-compat = { version = "0.4", features = ["alloc"] }
+serde = { version = "1", optional = true, default-features = false, features = ["derive", "alloc"] }
 
 [features]
-default = []
+default = ["std"]
 no_empty_retwrap = ["cglue-macro/no_empty_retwrap"]
+std = ["no-std-compat/std"]
