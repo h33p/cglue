@@ -986,7 +986,6 @@ pub use ::cglue_macro::{
     wrap_with_obj, wrap_with_obj_mut, wrap_with_obj_ref,
 };
 
-#[cfg(feature = "std")]
 pub mod ext {
     // Built-in external traits.
     cglue_macro::cglue_builtin_ext_traits!();
