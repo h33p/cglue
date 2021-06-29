@@ -20,8 +20,16 @@ fn ident_path(ident: Ident) -> Type {
     Type::Path(TypePath { qself: None, path })
 }
 
-fn ty_ident(ty: &Type) -> Ident {
-    format_ident!("{}", ty.to_token_stream().to_string())
+fn ty_ident(ty: &Type) -> Option<&Ident> {
+    if let Type::Path(path) = ty {
+        if path.qself.is_none() {
+            path.path.get_ident()
+        } else {
+            None
+        }
+    } else {
+        None
+    }
 }
 
 #[derive(Clone)]
@@ -185,13 +193,21 @@ impl ParsedGenerics {
         for val in old_gen_use.into_pairs() {
             match val {
                 punctuated::Pair::Punctuated(p, punc) => {
-                    self.gen_use
-                        .push_value(self.gen_remaps.get(&ty_ident(&p)).cloned().unwrap_or(p));
+                    if let Some(ident) = ty_ident(&p) {
+                        self.gen_use
+                            .push_value(self.gen_remaps.get(ident).cloned().unwrap_or(p));
+                    } else {
+                        self.gen_use.push_value(p);
+                    }
                     self.gen_use.push_punct(punc);
                 }
                 punctuated::Pair::End(p) => {
-                    self.gen_use
-                        .push_value(self.gen_remaps.get(&ty_ident(&p)).cloned().unwrap_or(p));
+                    if let Some(ident) = ty_ident(&p) {
+                        self.gen_use
+                            .push_value(self.gen_remaps.get(ident).cloned().unwrap_or(p));
+                    } else {
+                        self.gen_use.push_value(p);
+                    }
                 }
             }
         }
@@ -312,7 +328,7 @@ impl From<&Punctuated<GenericArgument, Comma>> for ParsedGenerics {
         for param in input {
             match param {
                 GenericArgument::Type(ty) => {
-                    let ident = ty_ident(&ty);
+                    let ident = ty_ident(&ty).expect("Invalid identifier passed").clone();
                     gen_use.push_value(ty.clone());
                     gen_use.push_punct(Default::default());
                     gen_declare.push_value(TypeParam {
