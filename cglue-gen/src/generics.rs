@@ -328,18 +328,19 @@ impl From<&Punctuated<GenericArgument, Comma>> for ParsedGenerics {
         for param in input {
             match param {
                 GenericArgument::Type(ty) => {
-                    let ident = ty_ident(&ty).expect("Invalid identifier passed").clone();
+                    if let Some(ident) = ty_ident(&ty).cloned() {
+                        gen_declare.push_value(TypeParam {
+                            attrs: vec![],
+                            ident,
+                            colon_token: None,
+                            bounds: Punctuated::new(),
+                            eq_token: None,
+                            default: None,
+                        });
+                        gen_declare.push_punct(Default::default());
+                    }
                     gen_use.push_value(ty.clone());
                     gen_use.push_punct(Default::default());
-                    gen_declare.push_value(TypeParam {
-                        attrs: vec![],
-                        ident,
-                        colon_token: None,
-                        bounds: Punctuated::new(),
-                        eq_token: None,
-                        default: None,
-                    });
-                    gen_declare.push_punct(Default::default());
                 }
                 GenericArgument::Const(_cn) => {
                     // TODO
