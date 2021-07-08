@@ -973,6 +973,7 @@ pub mod boxed;
 pub mod callback;
 pub mod forward;
 pub mod from2;
+pub mod iter;
 pub mod option;
 pub mod repr_cstring;
 pub mod result;
@@ -998,6 +999,7 @@ pub mod prelude {
             boxed::{CBox, CtxBox},
             callback::{Callback, FeedCallback, OpaqueCallback},
             forward::{Forward, ForwardMut, Fwd},
+            iter::CIterator,
             option::COption,
             repr_cstring::{ReprCStr, ReprCString},
             result::{CResult, IntError, IntResult},
