@@ -997,7 +997,7 @@ pub mod prelude {
         pub use crate::{
             arc::{CArc, COptArc},
             boxed::{CBox, CtxBox},
-            callback::{Callback, FeedCallback, OpaqueCallback},
+            callback::{Callback, FeedCallback, FromExtend, OpaqueCallback},
             forward::{Forward, ForwardMut, Fwd},
             iter::CIterator,
             option::COption,

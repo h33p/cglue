@@ -497,7 +497,26 @@ impl ParsedFunc {
 
         for arg in &self.args {
             let arg = &arg.arg;
-            let arg = quote!(#arg, );
+
+            let arg = match arg {
+                FnArg::Typed(pat) => {
+                    if let Pat::Ident(PatIdent { ident, .. }) = &*pat.pat {
+                        let ty = &*pat.ty;
+                        // TODO: handle subpat
+                        quote!(#ident: #ty, )
+                    } else {
+                        quote!(#arg, )
+                    }
+                }
+                FnArg::Receiver(rcv) => {
+                    if rcv.reference.is_some() {
+                        quote!(#rcv,)
+                    } else {
+                        quote!(self,)
+                    }
+                }
+            };
+
             arg.to_tokens(&mut ret);
         }
 

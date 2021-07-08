@@ -86,7 +86,7 @@ impl<'a, T> From<&'a mut Vec<T>> for OpaqueCallback<'a, T> {
 impl<'a, T> std::iter::Extend<T> for OpaqueCallback<'a, T> {
     fn extend<F: IntoIterator<Item = T>>(&mut self, iter: F) {
         for item in iter {
-            if self.call(item) {
+            if !self.call(item) {
                 break;
             }
         }
@@ -94,11 +94,18 @@ impl<'a, T> std::iter::Extend<T> for OpaqueCallback<'a, T> {
 }
 
 pub trait FeedCallback<T> {
-    fn feed_into(self, callback: OpaqueCallback<T>) -> usize;
+    fn feed_into_mut(self, callback: &mut OpaqueCallback<T>) -> usize;
+
+    fn feed_into(self, mut callback: OpaqueCallback<T>) -> usize
+    where
+        Self: Sized,
+    {
+        self.feed_into_mut(&mut callback)
+    }
 }
 
 impl<'a, I: std::iter::IntoIterator<Item = T>, T> FeedCallback<T> for I {
-    fn feed_into(self, mut callback: OpaqueCallback<T>) -> usize {
+    fn feed_into_mut(self, callback: &mut OpaqueCallback<T>) -> usize {
         let mut cnt = 0;
         for v in self {
             cnt += 1;
@@ -109,3 +116,20 @@ impl<'a, I: std::iter::IntoIterator<Item = T>, T> FeedCallback<T> for I {
         cnt
     }
 }
+
+pub trait FromExtend<T>: Extend<T> + Sized {
+    fn from_extend(&mut self) -> OpaqueCallback<T> {
+        extern "C" fn callback<C: Extend<T>, T>(v: &mut C, context: T) -> bool {
+            v.extend(Some(context));
+            true
+        }
+
+        Callback {
+            context: self,
+            func: callback::<Self, T>,
+        }
+        .into()
+    }
+}
+
+impl<C: Extend<T>, T> FromExtend<T> for C {}
