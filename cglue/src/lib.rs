@@ -58,7 +58,7 @@
 //!     printer.print_info();
 //! }
 //!
-//! fn main() {
+//! fn main() -> () {
 //!     let mut info = Info {
 //!         value: 5
 //!     };
@@ -127,7 +127,7 @@
 //! // only that `InfoChanger` is optionally implemented.
 //! cglue_impl_group!(Info, InfoGroup, InfoChanger);
 //!
-//! # fn main() {
+//! # fn main() -> () {
 //! let mut info = Info { value: 5 };
 //!
 //! let mut obj = group_obj!(info as InfoGroup);
@@ -737,7 +737,7 @@
 //!
 //! impl PluginRoot for () {}
 //!
-//! # fn main() {
+//! # fn main() -> () {
 //! let root = ();
 //! // This could be a `libloading::Library` arc.
 //! let ref_to_count = CArc::from(()).into_opt();
@@ -785,7 +785,7 @@
 //!     }
 //! }
 //!
-//! # fn main() {
+//! # fn main() -> () {
 //! let root = ();
 //! // This could be a `libloading::Library` arc.
 //! let ref_to_count = CArc::from(()).into_opt();

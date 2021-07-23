@@ -42,7 +42,13 @@ impl<'a, T> CSliceRef<'a, T> {
 }
 
 impl<'a> CSliceRef<'a, u8> {
+    #[deprecated(since = "0.1.2", note = "use Into::into, or into_str instead")]
+    #[allow(clippy::wrong_self_convention)]
     pub fn as_str(self) -> &'a str {
+        self.into()
+    }
+
+    pub fn into_str(self) -> &'a str {
         self.into()
     }
 }
@@ -128,11 +134,23 @@ impl<'a, T> CSliceMut<'a, T> {
 }
 
 impl<'a> CSliceMut<'a, u8> {
+    #[deprecated(since = "0.1.2", note = "use Into::into, or into_str instead")]
+    #[allow(clippy::wrong_self_convention)]
     pub fn as_str(self) -> &'a str {
         self.into()
     }
 
+    pub fn into_str(self) -> &'a str {
+        self.into()
+    }
+
+    #[deprecated(since = "0.1.2", note = "use Into::into, or into_mut_str instead")]
+    #[allow(clippy::wrong_self_convention)]
     pub fn as_mut_str(self) -> &'a mut str {
+        self.into()
+    }
+
+    pub fn into_mut_str(self) -> &'a mut str {
         self.into()
     }
 }

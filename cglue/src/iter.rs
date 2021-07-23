@@ -7,6 +7,40 @@ use core::mem::MaybeUninit;
 use std::prelude::v1::*;
 
 /// FFI compatible iterator.
+///
+/// Any mutable reference to an iterator can be converted to a `CIterator`.
+///
+/// `CIterator<T>` implements `Iterator<Item = T>`.
+///
+/// # Examples
+///
+/// Using [`IntoCIterator`](IntoCIterator) helper:
+///
+/// ```
+/// use cglue::iter::{CIterator, IntoCIterator};
+///
+/// extern "C" fn sum_all(iter: CIterator<usize>) -> usize {
+///     iter.sum()
+/// }
+///
+/// let mut iter = (0..10).map(|v| v * v);
+///
+/// assert_eq!(sum_all(iter.into_citer()), 285);
+/// ```
+///
+/// Converting with `Into` trait:
+///
+/// ```
+/// use cglue::iter::{CIterator, IntoCIterator};
+///
+/// extern "C" fn sum_all(iter: CIterator<usize>) -> usize {
+///     iter.sum()
+/// }
+///
+/// let mut iter = (0..=10).map(|v| v * v);
+///
+/// assert_eq!(sum_all((&mut iter).into()), 385);
+/// ```
 #[repr(C)]
 pub struct CIterator<'a, T> {
     iter: &'a mut c_void,
@@ -56,3 +90,11 @@ impl<'a, T> Iterator for CIterator<'a, T> {
         }
     }
 }
+
+pub trait IntoCIterator: Iterator + Sized {
+    fn into_citer(&mut self) -> CIterator<Self::Item> {
+        self.into()
+    }
+}
+
+impl<T: Iterator> IntoCIterator for T {}
