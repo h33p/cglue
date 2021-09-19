@@ -131,7 +131,15 @@ impl TraitArg {
 
                 if r.reference.is_none() {
                     (
-                        quote!(let thisobj = self.cobj_owned();),
+                        quote! {
+                            // Guard against failure cases where context drops the library.
+                            // Only happens where self gets consumed.
+                            // TODO: make a breaking change in cobj_owned so this is not needed
+                            // separately
+                            // TODO 2: figure out how to test this.
+                            let __ctx = self.cobj_ref().2.clone();
+                            let thisobj = self.cobj_owned();
+                        },
                         quote!(thisobj,),
                         quote!(thisobj: CGlueT,),
                         quote!(thisobj: CGlueT,),
