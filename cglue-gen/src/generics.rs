@@ -543,7 +543,7 @@ impl GenericType {
                 let life = &pg.life_use;
                 let gen = &pg.gen_use;
 
-                (quote!(::), quote!(#life _, _, _, _, #gen))
+                (quote!(::), quote!(#life _, _, #gen))
             }
             (false, Some(params)) => (quote!(), quote!(#params)),
             (true, _) => (quote!(::), quote!()),

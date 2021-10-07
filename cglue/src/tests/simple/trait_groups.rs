@@ -6,13 +6,17 @@ use cglue_macro::*;
 cglue_trait_group!(TestGroup, TA, { TB, TC });
 
 cglue_impl_group!(SA, TestGroup, { TC });
+
 cglue_impl_group!(SB, super::trait_groups::TestGroup, { TB });
 
 #[test]
 fn test_group() {
-    let a = SA {};
+    let mut a = SA {};
 
-    let _ = group_obj!(&a as TestGroup);
+    // Slight regression in 0.2, can not use const ref, because
+    // (optional) TC requires mutable refs for the impl to work.
+    // Can be fixed through nightly.
+    let _ = group_obj!(&mut a as TestGroup);
 
     let group = group_obj!(a as TestGroup);
 
@@ -42,4 +46,8 @@ fn test_group_2() {
 
     let group = group_obj!(b as TestGroup);
     assert!(check!(group impl TB));
+
+    let tb = as_ref!(group impl TB).unwrap();
+
+    tb.tb_1(1);
 }

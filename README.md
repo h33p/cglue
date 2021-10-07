@@ -11,6 +11,11 @@ If all code is glued together, our glue is the safest on the market.
 
 ## FFI-safe trait generation, helper structures, and more!
 
+**WARNING: following documentation is currently valid for
+[stable 0.1.x series](https://github.com/h33p/cglue/tree/v0.1.3)**
+
+*This is a 0.2 development branch, documentation is to be updated ASAP*
+
 <!-- toc -->
 - [Overview](#overview)
 - [In-depth look](#in-depth-look)
@@ -58,7 +63,7 @@ fn use_info_printer(printer: &impl InfoPrinter) {
     printer.print_info();
 }
 
-fn main() {
+fn main() -> () {
     let mut info = Info {
         value: 5
     };

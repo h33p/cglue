@@ -17,6 +17,7 @@ pub fn gen_forward(tr: ItemTrait, ext_path: Option<TokenStream>) -> TokenStream 
         format_ident!("Self"),
         WrappedType {
             ty: parse2(quote!(Self)).unwrap(),
+            ty_ret_tmp: None,
             ty_static: None,
             return_conv: None,
             lifetime_bound: None,
@@ -26,7 +27,6 @@ pub fn gen_forward(tr: ItemTrait, ext_path: Option<TokenStream>) -> TokenStream 
             impl_return_conv: None,
             inject_ret_tmp: false,
             unbounded_hrtb: false,
-            needs_ctx: false,
         },
     );
 

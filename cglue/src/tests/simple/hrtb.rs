@@ -74,7 +74,7 @@ impl<T: TA> AsSubThing for Plug<T> {
     }
 }
 
-/*cglue_trait_group!(PluginInstance<'a>, { PluginInner<'a> }, { Clone });
+cglue_trait_group!(PluginInstance<'a>, { PluginInner<'a> }, { Clone });
 
 cglue_impl_group!(SA, PluginInstance<'a>, {});
 
@@ -99,7 +99,7 @@ fn build_subplugin() {
     let ta = obj.get_ta();
 
     assert_eq!(ta.ta_1(), 5);
-}*/
+}
 
 #[test]
 fn use_plugin() {
@@ -112,7 +112,7 @@ fn use_plugin() {
     printer.do_thing();
 }
 
-/*#[test]
+#[test]
 fn use_plugin_mut() {
     let mut sa = SA {};
 
@@ -145,4 +145,4 @@ fn use_plugin_group_mut() {
     let printer = obj.get_plug();
 
     printer.do_thing();
-}*/
+}

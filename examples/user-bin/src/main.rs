@@ -88,7 +88,7 @@ fn use_kvstore(obj: &mut impl KeyValueStore) -> Result<()> {
 
 fn kvdump(obj: &mut impl KeyValueDumper) {
     let callback = &mut |KeyValue(key, value)| {
-        println!("{} : {}", key.as_str(), value);
+        println!("{} : {}", <&str>::from(key), value);
         true
     };
 

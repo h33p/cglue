@@ -1,6 +1,6 @@
 use super::simple::structs::*;
 use crate::arc::*;
-use crate::boxed::*;
+//use crate::boxed::*;
 use crate::*;
 use std::sync::Arc;
 
@@ -42,12 +42,12 @@ impl DoerGetter for SA {
     }
 }
 
-#[test]
+/*#[test]
 fn use_dothings() {
     let sa = SA {};
-    let wrapped = CtxBox::from((sa, CArc::from(()).into_opt()));
+    let wrapped = CBox::from((sa, CArc::from(()).into_opt()));
     assert_eq!(wrapped.dt_1(), 55);
-}
+}*/
 
 #[test]
 fn use_getter_obj() {
@@ -61,9 +61,7 @@ fn use_getter_obj() {
 
     assert_eq!(Arc::strong_count(&arc), 2);
 
-    let wrapped = CtxBox::from((sa, opt_arc));
-
-    let getter: DoerGetterArcBox = trait_obj!(wrapped as DoerGetter);
+    let getter = trait_obj!((sa, opt_arc) as DoerGetter);
 
     assert_eq!(Arc::strong_count(&arc), 2);
 
@@ -96,9 +94,7 @@ fn use_clone_obj() {
 
     assert_eq!(Arc::strong_count(&arc), 2);
 
-    let wrapped = CtxBox::from((sa, opt_arc));
-
-    let obj = trait_obj!(wrapped as Clone);
+    let obj: crate::ext::CloneBaseArcBox<_, _> = trait_obj!((sa, opt_arc) as Clone);
 
     assert_eq!(Arc::strong_count(&arc), 2);
 

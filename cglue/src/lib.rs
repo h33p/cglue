@@ -11,6 +11,11 @@
 //!
 //! ## FFI-safe trait generation, helper structures, and more!
 //!
+//! **WARNING: following documentation is currently valid for
+//! [stable 0.1.x series](https://github.com/h33p/cglue/tree/v0.1.3)**
+//!
+//! *This is a 0.2 development branch, documentation is to be updated ASAP*
+//!
 //! <!-- toc -->
 //! - [Overview](#overview)
 //! - [In-depth look](#in-depth-look)
@@ -449,7 +454,7 @@
 //! It is also possible to manually implement the groups by implementing `MyGroupVtableFiller`. Here is what
 //! the above 2 macro invocations expand to:
 //!
-//! ```
+//! ```ignore
 //! # use cglue::*;
 //! # #[cglue_trait]
 //! # pub trait TA {
@@ -754,7 +759,7 @@
 //! of `PluginRoot`, for instance an `InfoPrinter` object, the Arc gets moved/cloned into the new
 //! object.
 //!
-//! ```
+//! ```ignore
 //! # use cglue::prelude::v1::*;
 //! # use std::sync::Arc;
 //! # #[cglue_trait]
@@ -996,7 +1001,7 @@ pub mod prelude {
     pub mod v1 {
         pub use crate::{
             arc::{CArc, COptArc},
-            boxed::{CBox, CtxBox},
+            boxed::CBox,
             callback::{Callback, FeedCallback, FromExtend, OpaqueCallback},
             forward::{Forward, ForwardMut, Fwd},
             iter::CIterator,

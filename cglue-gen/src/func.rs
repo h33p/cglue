@@ -8,6 +8,7 @@ const FN_PREFIX: &str = "cglue_wrapped_";
 
 pub struct WrappedType {
     pub ty: GenericType,
+    pub ty_ret_tmp: Option<GenericType>,
     pub ty_static: Option<GenericType>,
     pub lifetime_bound: Option<Lifetime>,
     pub lifetime_type_bound: Option<Lifetime>,
@@ -17,7 +18,6 @@ pub struct WrappedType {
     pub impl_return_conv: Option<TokenStream>,
     pub inject_ret_tmp: bool,
     pub unbounded_hrtb: bool,
-    pub needs_ctx: bool,
 }
 
 /// TraitArg stores implementations for Unstable-C-Unstable ABI transitions.
@@ -33,8 +33,6 @@ struct TraitArg {
     c_cast_args: TokenStream,
     /// Arguments inside the call to the trait function.
     to_trait_arg: TokenStream,
-    /// Whether argument conversion is trivial - 1-1 relationship with no changed types
-    trivial: bool,
 }
 
 fn wrap_type<'a>(
@@ -124,7 +122,7 @@ impl TraitArg {
         inject_lifetime: Option<&Lifetime>,
         inject_lifetime_cast: Option<&Lifetime>,
     ) -> Self {
-        let (to_c_args, call_c_args, c_args, c_cast_args, to_trait_arg, trivial) = match &mut arg {
+        let (to_c_args, call_c_args, c_args, c_cast_args, to_trait_arg) = match &mut arg {
             FnArg::Receiver(r) => {
                 let lifetime = inject_lifetime.or_else(|| r.lifetime());
                 let lifetime_cast = inject_lifetime_cast.or_else(|| r.lifetime());
@@ -132,37 +130,34 @@ impl TraitArg {
                 if r.reference.is_none() {
                     (
                         quote! {
+                            let cont = self.into_ccont();
                             // Guard against failure cases where context drops the library.
                             // Only happens where self gets consumed.
                             // TODO: make a breaking change in cobj_owned so this is not needed
                             // separately
                             // TODO 2: figure out how to test this.
-                            let __ctx = self.cobj_ref().2.clone();
-                            let thisobj = self.cobj_owned();
+                            let __ctx = #crate_path::trait_group::CGlueObjBase::cobj_base_ref(&cont).1.clone();
                         },
-                        quote!(thisobj,),
-                        quote!(thisobj: CGlueT,),
-                        quote!(thisobj: CGlueT,),
+                        quote!(cont,),
+                        quote!(cont: CGlueC,),
+                        quote!(cont: CGlueC,),
                         quote!(),
-                        false,
                     )
                 } else if r.mutability.is_some() {
                     (
-                        quote!(let (thisptr, ret_tmp, cglue_ctx) = self.cobj_mut();),
-                        quote!(thisptr,),
-                        quote!(thisptr: &#lifetime mut CGlueF,),
-                        quote!(thisptr: &#lifetime_cast mut CGlueF,),
+                        quote!(let cont = self.ccont_mut();),
+                        quote!(cont,),
+                        quote!(cont: &#lifetime mut CGlueC,),
+                        quote!(cont: &#lifetime_cast mut CGlueC,),
                         quote!(),
-                        true,
                     )
                 } else {
                     (
-                        quote!(let (thisptr, ret_tmp, cglue_ctx) = self.cobj_ref();),
-                        quote!(thisptr,),
-                        quote!(thisptr: &#lifetime CGlueF,),
-                        quote!(thisptr: &#lifetime_cast CGlueF,),
+                        quote!(let cont = self.ccont_ref();),
+                        quote!(cont,),
+                        quote!(cont: &#lifetime CGlueC,),
+                        quote!(cont: &#lifetime_cast CGlueC,),
                         quote!(),
-                        true,
                     )
                 }
             }
@@ -220,7 +215,6 @@ impl TraitArg {
                                 quote!(#name: #slty,),
                                 quote!(#name: #slty,),
                                 quote!(#name.into(),),
-                                false,
                             ))
                         }
                     }
@@ -242,7 +236,6 @@ impl TraitArg {
                                                 quote!(#name: #crate_path::option::COption<#a>,),
                                                 quote!(#name: #crate_path::option::COption<#a>,),
                                                 quote!(#name.into(),),
-                                                false,
                                             ));
                                         }
                                     }
@@ -267,7 +260,6 @@ impl TraitArg {
                                                 quote!(#name: #crate_path::result::CResult<#a, #b>,),
                                                 quote!(#name: #crate_path::result::CResult<#a, #b>,),
                                                 quote!(#name.into(),),
-                                                false,
                                             ));
                                         }
                                         _ => {}
@@ -287,7 +279,6 @@ impl TraitArg {
                         quote!(#name: #ty,),
                         quote!(#name: #ty,),
                         quote!(#name,),
-                        true,
                     )
                 })
             }
@@ -300,7 +291,6 @@ impl TraitArg {
             c_args,
             c_cast_args,
             to_trait_arg,
-            trivial,
         }
     }
 }
@@ -310,7 +300,6 @@ pub struct ParsedFunc {
     trait_name: Ident,
     safe: bool,
     abi: FuncAbi,
-    has_nontrivial: bool,
     receiver: Receiver,
     args: Vec<TraitArg>,
     out: ParsedReturnType,
@@ -334,7 +323,6 @@ impl ParsedFunc {
         let mut args: Vec<TraitArg> = vec![];
 
         let mut receiver = None;
-        let mut has_nontrivial = false;
 
         let unsafety = if safe { quote!(unsafe) } else { quote!() };
 
@@ -365,8 +353,6 @@ impl ParsedFunc {
                 out.lifetime_cast.as_ref(),
             );
 
-            has_nontrivial = has_nontrivial || !func.trivial;
-
             args.push(func);
         }
 
@@ -379,7 +365,6 @@ impl ParsedFunc {
             trait_name,
             safe,
             abi,
-            has_nontrivial,
             receiver,
             args,
             out,
@@ -685,7 +670,7 @@ impl ParsedFunc {
     }
 
     pub fn is_wrapped(&self) -> bool {
-        self.abi == FuncAbi::Wrapped || self.has_nontrivial
+        true //self.abi == FuncAbi::Wrapped || self.has_nontrivial
     }
 
     /// Create a wrapper implementation body for this function
@@ -695,9 +680,10 @@ impl ParsedFunc {
         &self,
         tokens: &mut TokenStream,
         trg_path: &TokenStream,
-    ) -> (Option<&TokenStream>, bool) {
+        ret_tmp: &TokenStream,
+    ) -> Option<&TokenStream> {
         if !self.is_wrapped() {
-            return (None, false);
+            return None;
         }
 
         let name = &self.name;
@@ -710,11 +696,9 @@ impl ParsedFunc {
             c_pre_call,
             c_ret_params,
             use_hrtb,
-            return_self,
             lifetime,
             lifetime_cast,
             unbounded_hrtb,
-            needs_ctx,
             ..
         } = &self.out;
         let call_args = self.to_trait_call_args();
@@ -751,60 +735,39 @@ impl ParsedFunc {
             life_declare.to_token_stream()
         };
 
-        let mut container_bound = TokenStream::new();
+        let mut container_bound = quote!();
 
-        let (c_pre_call, this) = if self.receiver.reference.is_none() {
-            container_bound.extend(quote!(#trg_path::IntoInner<InnerTarget = CGlueF> + ));
-            if *needs_ctx {
-                (
-                    quote!(
-                        let (thisobj, cglue_ctx) = unsafe { thisobj.split_ctx_owned() };
-                        #c_pre_call
-                    ),
-                    quote!(thisobj),
-                )
-            } else {
-                (
-                    quote!(
-                        let thisobj = unsafe { thisobj.into_inner() };
-                        #c_pre_call
-                    ),
-                    quote!(thisobj),
-                )
-            }
-        } else {
-            (quote!(#c_pre_call), quote!(thisptr))
-        };
+        let (c_pre_call, cglue_c_into_inner) = if self.receiver.reference.is_none() {
+            container_bound.extend(quote!(#trg_path::CGlueObjBase<Context = CGlueCtx> + ));
 
-        let cglue_c = if *needs_ctx {
-            container_bound
-                .extend(quote!(#trg_path::ContextRef<Context = CGlueC, ObjType = CGlueF> + ));
-
-            if self.receiver.reference.is_some() {
-                container_bound.extend(quote!(::core::ops::Deref<Target = CGlueF>+));
-
-                if self.receiver.mutability.is_some() {
-                    container_bound.extend(quote!(::core::ops::DerefMut+));
-                    container_bound.extend(quote!(#trg_path::ContextMut + ));
-                }
-            } else {
-                container_bound.extend(quote!(#trg_path::ContextMut + ));
-                container_bound.extend(quote!(#trg_path::ContextOwned + ));
-            }
-
-            Some(
-                quote!(CGlueC: 'static + Clone + #trg_path::Opaquable, CGlueD: 'static + Clone + #trg_path::Opaquable, ),
+            (
+                quote! {
+                    let (this, cglue_ctx) = cont.cobj_base_owned();
+                    let this = unsafe { crate::trait_group::IntoInner::into_inner(this) };
+                    #c_pre_call
+                },
+                Some(quote!(
+                    CGlueC::InstType: crate::trait_group::IntoInner<InnerTarget = CGlueC::ObjType>,
+                )),
+            )
+        } else if self.receiver.mutability.is_some() {
+            container_bound.extend(quote!(#trg_path::CGlueObjMut<#ret_tmp, Context = CGlueCtx> + ));
+            (
+                quote! {
+                    let (this, ret_tmp, cglue_ctx) = cont.cobj_mut();
+                    #c_pre_call
+                },
+                None,
             )
         } else {
-            None
-        };
-
-        let container_bound = if !container_bound.is_empty() {
-            quote!(CGlueT: #container_bound,)
-        } else if *return_self {
-            quote!(CGlueT,)
-        } else {
-            container_bound
+            container_bound.extend(quote!(#trg_path::CGlueObjRef<#ret_tmp, Context = CGlueCtx> + ));
+            (
+                quote! {
+                    let (this, ret_tmp, cglue_ctx) = cont.cobj_ref();
+                    #c_pre_call
+                },
+                None,
+            )
         };
 
         let c_where_bounds = if lifetime_cast.is_some() && *unbounded_hrtb {
@@ -813,38 +776,24 @@ impl ParsedFunc {
             c_where_bounds
         };
 
+        let ctx_bound = super::traits::ctx_bound();
+
         let gen = quote! {
-            #safety extern "C" fn #fnname<#sig_life_declare #life_declare #container_bound #cglue_c CGlueF: for<'cglue_b> #trname<#tmp_lifetime #gen_use>, #gen_declare>(#args #c_ret_params) #c_out where #gen_where_bounds #c_where_bounds {
+            #safety extern "C" fn #fnname<#sig_life_declare #life_declare CGlueC: #container_bound, CGlueCtx: #ctx_bound, #gen_declare>(#args #c_ret_params) #c_out where #gen_where_bounds #c_where_bounds #cglue_c_into_inner CGlueC::ObjType: for<'cglue_b> #trname<#tmp_lifetime #gen_use>, {
                 #c_pre_call
-                let ret = #this.#name(#call_args);
+                let ret = this.#name(#call_args);
                 #c_ret
             }
         };
 
         tokens.extend(gen);
 
-        (Some(c_where_bounds), *needs_ctx)
+        Some(c_where_bounds)
     }
 
     pub fn vtbl_default_def(&self, tokens: &mut TokenStream) {
         let name = &self.name;
-
-        let fnname: TokenStream = if self.is_wrapped() {
-            let generics = if self.out.needs_ctx {
-                let gen_use = &self.generics.gen_use;
-
-                quote!(::<CGlueT, CGlueC, CGlueD, CGlueF, #gen_use>)
-            } else {
-                quote!()
-            };
-
-            format!("{}{}{}", FN_PREFIX, name, generics)
-        } else {
-            format!("CGlueF::{}", name)
-        }
-        .parse()
-        .unwrap();
-
+        let fnname = format_ident!("{}{}", FN_PREFIX, name);
         tokens.extend(quote!(#name: #fnname,));
     }
 
@@ -1067,7 +1016,6 @@ struct ParsedReturnType {
     unbounded_hrtb: bool,
     return_self: bool,
     use_wrap: bool,
-    needs_ctx: bool,
 }
 
 // TODO: handle more cases
@@ -1129,7 +1077,6 @@ impl ParsedReturnType {
             unbounded_hrtb: false,
             return_self: false,
             use_wrap: false,
-            needs_ctx: false,
         };
 
         if let ReturnType::Type(_, ty) = &mut ty {
@@ -1146,9 +1093,8 @@ impl ParsedReturnType {
                     other_bounds_simple,
                     inject_ret_tmp,
                     impl_return_conv,
-                    ty: new_ty,
                     ty_static,
-                    needs_ctx,
+                    ty_ret_tmp,
                     ..
                 } = wrapped.2;
 
@@ -1218,13 +1164,13 @@ impl ParsedReturnType {
                 let (static_bound, static_bound_simple) = if is_static {
                     if life_use.is_empty() {
                         (
-                            quote!(for<'cglue_b> <CGlueF as #trait_name<#gen_use>>::#trait_ty: 'static,),
-                            quote!(for<'cglue_b> <CGlueF as #trait_name<#gen_use>>::#trait_ty: 'static,),
+                            quote!(for<'cglue_b> <CGlueC::ObjType as #trait_name<#gen_use>>::#trait_ty: 'static,),
+                            quote!(for<'cglue_b> <CGlueC::ObjType as #trait_name<#gen_use>>::#trait_ty: 'static,),
                         )
                     } else {
                         (
-                            quote!(for<'cglue_b> <CGlueF as #trait_name<'cglue_b, #gen_use>>::#trait_ty: 'static,),
-                            quote!(<CGlueF as #trait_name<'cglue_a, #gen_use>>::#trait_ty: 'static,),
+                            quote!(for<'cglue_b> <CGlueC::ObjType as #trait_name<'cglue_b, #gen_use>>::#trait_ty: 'static,),
+                            quote!(<CGlueC::ObjType as #trait_name<'cglue_a, #gen_use>>::#trait_ty: 'static,),
                         )
                     }
                 } else {
@@ -1245,33 +1191,23 @@ impl ParsedReturnType {
                     }
                 };
 
-                let (injected_ret_tmp, tmp_type_def, tmp_impl_def, tmp_call_def) =
-                    match (inject_ret_tmp, mutable) {
-                        (true, false) => (
-                            Some(new_ty.clone()),
-                            quote!(ret_tmp: &mut ::core::mem::MaybeUninit<#new_ty>,),
-                            quote!(let ret_tmp = ret_tmp.#func_name();),
-                            quote!(ret_tmp,),
-                        ),
-                        (true, true) => (
-                            Some(new_ty.clone()),
-                            quote!(ret_tmp: &mut ::core::mem::MaybeUninit<#new_ty>,),
-                            quote!(let ret_tmp = ret_tmp.#func_name();),
-                            quote!(ret_tmp,),
-                        ),
-                        _ => (None, quote!(), quote!(), quote!()),
-                    };
+                let (injected_ret_tmp, c_pre_call) = match (inject_ret_tmp, mutable) {
+                    (true, false) => (
+                        ty_ret_tmp.clone(),
+                        quote!(let ret_tmp = ret_tmp.#func_name();),
+                    ),
+                    (true, true) => (
+                        ty_ret_tmp.clone(),
+                        quote!(let ret_tmp = ret_tmp.#func_name();),
+                    ),
+                    _ => (None, quote!()),
+                };
 
-                let (tmp_type_def, c_pre_call, tmp_call_def) =
-                    if *needs_ctx && receiver.reference.is_some() {
-                        (
-                            quote!(#tmp_type_def cglue_ctx: &CGlueC,),
-                            Some(quote!(#tmp_impl_def let cglue_ctx = cglue_ctx.clone();)),
-                            quote!(#tmp_call_def cglue_ctx,),
-                        )
-                    } else {
-                        (tmp_type_def, None, tmp_call_def)
-                    };
+                let c_pre_call = if receiver.reference.is_some() {
+                    quote!(#c_pre_call let cglue_ctx = cglue_ctx.clone();)
+                } else {
+                    c_pre_call
+                };
 
                 let impl_return_conv = impl_return_conv
                     .as_ref()
@@ -1291,10 +1227,10 @@ impl ParsedReturnType {
 
                 ret.c_where_bounds = where_bound;
                 ret.c_where_bounds_cast = where_bound_simple;
-                ret.c_ret_params = tmp_type_def;
-                ret.c_ret_precall_def = tmp_impl_def;
-                ret.c_call_ret_args = tmp_call_def;
-                ret.c_pre_call = c_pre_call;
+                ret.c_ret_params = quote!();
+                ret.c_ret_precall_def = quote!();
+                ret.c_call_ret_args = quote!();
+                ret.c_pre_call = Some(c_pre_call);
                 ret.c_ret = quote!(#ret_wrap);
                 ret.impl_func_ret = impl_return_conv;
                 ret.injected_ret_tmp = injected_ret_tmp;
@@ -1305,7 +1241,6 @@ impl ParsedReturnType {
                 ret.use_wrap = true;
                 ret.lifetime = lifetime;
                 ret.lifetime_cast = lifetime_cast;
-                ret.needs_ctx = *needs_ctx;
             }
 
             if let Type::Path(p) = &mut **ty {

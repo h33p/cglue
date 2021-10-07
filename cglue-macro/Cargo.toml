@@ -1,6 +1,6 @@
 [package]
 name = "cglue-macro"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Aurimas Blažulionis <0x60@pm.me>"]
 edition = "2018"
 description = "FFI safe code generation macros for making plugins and C-compatible libraries"
@@ -18,7 +18,7 @@ proc-macro = true
 syn = { version = "1", features = ["full", "extra-traits"] }
 proc-macro2 = "1"
 quote = "1"
-cglue-gen = { version = "0.1", path = "../cglue-gen" }
+cglue-gen = { version = "0.2", path = "../cglue-gen" }
 
 [features]
 default = []

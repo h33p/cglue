@@ -4,6 +4,7 @@
 //! type.  Whether `Fwd` implements the trait depends purely on whether the trait has
 //! functions with mutable references or not.
 
+use crate::trait_group::Opaquable;
 use ::core::ops::{Deref, DerefMut};
 
 #[repr(transparent)]
@@ -38,3 +39,7 @@ pub trait ForwardMut: Sized {
 
 impl<T: Deref> Forward for T {}
 impl<T: DerefMut> ForwardMut for T {}
+
+unsafe impl<T: Opaquable> Opaquable for Fwd<T> {
+    type OpaqueTarget = Fwd<T::OpaqueTarget>;
+}

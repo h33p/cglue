@@ -51,6 +51,14 @@ impl GroupRefReturn for SA {
     }
 }
 
+impl GroupRefReturn for SB {
+    type ReturnType = SB;
+
+    fn grr_1(&self) -> &SB {
+        self
+    }
+}
+
 #[cglue_trait]
 pub trait GroupMutReturn {
     #[wrap_with_group_mut(TestGroup)]
@@ -123,13 +131,13 @@ fn use_assoc_mut() {
 
 #[test]
 fn use_group_ref() {
-    let sa = SA {};
+    let sa = SB {};
 
     let obj = trait_obj!(sa as GroupRefReturn);
 
     let obj2 = obj.grr_1();
 
-    assert_eq!(obj2.ta_1(), 5);
+    assert_eq!(obj2.ta_1(), 6);
 }
 
 #[test]
