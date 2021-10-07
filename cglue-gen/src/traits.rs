@@ -10,7 +10,7 @@ use syn::*;
 
 // TODO: Add dynamic setting of Send / Sync
 pub fn ctx_bound() -> TokenStream {
-    quote!('static + Clone) // + Send + Sync)
+    quote!('static + Clone + Send + Sync)
 }
 
 pub fn cglue_c_opaque_bound() -> TokenStream {
@@ -668,7 +668,7 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
 
     let cglue_c_into_inner = if need_own {
         Some(quote!(
-            CGlueC::InstType: crate::trait_group::IntoInner<InnerTarget = CGlueC::ObjType>,
+            CGlueC::InstType: #trg_path::IntoInner<InnerTarget = CGlueC::ObjType>,
         ))
     } else {
         None

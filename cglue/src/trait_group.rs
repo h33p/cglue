@@ -123,8 +123,13 @@ pub type CGlueOpaqueTraitObj<'a, T, V> = CGlueTraitObj<
     <V as CGlueBaseVtbl>::RetTmp,
 >;
 
-unsafe impl<'a, T: Opaquable, F: CGlueBaseVtbl<Context = C, RetTmp = R>, C: Clone, R: Default>
-    Opaquable for CGlueTraitObj<'a, T, F, C, R>
+unsafe impl<
+        'a,
+        T: Opaquable,
+        F: CGlueBaseVtbl<Context = C, RetTmp = R>,
+        C: Clone + Send + Sync,
+        R: Default,
+    > Opaquable for CGlueTraitObj<'a, T, F, C, R>
 {
     type OpaqueTarget = CGlueTraitObj<'a, T::OpaqueTarget, F::OpaqueVtbl, C, R>;
 }
@@ -142,7 +147,7 @@ impl<T, V, C, R> GetVtbl<V> for CGlueTraitObj<'_, T, V, C, R> {
 // Conversions into container type itself.
 // Needed when generated code returns Self
 
-impl<'a, T: Deref<Target = F>, F, C: 'static + Clone, R: Default> From<(T, C)>
+impl<'a, T: Deref<Target = F>, F, C: 'static + Clone + Send + Sync, R: Default> From<(T, C)>
     for CGlueObjContainer<T, C, R>
 {
     fn from((instance, context): (T, C)) -> Self {
@@ -166,7 +171,9 @@ impl<'a, T, R: Default> From<T> for CGlueObjContainer<CBox<'a, T>, NoContext, R>
     }
 }
 
-impl<'a, T, C: 'static + Clone, R: Default> From<(T, C)> for CGlueObjContainer<CBox<'a, T>, C, R> {
+impl<'a, T, C: 'static + Clone + Send + Sync, R: Default> From<(T, C)>
+    for CGlueObjContainer<CBox<'a, T>, C, R>
+{
     fn from((this, context): (T, C)) -> Self {
         Self::from((CBox::from(this), context))
     }
@@ -177,7 +184,7 @@ impl<
         T: Deref<Target = F>,
         F,
         V: CGlueVtbl<CGlueObjContainer<T, C, R>, Context = C, RetTmp = R>,
-        C: 'static + Clone,
+        C: 'static + Clone + Send + Sync,
         R: Default,
     > From<CGlueObjContainer<T, C, R>> for CGlueTraitObj<'a, T, V, V::Context, V::RetTmp>
 where
@@ -196,7 +203,7 @@ impl<
         T: Deref<Target = F>,
         F,
         V: CGlueVtbl<CGlueObjContainer<T, C, R>, Context = C, RetTmp = R>,
-        C: 'static + Clone,
+        C: 'static + Clone + Send + Sync,
         R: Default,
     > From<(T, V::Context)> for CGlueTraitObj<'a, T, V, V::Context, V::RetTmp>
 where
@@ -240,7 +247,7 @@ impl<
         'a,
         T,
         V: CGlueVtbl<CGlueObjContainer<CBox<'a, T>, C, R>, Context = C, RetTmp = R>,
-        C: 'static + Clone,
+        C: 'static + Clone + Send + Sync,
         R: Default,
     > From<(T, V::Context)> for CGlueTraitObj<'a, CBox<'a, T>, V, V::Context, V::RetTmp>
 where
@@ -260,7 +267,7 @@ pub trait CGlueObjBase {
     /// Type of the container housing the object.
     type InstType: ::core::ops::Deref<Target = Self::ObjType>;
     /// Type of the context associated with the container.
-    type Context: Clone + 'static;
+    type Context: 'static + Clone + Send + Sync;
 
     fn cobj_base_ref(&self) -> (&Self::ObjType, &Self::Context);
     fn cobj_base_owned(self) -> (Self::InstType, Self::Context);
@@ -270,7 +277,9 @@ pub trait CGlueObjRef<R>: CGlueObjBase {
     fn cobj_ref(&self) -> (&Self::ObjType, &R, &Self::Context);
 }
 
-impl<T: Deref<Target = F>, F, C: Clone + 'static, R> CGlueObjBase for CGlueObjContainer<T, C, R> {
+impl<T: Deref<Target = F>, F, C: 'static + Clone + Send + Sync, R> CGlueObjBase
+    for CGlueObjContainer<T, C, R>
+{
     type ObjType = F;
     type InstType = T;
     type Context = C;
@@ -284,7 +293,9 @@ impl<T: Deref<Target = F>, F, C: Clone + 'static, R> CGlueObjBase for CGlueObjCo
     }
 }
 
-impl<T: Deref<Target = F>, F, C: Clone + 'static, R> CGlueObjRef<R> for CGlueObjContainer<T, C, R> {
+impl<T: Deref<Target = F>, F, C: 'static + Clone + Send + Sync, R> CGlueObjRef<R>
+    for CGlueObjContainer<T, C, R>
+{
     fn cobj_ref(&self) -> (&F, &R, &Self::Context) {
         (self.instance.deref(), &self.ret_tmp, &self.context)
     }
@@ -297,7 +308,7 @@ pub trait CGlueObjMut<R>: CGlueObjRef<R> {
     fn cobj_mut(&mut self) -> (&mut Self::ObjType, &mut R, &Self::Context);
 }
 
-impl<T: Deref<Target = F> + DerefMut, F, C: Clone + 'static, R> CGlueObjMut<R>
+impl<T: Deref<Target = F> + DerefMut, F, C: 'static + Clone + Send + Sync, R> CGlueObjMut<R>
     for CGlueObjContainer<T, C, R>
 {
     fn cobj_mut(&mut self) -> (&mut F, &mut R, &Self::Context) {
@@ -314,7 +325,7 @@ pub trait GetContainer {
     fn build_with_ccont(&self, container: Self::ContType) -> Self;
 }
 
-impl<T: Deref<Target = F>, F, V, C: Clone + 'static, R> GetContainer
+impl<T: Deref<Target = F>, F, V, C: 'static + Clone + Send + Sync, R> GetContainer
     for CGlueTraitObj<'_, T, V, C, R>
 {
     type ContType = CGlueObjContainer<T, C, R>;
@@ -364,7 +375,7 @@ pub trait CGlueVtbl<T>: CGlueBaseVtbl {}
 /// sure that the `OpaqueVtbl` is the exact same type, with the only difference being `this` types.
 pub unsafe trait CGlueBaseVtbl: Sized {
     type OpaqueVtbl: Sized;
-    type Context: Sized + Clone;
+    type Context: Sized + Clone + Send + Sync;
     type RetTmp: Sized + Default;
 
     /// Get the opaque vtable for the type.

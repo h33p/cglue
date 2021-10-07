@@ -743,11 +743,11 @@ impl ParsedFunc {
             (
                 quote! {
                     let (this, cglue_ctx) = cont.cobj_base_owned();
-                    let this = unsafe { crate::trait_group::IntoInner::into_inner(this) };
+                    let this = unsafe { #trg_path::IntoInner::into_inner(this) };
                     #c_pre_call
                 },
                 Some(quote!(
-                    CGlueC::InstType: crate::trait_group::IntoInner<InnerTarget = CGlueC::ObjType>,
+                    CGlueC::InstType: #trg_path::IntoInner<InnerTarget = CGlueC::ObjType>,
                 )),
             )
         } else if self.receiver.mutability.is_some() {
