@@ -1818,14 +1818,23 @@ impl TraitGroup {
             path,
             ident,
             vtbl_typename,
-            generics: ParsedGenerics { gen_use, .. },
+            generics: ParsedGenerics {
+                gen_use, life_use, ..
+            },
             ..
         } in iter
         {
             // FIXME: this is a bit of a hack. 0.1 could do multiple generic implementations
             // without trait bounds just fine.
             if let Some(trait_bound) = &trait_bound {
-                ret.extend(quote!(#trait_bound: #path #ident<#gen_use>,));
+                // FIXME: this will not work with multiple lifetimes.
+                let life_use = if life_use.is_empty() {
+                    None
+                } else {
+                    Some(quote!('cglue_a,))
+                };
+
+                ret.extend(quote!(#trait_bound: #path #ident<#life_use #gen_use>,));
             }
 
             ret.extend(quote!(&'cglue_a #path #vtbl_typename<'cglue_a, #cont_name<#container_ident, #ctx_ident, #all_gen_use>, #gen_use>: 'cglue_a + Default,));
