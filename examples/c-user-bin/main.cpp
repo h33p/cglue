@@ -2,16 +2,6 @@
 #include <string.h>
 #include "bindings.h"
 
-// Retrieves this object inside of a CtxBox container
-#define this(obj) (obj .instance.inner.instance)
-// Retrieves the context inside of a CtxBox container
-#define ctx(obj) (& obj .instance.ctx)
-
-// Allows to safely call functions that take a single self parameter
-#define this_call(obj, func, ...) obj . func (this(obj), ## __VA_ARGS__)
-// Allows to safely call functions that take both the self parameter and the context
-#define this_ctx_call(obj, func, ...) obj . func (this(obj), ctx(obj), ## __VA_ARGS__)
-
 int trim(char *str);
 
 template<typename T>
@@ -31,9 +21,9 @@ int main() {
 	auto obj = load_plugin(len > 0 ? name : "plugin_lib");
 
 	{
-		auto borrowed = obj.vtbl->borrow_features(this(obj), ctx(obj));
+		auto borrowed = obj.borrow_features();
 
-		this_call(borrowed, vtbl_mainfeature->print_self);
+		borrowed.print_self();
 
 		if (borrowed.vtbl_keyvaluestore != nullptr) {
 			printf("Using borrowed kvstore:\n");
@@ -49,9 +39,9 @@ int main() {
 	}
 
 	{
-		auto owned = obj.vtbl->into_features(obj.instance);
+		auto owned = obj.into_features();
 
-		this_call(owned, vtbl_mainfeature->print_self);
+		owned.print_self();
 
 		if (owned.vtbl_keyvaluestore != nullptr) {
 			printf("Using owned kvstore:\n");
@@ -97,7 +87,7 @@ void use_kvstore(T& obj) {
 	key_slice.data = (unsigned char *)key;
 	key_slice.len = len;
 
-	printf("Cur val: %zu\n", obj.vtbl_keyvaluestore->get_key_value(this(obj), key_slice));
+	printf("Cur val: %zu\n", obj.get_key_value(key_slice));
 
 	size_t new_val = 0;
 
@@ -107,7 +97,7 @@ void use_kvstore(T& obj) {
 	char nl[2];
 	fgets(nl, sizeof(nl), stdin);
 
-	this_call(obj, vtbl_keyvaluestore->write_key_value, key_slice, new_val);
+	obj.write_key_value(key_slice, new_val);
 }
 
 bool kvdump_callback(void *, KeyValue kv) {
@@ -122,6 +112,6 @@ void kvdump(T& obj) {
 	callback.context = nullptr;
 	callback.func = kvdump_callback;
 
-	this_call(obj, vtbl_keyvaluedumper->dump_key_values, callback);
+	obj.dump_key_values(callback);
 }
 

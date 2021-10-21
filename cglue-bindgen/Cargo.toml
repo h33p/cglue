@@ -1,6 +1,6 @@
 [package]
 name = "cglue-bindgen"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Aurimas Blažulionis <0x60@pm.me>"]
 edition = "2018"
 license = "MIT"
@@ -13,3 +13,4 @@ readme = "./README.md"
 
 [dependencies]
 regex = "1"
+itertools = "0.10"
