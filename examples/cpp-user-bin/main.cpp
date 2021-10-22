@@ -21,7 +21,9 @@ int main() {
 	auto obj = load_plugin(len > 0 ? name : "plugin_lib");
 
 	{
+		printf("%p %p\n", obj.container.instance.instance, obj.container.instance.drop_fn);
 		auto borrowed = obj.borrow_features();
+		printf("%p %p\n", borrowed.container.instance.instance, borrowed.container.instance.drop_fn);
 
 		borrowed.print_self();
 
@@ -39,7 +41,9 @@ int main() {
 	}
 
 	{
-		auto owned = obj.into_features();
+		printf("%p %p\n", obj.container.instance.instance, obj.container.instance.drop_fn);
+		auto owned = std::move(obj).into_features();
+
 
 		owned.print_self();
 

@@ -13,4 +13,5 @@ readme = "./README.md"
 
 [dependencies]
 regex = "1"
+fancy-regex = "0.7"
 itertools = "0.10"

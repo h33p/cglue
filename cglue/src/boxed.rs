@@ -12,7 +12,7 @@ use std::ffi::c_void;
 #[repr(C)]
 pub struct CBox<'a, T> {
     instance: &'a mut T,
-    drop: unsafe extern "C" fn(&mut T),
+    drop_fn: unsafe extern "C" fn(&mut T),
 }
 
 impl<T> super::trait_group::IntoInner for CBox<'_, T> {
@@ -44,7 +44,7 @@ impl<T> From<Box<T>> for CBox<'_, T> {
         let instance = Box::leak(this);
         Self {
             instance,
-            drop: cglue_drop_box::<T>,
+            drop_fn: cglue_drop_box::<T>,
         }
     }
 }
@@ -65,7 +65,7 @@ impl<T> From<(T, NoContext)> for CBox<'_, T> {
 
 impl<T> Drop for CBox<'_, T> {
     fn drop(&mut self) {
-        unsafe { (self.drop)(self.instance) };
+        unsafe { (self.drop_fn)(self.instance) };
     }
 }
 

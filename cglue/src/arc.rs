@@ -9,9 +9,9 @@ use std::sync::Arc;
 /// allocators.
 #[repr(C)]
 pub struct CArc<T: Sized + 'static> {
-    inner: Option<&'static T>,
+    instance: Option<&'static T>,
     clone_fn: unsafe extern "C" fn(Option<&'static T>) -> Option<&'static T>,
-    drop_fn: unsafe extern "C" fn(&mut Option<&T>),
+    drop_fn: unsafe extern "C" fn(Option<&T>),
 }
 
 impl<T> From<T> for CArc<T> {
@@ -23,7 +23,7 @@ impl<T> From<T> for CArc<T> {
 impl<T> From<Arc<T>> for CArc<T> {
     fn from(arc: Arc<T>) -> Self {
         Self {
-            inner: unsafe { Arc::into_raw(arc).as_ref() },
+            instance: unsafe { Arc::into_raw(arc).as_ref() },
             clone_fn: c_clone,
             drop_fn: c_drop,
         }
@@ -42,7 +42,7 @@ unsafe impl<T: Sync + Send> Sync for CArc<T> {}
 impl<T> Clone for CArc<T> {
     fn clone(&self) -> Self {
         Self {
-            inner: unsafe { (self.clone_fn)(self.inner) },
+            instance: unsafe { (self.clone_fn)(self.instance) },
             ..*self
         }
     }
@@ -50,13 +50,13 @@ impl<T> Clone for CArc<T> {
 
 impl<T> Drop for CArc<T> {
     fn drop(&mut self) {
-        unsafe { (self.drop_fn)(&mut self.inner) }
+        unsafe { (self.drop_fn)(self.instance) }
     }
 }
 
 impl<T> AsRef<T> for CArc<T> {
     fn as_ref(&self) -> &T {
-        self.inner.unwrap()
+        self.instance.unwrap()
     }
 }
 
@@ -69,9 +69,9 @@ unsafe impl<T: Sync + Send> Sync for COptArc<T> {}
 
 #[repr(C)]
 pub struct COptArc<T: Sized + 'static> {
-    inner: Option<&'static T>,
+    instance: Option<&'static T>,
     clone_fn: Option<unsafe extern "C" fn(Option<&'static T>) -> Option<&'static T>>,
-    drop_fn: Option<unsafe extern "C" fn(&mut Option<&T>)>,
+    drop_fn: Option<unsafe extern "C" fn(Option<&T>)>,
 }
 
 impl<T> Clone for COptArc<T> {
@@ -94,7 +94,7 @@ impl<T> Drop for COptArc<T> {
 impl<T> COptArc<T> {
     pub fn take(&mut self) -> COptArc<T> {
         Self {
-            inner: self.inner.take(),
+            instance: self.instance.take(),
             clone_fn: self.clone_fn.take(),
             drop_fn: self.drop_fn.take(),
         }
@@ -105,12 +105,12 @@ impl<T> From<Option<CArc<T>>> for COptArc<T> {
     fn from(opt: Option<CArc<T>>) -> Self {
         match opt {
             Some(mut arc) => Self {
-                inner: arc.inner.take(),
+                instance: arc.instance.take(),
                 clone_fn: Some(arc.clone_fn),
                 drop_fn: Some(arc.drop_fn),
             },
             None => Self {
-                inner: None,
+                instance: None,
                 clone_fn: None,
                 drop_fn: None,
             },
@@ -120,7 +120,7 @@ impl<T> From<Option<CArc<T>>> for COptArc<T> {
 
 impl<T> From<&mut COptArc<T>> for Option<&mut CArc<T>> {
     fn from(copt: &mut COptArc<T>) -> Self {
-        if copt.inner.is_none() {
+        if copt.instance.is_none() {
             None
         } else {
             unsafe { (copt as *mut COptArc<T>).cast::<CArc<T>>().as_mut() }
@@ -130,7 +130,7 @@ impl<T> From<&mut COptArc<T>> for Option<&mut CArc<T>> {
 
 impl<T> From<&COptArc<T>> for Option<&CArc<T>> {
     fn from(copt: &COptArc<T>) -> Self {
-        if copt.inner.is_none() {
+        if copt.instance.is_none() {
             None
         } else {
             unsafe { (copt as *const COptArc<T>).cast::<CArc<T>>().as_ref() }
@@ -140,14 +140,14 @@ impl<T> From<&COptArc<T>> for Option<&CArc<T>> {
 
 impl<T> From<COptArc<T>> for Option<CArc<T>> {
     fn from(mut copt: COptArc<T>) -> Self {
-        let ai = copt.inner.take();
+        let ai = copt.instance.take();
         match copt {
             COptArc {
-                inner: _,
+                instance: _,
                 clone_fn: Some(clone_fn),
                 drop_fn: Some(drop_fn),
             } => Some(CArc {
-                inner: ai,
+                instance: ai,
                 clone_fn,
                 drop_fn,
             }),
@@ -179,8 +179,8 @@ unsafe extern "C" fn c_clone<T: Sized + 'static>(
     }
 }
 
-unsafe extern "C" fn c_drop<T: Sized + 'static>(ptr_to_arc: &mut Option<&T>) {
-    if let Some(p) = ptr_to_arc.take() {
+unsafe extern "C" fn c_drop<T: Sized + 'static>(ptr_to_arc: Option<&T>) {
+    if let Some(p) = ptr_to_arc {
         let _ = Arc::from_raw(p);
     }
 }

@@ -748,9 +748,9 @@ impl TraitGroup {
                     #cont_name<CGlueInst, CGlueCtx, #gen_use>: #trg_path::CGlueObjBase,
                     #gen_where_bounds
                 {
-                    container: #cont_name<CGlueInst, CGlueCtx, #gen_use>,
                     #mandatory_vtbl_defs
                     #opt_vtbl_defs
+                    container: #cont_name<CGlueInst, CGlueCtx, #gen_use>,
                 }
 
                 #get_container_impl_final
@@ -770,9 +770,9 @@ impl TraitGroup {
                     #cont_name<CGlueInst, CGlueCtx, #gen_use>: #trg_path::CGlueObjBase,
                     #gen_where_bounds
                 {
-                    container: #cont_name<CGlueInst, CGlueCtx, #gen_use>,
                     #mandatory_vtbl_defs
                     #opt_mixed_vtbl_defs
+                    container: #cont_name<CGlueInst, CGlueCtx, #gen_use>,
                 }
 
                 unsafe impl<'cglue_a, CGlueInst, CGlueCtx: #ctx_bound, #gen_declare>
@@ -1010,9 +1010,9 @@ impl TraitGroup {
                     #cont_name<CGlueInst, CGlueCtx, #gen_use>: #trg_path::CGlueObjBase,
                     #gen_where_bounds
                 {
-                    container: #cont_name<CGlueInst, CGlueCtx, #gen_use>,
                     #mandatory_vtbl_defs
                     #optional_vtbl_defs
+                    container: #cont_name<CGlueInst, CGlueCtx, #gen_use>,
                 }
 
                 #get_container_impl

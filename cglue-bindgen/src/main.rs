@@ -34,7 +34,7 @@ pub mod types;
 use types::Result;
 
 pub mod codegen;
-use codegen::cpp;
+use codegen::{c, cpp};
 
 fn main() -> Result<()> {
     let args = env::args()

@@ -15,8 +15,8 @@ use core::ops::{Deref, DerefMut};
 /// Container merely is a this pointer with some optional temporary return reference context.
 #[repr(C)]
 pub struct CGlueTraitObj<'a, T, V, C, R> {
-    container: CGlueObjContainer<T, C, R>,
     vtbl: &'a V,
+    container: CGlueObjContainer<T, C, R>,
 }
 
 /// Simple CGlue trait object container.

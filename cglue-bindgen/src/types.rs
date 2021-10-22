@@ -40,13 +40,31 @@ impl Function {
         format!(
             r"
     auto {name}({args}) {constness} {{
+        {ctx_clone}
+        {cont_forget}
         return ({vtbl})->{name}({this_addr}{this}{call_args});
     }}
 ",
             name = &self.name,
             args = args,
-            constness = if self.is_const { "const" } else { "" },
+            constness = if self.moves_self {
+                "&&"
+            } else if self.is_const {
+                "const"
+            } else {
+                ""
+            },
             this_addr = if self.moves_self { "" } else { "&" },
+            ctx_clone = if self.moves_self {
+                "auto ___ctx = StoreAll()[container.clone_context(), StoreAll()];"
+            } else {
+                ""
+            },
+            cont_forget = if self.moves_self {
+                "DeferedForget ___forget(container);"
+            } else {
+                ""
+            },
             this = this,
             vtbl = vtbl,
             call_args = call_args

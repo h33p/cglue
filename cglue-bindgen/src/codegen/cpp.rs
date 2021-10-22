@@ -46,7 +46,136 @@ pub fn parse_header(header: &str) -> Result<String> {
     // PROCESSING:
 
     // Fix up the MaybeUninit
-    let header = maybe_uninit_regex()?.replace_all(header, r"using MaybeUninit = T;");
+    let header = maybe_uninit_regex()?.replace_all(
+        header,
+        r"struct alignas(alignof(T)) MaybeUninit {
+    char pad[sizeof(T)];
+
+    constexpr T &assume_init() {
+        return *(T *)this;
+    }
+
+    constexpr const T &assume_init() const {
+        return *(const T *)this;
+    }
+};",
+    );
+
+    // Add mem_drop and mem_forget methods
+    let header = Regex::new(
+        r"(?P<start>(/\*[^*]*\*+(?:[^/*][^*]*\*+)*/
+)?template<typename)",
+    )?
+    .replace(
+        &header,
+        r"
+template<typename T>
+typename std::enable_if<!std::is_pointer<T>::value>::type mem_drop(T &&self) {
+    std::move(self).drop();
+}
+
+template<typename T>
+typename std::enable_if<std::is_pointer<T>::value>::type mem_drop(T &&self) {}
+
+template<typename T>
+typename std::enable_if<!std::is_pointer<T>::value>::type mem_forget(T &self) {
+    self.forget();
+}
+
+template<typename T>
+typename std::enable_if<std::is_pointer<T>::value>::type mem_forget(T &self) {}
+
+/** Defer mem_forget call when object goes out of scope. */
+template<typename T>
+struct DeferedForget {
+    T &val;
+
+    DeferedForget(T &val) : val(val) {}
+
+    ~DeferedForget() {
+        mem_forget(val);
+    }
+};
+
+/** Workaround for void types in generic functions. */
+struct StoreAll {
+    constexpr auto operator[](StoreAll) const {
+        return false;
+    }
+
+    template <class T>
+    constexpr T && operator[](T &&t) const {
+        return std::forward<T>(t);
+    }
+
+    template <class T>
+    constexpr friend T && operator,(T &&t, StoreAll) {
+        return std::forward<T>(t);
+    }
+};
+
+$start",
+    );
+
+    // Add CBox drop methods
+    let header = Regex::new(
+        r"(?P<definition>template<typename T>
+struct CBox \{
+    T \*instance;
+    void \(\*drop_fn\)\(T\*\);)
+\};",
+    )?
+    .replace(
+        &header,
+        r"${definition}
+
+    void drop() && {
+        if (drop_fn && instance)
+            drop_fn(instance);
+        forget();
+    }
+
+    void forget() {
+        instance = nullptr;
+        drop_fn = nullptr;
+    }
+};",
+    );
+
+    // Add COptArc clone and drop methods
+    let header = Regex::new(
+        r"(?P<definition>template<typename T>
+struct COptArc \{
+    const T \*instance;
+    const T \*\(\*clone_fn\)\(const T\*\);
+    void \(\*drop_fn\)\(const T\*\);)
+\};",
+    )?
+    .replace(
+        &header,
+        r"${definition}
+
+    COptArc clone() const {
+        COptArc ret;
+        ret.instance = clone_fn(instance);
+        ret.clone_fn = clone_fn;
+        ret.drop_fn = drop_fn;
+        return ret;
+    }
+
+    void drop() && {
+        if (drop_fn)
+            drop_fn(instance);
+        forget();
+    }
+
+    void forget() {
+        instance = nullptr;
+        clone_fn = nullptr;
+        drop_fn = nullptr;
+    }
+};",
+    );
 
     // Remove zsized ret tmps
     let header = zsr_regex.replace_all(&header, "");
@@ -65,12 +194,27 @@ pub fn parse_header(header: &str) -> Result<String> {
 
     // Add Context typedef to CGlueObjContainer
     // Create CGlueObjContainer type specializations
+    // Add drop and forget methods to it.
 
     let header = obj_container_regex()?.replace_all(
         &header,
         r"$declaration {
     typedef C Context;
     $fields
+
+    auto clone_context() {
+        return context.clone();
+    }
+
+    void drop() && {
+        mem_drop(std::move(instance));
+        mem_drop(std::move(context));
+    }
+
+    void forget() {
+        mem_forget(instance);
+        mem_forget(context);
+    }
 };
 
 template<typename T, typename R>
@@ -78,6 +222,16 @@ struct CGlueObjContainer<T, void, R> {
     typedef void Context;
     T instance;
     R ret_tmp;
+
+    auto clone_context() {}
+
+    void drop() && {
+        mem_drop(std::move(instance));
+    }
+
+    void forget() {
+        mem_forget(instance);
+    }
 };
 
 template<typename T, typename C>
@@ -85,12 +239,36 @@ struct CGlueObjContainer<T, C, void> {
     typedef C Context;
     T instance;
     C context;
+
+    auto clone_context() {
+        return context.clone();
+    }
+
+    void drop() && {
+        mem_drop(std::move(instance));
+        mem_drop(std::move(context));
+    }
+
+    void forget() {
+        mem_forget(instance);
+        mem_forget(context);
+    }
 };
 
 template<typename T>
 struct CGlueObjContainer<T, void, void> {
     typedef void Context;
     T instance;
+
+    auto clone_context() {}
+
+    void drop() && {
+        mem_drop(std::move(instance));
+    }
+
+    void forget() {
+        mem_forget(instance);
+    }
 };",
     );
 
@@ -102,12 +280,36 @@ struct CGlueObjContainer<T, void, void> {
         r"$declaration {
     typedef CGlueCtx Context;
     $fields
+
+    auto clone_context() {
+        return context.clone();
+    }
+
+    void drop() && {
+        mem_drop(std::move(instance));
+        mem_drop(std::move(context));
+    }
+
+    void forget() {
+        mem_forget(instance);
+        mem_forget(context);
+    }
 };
 
 template<typename CGlueInst>
 struct ${group}Container<CGlueInst, void> {
     typedef void Context;
     CGlueInst instance;
+
+    auto clone_context() {}
+
+    void drop() && {
+        mem_drop(std::move(instance));
+    }
+
+    void forget() {
+        mem_forget(instance);
+    }
 };",
     );
 
@@ -121,9 +323,13 @@ struct ${group}Container<CGlueInst, void> {
                 &header,
                 &format!(
                     r"$definition_start
+
+    ~{}() {{
+        mem_drop(std::move(container));
+    }}
 {}
 }};",
-                    helpers
+                    g.name, helpers
                 ),
             )
             .to_string();
@@ -137,9 +343,12 @@ struct ${group}Container<CGlueInst, void> {
             r"
 template<typename T, typename C, typename R>
 struct CGlueTraitObj<T, {vtbl}Vtbl<CGlueObjContainer<T, C, R>>, C, R> {{
-    CGlueObjContainer<T, C, R> container;
     const {vtbl}Vtbl<CGlueObjContainer<T, C, R>> *vtbl;
+    CGlueObjContainer<T, C, R> container;
 
+    ~CGlueTraitObj() {{
+        mem_drop(std::move(container));
+    }}
 {wrappers}
 }};
 ",
@@ -221,8 +430,8 @@ fn groups_regex(vtbls: &[Vtable], explicit_group: Option<&str>) -> Result<Regex>
  \*/
 template<typename CGlueInst, typename CGlueCtx>
 struct (?P<group>{}) \{{
-    (?P<group2>\w+)Container<CGlueInst, CGlueCtx> container;
-    (?P<vtbls>(\s*const ({})Vtbl<.*> \*vtbl_\w+;)*))
+    (?P<vtbls>(\s*const ({})Vtbl<.*> \*vtbl_\w+;)*)
+    (?P<group2>\w+)Container<CGlueInst, CGlueCtx> container;)
 \}};", group_fmt, vtbl_names),
     )
     .map_err(Into::into)
@@ -265,8 +474,8 @@ fn trait_obj_regex() -> Result<Regex> {
     Regex::new(
         r"template<typename T, typename V, typename C, typename R>
 struct CGlueTraitObj \{
-    CGlueObjContainer<T, C, R> container;
     const V \*vtbl;
+    CGlueObjContainer<T, C, R> container;
 \};",
     )
     .map_err(Into::into)

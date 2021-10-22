@@ -10,9 +10,6 @@ parse_deps = true
 
 include = ["cglue", "plugin-api"]
 
-[export]
-include = ["FeaturesGroupArcBox"]
-
 [macro_expansion]
 bitflags = true
 
