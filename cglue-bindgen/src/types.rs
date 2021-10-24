@@ -20,7 +20,14 @@ pub struct Function {
 }
 
 impl Function {
-    pub fn create_wrapper(&self, this: &str, vtbl: &str, this_ty: &str, vtbls: &[&str]) -> String {
+    pub fn create_wrapper(
+        &self,
+        this: &str,
+        vtbl: &str,
+        prefix: &str,
+        this_ty: &str,
+        vtbls: &[&str],
+    ) -> String {
         let args = Itertools::intersperse(
             self.arguments
                 .iter()
@@ -48,10 +55,11 @@ impl Function {
 
         format!(
             r"
-    inline auto {name}({args}) {constness}noexcept {{
+    inline auto {prefix}{name}({args}) {constness}noexcept {{
         {ctx_clone}{cont_forget}{vtbl_result} ({vtbl})->{name}({this_addr}{this}{call_args});{finish}
     }}
 ",
+            prefix = prefix,
             name = &self.name,
             args = args,
             constness = if self.moves_self {
@@ -216,13 +224,20 @@ impl Vtable {
         &self,
         container: &str,
         vtbl: &str,
+        check_duplicates: impl Fn(&str) -> bool,
         this_ty: &str,
         vtbls: &[&str],
     ) -> String {
         let mut ret = String::new();
 
         for f in &self.functions {
-            ret += &f.create_wrapper(container, vtbl, this_ty, vtbls);
+            let prefix = if check_duplicates(&f.name) {
+                format!("{}_", self.name.to_lowercase())
+            } else {
+                String::new()
+            };
+
+            ret += &f.create_wrapper(container, vtbl, &prefix, this_ty, vtbls);
         }
 
         ret
@@ -261,10 +276,19 @@ impl Group {
         }
 
         for (v, get) in &self.vtables {
-            ret += &vtables
-                .get(v.as_str())
-                .unwrap()
-                .create_wrappers(container, get, &self.name, &vtbls);
+            ret += &vtables.get(v.as_str()).unwrap().create_wrappers(
+                container,
+                get,
+                |name| {
+                    self.vtables
+                        .iter()
+                        .filter_map(|(v, _)| vtables.get(v.as_str()))
+                        .filter(|cv| &cv.name != v)
+                        .any(|v| v.functions.iter().any(|f| f.name == name))
+                },
+                &self.name,
+                &vtbls,
+            );
         }
 
         ret

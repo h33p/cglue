@@ -46,20 +46,7 @@ pub fn parse_header(header: &str) -> Result<String> {
     // PROCESSING:
 
     // Fix up the MaybeUninit
-    let header = maybe_uninit_regex()?.replace_all(
-        header,
-        r"struct alignas(alignof(T)) MaybeUninit {
-    char pad[sizeof(T)];
-
-    constexpr T &assume_init() {
-        return *(T *)this;
-    }
-
-    constexpr const T &assume_init() const {
-        return *(const T *)this;
-    }
-};",
-    );
+    let header = maybe_uninit_regex()?.replace_all(header, r"using MaybeUninit = T;");
 
     // Add mem_drop and mem_forget methods
     let header = Regex::new(
@@ -180,7 +167,13 @@ struct COptArc \{
     );
 
     // Remove zsized ret tmps
-    let header = zsr_regex.replace_all(&header, "");
+    let header = zsr_regex.replace_all(
+        &header,
+        r"
+template<typename CGlueCtx = void>
+using ${trait}RetTmp = void;
+",
+    );
 
     let gr_regex = group_ret_tmp_regex(&zst_rets)?;
     let header = gr_regex.replace_all(&header, "");
@@ -326,19 +319,24 @@ struct ${group}Container<CGlueInst, void> {
                 &format!(
                     r"$definition_start
 
-    ~{}() noexcept {{
+    {name}() : container{{}} {{}}
+
+    ~{name}() noexcept {{
         mem_drop(std::move(container));
     }}
-{}
+
+    typedef CGlueCtx Context;
+{helpers}
 }};",
-                    g.name, helpers
+                    name = g.name,
+                    helpers = helpers
                 ),
             )
             .to_string();
     }
 
     // Create CGlueTraitObj vtable functions
-    let mut trait_obj_specs = "$0\n".to_string();
+    let mut trait_obj_specs = String::new();
 
     for v in &vtbls {
         trait_obj_specs.push_str(&format!(
@@ -348,9 +346,13 @@ struct CGlueTraitObj<T, {vtbl}Vtbl<CGlueObjContainer<T, C, R>>, C, R> {{
     const {vtbl}Vtbl<CGlueObjContainer<T, C, R>> *vtbl;
     CGlueObjContainer<T, C, R> container;
 
+    CGlueTraitObj() : container{{}} {{}}
+
     ~CGlueTraitObj() noexcept {{
         mem_drop(std::move(container));
     }}
+
+    typedef C Context;
 {wrappers}
 }};
 ",
@@ -358,13 +360,18 @@ struct CGlueTraitObj<T, {vtbl}Vtbl<CGlueObjContainer<T, C, R>>, C, R> {{
             wrappers = v.create_wrappers(
                 "(this->container)",
                 "this->vtbl",
+                |_| false,
                 "CGlueTraitObj",
                 &["vtbl"]
             )
         ));
     }
 
-    let header = trait_obj_regex()?.replace_all(&header, trait_obj_specs);
+    trait_obj_specs.push_str("\n$0");
+
+    // Probably a more hacky version - put specializations at the end of the file,
+    // so that we do not encounter incomplete types.
+    let header = Regex::new(r"(#endif|$)")?.replace(&header, trait_obj_specs);
 
     Ok(header.into())
 }
