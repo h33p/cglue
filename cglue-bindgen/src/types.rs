@@ -20,7 +20,7 @@ pub struct Function {
 }
 
 impl Function {
-    pub fn create_wrapper(&self, this: &str, vtbl: &str) -> String {
+    pub fn create_wrapper(&self, this: &str, vtbl: &str, this_ty: &str, vtbls: &[&str]) -> String {
         let args = self
             .arguments
             .iter()
@@ -35,39 +35,59 @@ impl Function {
             call_args.push_str(&a.name);
         }
 
-        // TODO: Clone context when moves_self is true.
+        let mut copied_vtbls = String::new();
+
+        let wrap_in_container = self.return_type.trim() == "CGlueC";
+
+        if wrap_in_container {
+            for v in vtbls {
+                copied_vtbls.push_str(&format!("\n        __ret.{} = this->{};", v, v));
+            }
+        }
 
         format!(
             r"
-    auto {name}({args}) {constness} {{
-        {ctx_clone}
-        {cont_forget}
-        return ({vtbl})->{name}({this_addr}{this}{call_args});
+    inline auto {name}({args}) {constness}noexcept {{
+        {ctx_clone}{cont_forget}{vtbl_result} ({vtbl})->{name}({this_addr}{this}{call_args});{finish}
     }}
 ",
             name = &self.name,
             args = args,
             constness = if self.moves_self {
-                "&&"
+                "&& "
             } else if self.is_const {
-                "const"
+                "const "
             } else {
                 ""
             },
             this_addr = if self.moves_self { "" } else { "&" },
             ctx_clone = if self.moves_self {
-                "auto ___ctx = StoreAll()[container.clone_context(), StoreAll()];"
+                "auto ___ctx = StoreAll()[this->container.clone_context(), StoreAll()];\n        "
             } else {
                 ""
             },
             cont_forget = if self.moves_self {
-                "DeferedForget ___forget(container);"
+                "DeferedForget ___forget(this->container);\n        "
             } else {
                 ""
             },
             this = this,
             vtbl = vtbl,
-            call_args = call_args
+            call_args = call_args,
+            vtbl_result = if wrap_in_container {
+                format!(
+                    r"{} __ret;{}
+        __ret.container =",
+                    this_ty, copied_vtbls
+                )
+            } else {
+                "return".to_string()
+            },
+            finish = if wrap_in_container {
+                "\n        return __ret;"
+            } else {
+                ""
+            },
         )
     }
 }
@@ -197,11 +217,17 @@ impl Vtable {
         Ok(Self { name, functions })
     }
 
-    pub fn create_wrappers(&self, container: &str, vtbl: &str) -> String {
+    pub fn create_wrappers(
+        &self,
+        container: &str,
+        vtbl: &str,
+        this_ty: &str,
+        vtbls: &[&str],
+    ) -> String {
         let mut ret = String::new();
 
         for f in &self.functions {
-            ret += &f.create_wrapper(container, vtbl);
+            ret += &f.create_wrapper(container, vtbl, this_ty, vtbls);
         }
 
         ret
@@ -211,7 +237,7 @@ impl Vtable {
 #[derive(Clone)]
 pub struct Group {
     pub name: String,
-    pub vtables: Vec<String>,
+    pub vtables: Vec<(String, String)>,
 }
 
 impl Group {
@@ -221,7 +247,10 @@ impl Group {
         let reg = Regex::new(r"const (?P<vtbl_type>[^;]+)Vtbl.*;")?;
 
         for cap in reg.captures_iter(vtable_defs) {
-            vtables.push(cap["vtbl_type"].to_string());
+            vtables.push((
+                cap["vtbl_type"].to_string(),
+                format!("vtbl_{}", cap["vtbl_type"].to_string().to_lowercase()),
+            ));
         }
 
         Ok(Self { name, vtables })
@@ -230,11 +259,17 @@ impl Group {
     pub fn create_wrappers(&self, vtables: &HashMap<&str, &Vtable>, container: &str) -> String {
         let mut ret = String::new();
 
-        for v in &self.vtables {
+        let mut vtbls = vec![];
+
+        for (_, get) in &self.vtables {
+            vtbls.push(get.as_str());
+        }
+
+        for (v, get) in &self.vtables {
             ret += &vtables
                 .get(v.as_str())
                 .unwrap()
-                .create_wrappers(container, &format!("this->vtbl_{}", v.to_lowercase()));
+                .create_wrappers(container, get, &self.name, &vtbls);
         }
 
         ret

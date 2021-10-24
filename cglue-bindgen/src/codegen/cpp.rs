@@ -69,21 +69,23 @@ pub fn parse_header(header: &str) -> Result<String> {
     .replace(
         &header,
         r"
+/** Destruct the object. */
 template<typename T>
-typename std::enable_if<!std::is_pointer<T>::value>::type mem_drop(T &&self) {
+inline typename std::enable_if<!std::is_pointer<T>::value>::type mem_drop(T &&self) noexcept {
     std::move(self).drop();
 }
 
 template<typename T>
-typename std::enable_if<std::is_pointer<T>::value>::type mem_drop(T &&self) {}
+inline typename std::enable_if<std::is_pointer<T>::value>::type mem_drop(T &&self) noexcept {}
 
+/** Forget the object's resources (null them out). */
 template<typename T>
-typename std::enable_if<!std::is_pointer<T>::value>::type mem_forget(T &self) {
+inline typename std::enable_if<!std::is_pointer<T>::value>::type mem_forget(T &self) noexcept {
     self.forget();
 }
 
 template<typename T>
-typename std::enable_if<std::is_pointer<T>::value>::type mem_forget(T &self) {}
+inline typename std::enable_if<std::is_pointer<T>::value>::type mem_forget(T &self) noexcept {}
 
 /** Defer mem_forget call when object goes out of scope. */
 template<typename T>
@@ -129,13 +131,13 @@ struct CBox \{
         &header,
         r"${definition}
 
-    void drop() && {
+    inline void drop() && noexcept {
         if (drop_fn && instance)
             drop_fn(instance);
         forget();
     }
 
-    void forget() {
+    inline void forget() noexcept {
         instance = nullptr;
         drop_fn = nullptr;
     }
@@ -155,7 +157,7 @@ struct COptArc \{
         &header,
         r"${definition}
 
-    COptArc clone() const {
+    inline COptArc clone() const noexcept {
         COptArc ret;
         ret.instance = clone_fn(instance);
         ret.clone_fn = clone_fn;
@@ -163,13 +165,13 @@ struct COptArc \{
         return ret;
     }
 
-    void drop() && {
+    inline void drop() && noexcept {
         if (drop_fn)
             drop_fn(instance);
         forget();
     }
 
-    void forget() {
+    inline void forget() noexcept {
         instance = nullptr;
         clone_fn = nullptr;
         drop_fn = nullptr;
@@ -202,16 +204,16 @@ struct COptArc \{
     typedef C Context;
     $fields
 
-    auto clone_context() {
+    inline auto clone_context() noexcept {
         return context.clone();
     }
 
-    void drop() && {
+    inline void drop() && noexcept {
         mem_drop(std::move(instance));
         mem_drop(std::move(context));
     }
 
-    void forget() {
+    inline void forget() noexcept {
         mem_forget(instance);
         mem_forget(context);
     }
@@ -223,13 +225,13 @@ struct CGlueObjContainer<T, void, R> {
     T instance;
     R ret_tmp;
 
-    auto clone_context() {}
+    inline auto clone_context() noexcept {}
 
-    void drop() && {
+    inline void drop() && noexcept {
         mem_drop(std::move(instance));
     }
 
-    void forget() {
+    inline void forget() noexcept {
         mem_forget(instance);
     }
 };
@@ -240,16 +242,16 @@ struct CGlueObjContainer<T, C, void> {
     T instance;
     C context;
 
-    auto clone_context() {
+    inline auto clone_context() noexcept {
         return context.clone();
     }
 
-    void drop() && {
+    void drop() && noexcept {
         mem_drop(std::move(instance));
         mem_drop(std::move(context));
     }
 
-    void forget() {
+    void forget() noexcept {
         mem_forget(instance);
         mem_forget(context);
     }
@@ -260,13 +262,13 @@ struct CGlueObjContainer<T, void, void> {
     typedef void Context;
     T instance;
 
-    auto clone_context() {}
+    auto clone_context() noexcept {}
 
-    void drop() && {
+    inline void drop() && noexcept {
         mem_drop(std::move(instance));
     }
 
-    void forget() {
+    inline void forget() noexcept {
         mem_forget(instance);
     }
 };",
@@ -281,16 +283,16 @@ struct CGlueObjContainer<T, void, void> {
     typedef CGlueCtx Context;
     $fields
 
-    auto clone_context() {
+    inline auto clone_context() noexcept {
         return context.clone();
     }
 
-    void drop() && {
+    inline void drop() && noexcept {
         mem_drop(std::move(instance));
         mem_drop(std::move(context));
     }
 
-    void forget() {
+    inline void forget() noexcept {
         mem_forget(instance);
         mem_forget(context);
     }
@@ -301,13 +303,13 @@ struct ${group}Container<CGlueInst, void> {
     typedef void Context;
     CGlueInst instance;
 
-    auto clone_context() {}
+    inline auto clone_context() noexcept {}
 
-    void drop() && {
+    inline void drop() && noexcept {
         mem_drop(std::move(instance));
     }
 
-    void forget() {
+    inline void forget() noexcept {
         mem_forget(instance);
     }
 };",
@@ -324,7 +326,7 @@ struct ${group}Container<CGlueInst, void> {
                 &format!(
                     r"$definition_start
 
-    ~{}() {{
+    ~{}() noexcept {{
         mem_drop(std::move(container));
     }}
 {}
@@ -346,14 +348,19 @@ struct CGlueTraitObj<T, {vtbl}Vtbl<CGlueObjContainer<T, C, R>>, C, R> {{
     const {vtbl}Vtbl<CGlueObjContainer<T, C, R>> *vtbl;
     CGlueObjContainer<T, C, R> container;
 
-    ~CGlueTraitObj() {{
+    ~CGlueTraitObj() noexcept {{
         mem_drop(std::move(container));
     }}
 {wrappers}
 }};
 ",
             vtbl = v.name,
-            wrappers = v.create_wrappers("(this->container)", "this->vtbl")
+            wrappers = v.create_wrappers(
+                "(this->container)",
+                "this->vtbl",
+                "CGlueTraitObj",
+                &["vtbl"]
+            )
         ));
     }
 
