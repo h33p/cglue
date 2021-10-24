@@ -424,11 +424,8 @@ struct (?P<trait>\w+)Vtbl) \{
 fn groups_regex(vtbls: &[Vtable], explicit_group: Option<&str>) -> Result<Regex> {
     let group_fmt = explicit_group.unwrap_or("\\w+");
 
-    let vtbl_names = vtbls
-        .iter()
-        .map(|v| v.name.as_str())
-        .intersperse("|")
-        .collect::<String>();
+    let vtbl_names =
+        Itertools::intersperse(vtbls.iter().map(|v| v.name.as_str()), "|").collect::<String>();
 
     Regex::new(
         &format!(r"(?P<definition_start> \* `as_ref_`, and `as_mut_` functions obtain references to safe objects, but do not
@@ -457,11 +454,8 @@ struct CGlueObjContainer) \{
 }
 
 fn group_container_regex(groups: &[Group]) -> Result<Regex> {
-    let typenames = groups
-        .iter()
-        .map(|g| g.name.as_str())
-        .intersperse("|")
-        .collect::<String>();
+    let typenames =
+        Itertools::intersperse(groups.iter().map(|g| g.name.as_str()), "|").collect::<String>();
     Regex::new(&format!(
         r"(?P<declaration>template<typename CGlueInst, typename CGlueCtx>
 struct (?P<group>{})Container) \{{

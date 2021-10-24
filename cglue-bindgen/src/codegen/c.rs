@@ -21,10 +21,6 @@ pub fn parse_header(header: &str) -> Result<String> {
         println!("CAP: {} {}", cap, ctx);
     }
 
-    // Collect all vtables
-
-    // Collect groups
-
     // PROCESSING:
 
     // Remove zsized ret tmps
@@ -36,6 +32,14 @@ pub fn parse_header(header: &str) -> Result<String> {
     // Monomorphize Contexts:
     contexts.remove("Context");
     let header = monomorphize_contexts(header, &contexts)?;
+
+    // MORE COLLECTION:
+
+    // Collect all vtables
+
+    // Collect groups
+
+    // FINAL PROCESSING:
 
     // Wrapper rules:
     //
@@ -61,11 +65,8 @@ fn monomorphize_contexts(
     // Within them, replace all types that have _Context with the said context.
     // Replace `Context context;` with specific context.
 
-    let ctx_matches = contexts
-        .iter()
-        .map(String::as_str)
-        .intersperse("|")
-        .collect::<String>();
+    let ctx_matches =
+        Itertools::intersperse(contexts.iter().map(String::as_str), "|").collect::<String>();
 
     let context_regex = Regex::new("Context context;")?;
 
@@ -195,16 +196,16 @@ typedef struct (?P<trait>\w+)RetTmp_(?P<context>.+) \w+RetTmp_.+;
 }
 
 fn group_ret_tmp_regex(zero_sized: &[(String, String)]) -> Result<Regex> {
-    let typenames = zero_sized
-        .iter()
-        .map(|(a, b)| format!("{}RetTmp_{}", a, b))
-        .intersperse("|".to_string())
-        .collect::<String>();
-    let typenames_lc = zero_sized
-        .iter()
-        .map(|(a, _)| a.to_lowercase())
-        .intersperse("|".to_string())
-        .collect::<String>();
+    let typenames = Itertools::intersperse(
+        zero_sized.iter().map(|(a, b)| format!("{}RetTmp_{}", a, b)),
+        "|".to_string(),
+    )
+    .collect::<String>();
+    let typenames_lc = Itertools::intersperse(
+        zero_sized.iter().map(|(a, _)| a.to_lowercase()),
+        "|".to_string(),
+    )
+    .collect::<String>();
     Regex::new(&format!(
         "\\s*struct ({}) ret_tmp_({});",
         typenames, typenames_lc

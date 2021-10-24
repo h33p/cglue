@@ -21,12 +21,13 @@ pub struct Function {
 
 impl Function {
     pub fn create_wrapper(&self, this: &str, vtbl: &str, this_ty: &str, vtbls: &[&str]) -> String {
-        let args = self
-            .arguments
-            .iter()
-            .map(|a| format!("{} {}", a.ty, a.name))
-            .intersperse(", ".to_string())
-            .collect::<String>();
+        let args = Itertools::intersperse(
+            self.arguments
+                .iter()
+                .map(|a| format!("{} {}", a.ty, a.name)),
+            ", ".to_string(),
+        )
+        .collect::<String>();
 
         let mut call_args = String::new();
 
@@ -147,13 +148,7 @@ impl<'a> Iterator for ArgsParser<'a> {
                 }
                 false
             }
-            ',' => {
-                if !ill_formed && brackets == [0, 0, 0] {
-                    true
-                } else {
-                    false
-                }
-            }
+            ',' => !ill_formed && brackets == [0, 0, 0],
             _ => false,
         });
 
