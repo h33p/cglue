@@ -46,7 +46,117 @@ pub fn parse_header(header: &str) -> Result<String> {
     // PROCESSING:
 
     // Fix up the MaybeUninit
-    let header = maybe_uninit_regex()?.replace_all(header, r"using MaybeUninit = T;");
+    let header = maybe_uninit_regex()?.replace_all(
+        header,
+        r"using MaybeUninit = T;
+
+template<typename T>
+struct alignas(alignof(T)) RustMaybeUninit {
+    char pad[sizeof(T)];
+    constexpr T &assume_init() {
+        return *(T *)this;
+    }
+    constexpr const T &assume_init() const {
+        return *(const T *)this;
+    }
+};",
+    );
+
+    // Bridge common stl containers to callbacks and iterators
+    let header = Regex::new(
+        r"(?P<definition>template<typename T>
+struct CIterator \{
+    void \*iter;
+    int32_t \(\*func\)\(void\*, MaybeUninit<T> \*out\);
+\};)",
+    )?
+    .replace(
+        &header,
+        r"$definition
+
+template<typename T, typename Iterator>
+struct CPPIterator {
+    CIterator<T> iter;
+    Iterator cur, end;
+
+    static int32_t next(void *data, MaybeUninit<T> *out) {
+        CPPIterator *i = (CPPIterator *)data;
+
+        if (i->cur == i->end) {
+            return 1;
+        } else {
+            *out = *i->cur;
+            i->cur++;
+        }
+    }
+
+    template<typename Container>
+    CPPIterator(Container &cont)
+        : cur(cont.begin()), end(cont.end())
+    {
+        iter.iter = &this;
+        iter.func = &CPPIterator::next;
+    }
+
+    CPPIterator(CPPIterator &&o) {
+        iter = o.iter;
+        iter.iter = &this;
+        cur = o.cur;
+        end = o.end;
+    }
+
+    CPPIterator(CPPIterator &o) {
+        iter = o.iter;
+        iter.iter = &this;
+        cur = o.cur;
+        end = o.end;
+    }
+
+    inline CIterator &operator() {
+        return iter;
+    }
+};",
+    );
+
+    let header = Regex::new(
+        r"(?P<definition>template<typename T, typename F>
+struct Callback \{
+    T \*context;
+    bool \(\*func\)\(T\*, F\);)
+\};",
+    )?
+    .replace(
+        &header,
+        r"$definition
+
+    template<typename Container>
+    static bool push_back(Container *context, F data) {
+        context->push_back(data);
+        return true;
+    }
+
+    template<typename Function>
+    static bool functional(Function *function, F data) {
+        return (*function)(data);
+    }
+
+    Callback() = default;
+
+    template<typename OT, typename = decltype(std::declval<OT>().push_back(std::declval<F>()))>
+    Callback(OT *cont) :
+        context((T *)cont),
+        func((decltype(func))(&Callback::push_back<OT>)) {}
+
+    template<typename Function, typename = decltype(std::declval<Function>()(std::declval<F>()))>
+    Callback(const Function &function) :
+        context((T *)&function),
+        func((decltype(func))(&Callback::functional<Function>)) {}
+
+    constexpr operator Callback<void, F> &() {
+        return *((Callback<void, F> *)this);
+    }
+};",
+    );
 
     // Add mem_drop and mem_forget methods
     let header = Regex::new(
@@ -196,6 +306,7 @@ using ${trait}RetTmp = void;
         r"$declaration {
     typedef C Context;
     $fields
+    RustMaybeUninit<R> ret_tmp;
 
     inline auto clone_context() noexcept {
         return context.clone();
@@ -216,7 +327,7 @@ template<typename T, typename R>
 struct CGlueObjContainer<T, void, R> {
     typedef void Context;
     T instance;
-    R ret_tmp;
+    RustMaybeUninit<R> ret_tmp;
 
     inline auto clone_context() noexcept {}
 
@@ -270,43 +381,52 @@ struct CGlueObjContainer<T, void, void> {
     // Add Context typedef to group containers
     // Create group container specializations
 
-    let header = group_container_regex(&groups)?.replace_all(
-        &header,
-        r"$declaration {
+    let gr_regex = Regex::new(&format!("\\s(?P<ret_tmp>([^\\s])RetTmp<CGlueCtx>)",))?;
+
+    let header = group_container_regex(&groups)?.replace_all(&header, |caps: &Captures| {
+        let ret_tmps = gr_regex.replace_all(&caps["ret_tmps"], "RustMaybeUninit<$ret_tmp>");
+
+        format!(
+            r"{declaration} {{
     typedef CGlueCtx Context;
-    $fields
+    {fields}{ret_tmps}
 
-    inline auto clone_context() noexcept {
+    inline auto clone_context() noexcept {{
         return context.clone();
-    }
+    }}
 
-    inline void drop() && noexcept {
+    inline void drop() && noexcept {{
         mem_drop(std::move(instance));
         mem_drop(std::move(context));
-    }
+    }}
 
-    inline void forget() noexcept {
+    inline void forget() noexcept {{
         mem_forget(instance);
         mem_forget(context);
-    }
-};
+    }}
+}};
 
 template<typename CGlueInst>
-struct ${group}Container<CGlueInst, void> {
+struct {group}Container<CGlueInst, void> {{
     typedef void Context;
     CGlueInst instance;
 
-    inline auto clone_context() noexcept {}
+    inline auto clone_context() noexcept {{}}
 
-    inline void drop() && noexcept {
+    inline void drop() && noexcept {{
         mem_drop(std::move(instance));
-    }
+    }}
 
-    inline void forget() noexcept {
+    inline void forget() noexcept {{
         mem_forget(instance);
-    }
-};",
-    );
+    }}
+}};",
+            declaration = &caps["declaration"],
+            fields = &caps["fields"],
+            group = &caps["group"],
+            ret_tmps = ret_tmps
+        )
+    });
 
     let mut header = header.to_string();
 
@@ -453,8 +573,8 @@ fn obj_container_regex() -> Result<Regex> {
         r"(?P<declaration>template<typename T, typename C, typename R>
 struct CGlueObjContainer) \{
     (?P<fields>T instance;
-    C context;
-    R ret_tmp;)
+    C context;)
+    R ret_tmp;
 \};",
     )
     .map_err(Into::into)
@@ -463,13 +583,19 @@ struct CGlueObjContainer) \{
 fn group_container_regex(groups: &[Group]) -> Result<Regex> {
     let typenames =
         Itertools::intersperse(groups.iter().map(|g| g.name.as_str()), "|").collect::<String>();
+    let typenames_lc = groups
+        .iter()
+        .map(|g| g.name.to_lowercase())
+        .collect::<Vec<_>>()
+        .join("|");
     Regex::new(&format!(
         r"(?P<declaration>template<typename CGlueInst, typename CGlueCtx>
 struct (?P<group>{})Container) \{{
     (?P<fields>CGlueInst instance;
-    CGlueCtx context;)
+    CGlueCtx context;)(?P<ret_tmps>(
+    ({})RetTmp ret_tmp_{};)*)
 \}};",
-        typenames,
+        typenames, typenames, typenames_lc
     ))
     .map_err(Into::into)
 }

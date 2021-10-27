@@ -76,7 +76,7 @@ impl Function {
                 ""
             },
             cont_forget = if self.moves_self {
-                "DeferedForget ___forget(this->container);\n        "
+                "DeferedForget<decltype(this->container)> ___forget(this->container);\n        "
             } else {
                 ""
             },

@@ -104,18 +104,12 @@ void use_kvstore(T& obj) {
 	obj.write_key_value(key_slice, new_val);
 }
 
-bool kvdump_callback(void *, KeyValue kv) {
-	fwrite(kv._0.data, sizeof(char), kv._0.len, stdout);
-	printf(" : %zu\n", kv._1);
-	return true;
-}
-
 template<typename T>
 void kvdump(T& obj) {
-	KeyValueCallback callback;
-	callback.context = nullptr;
-	callback.func = kvdump_callback;
-
-	obj.dump_key_values(callback);
+	obj.dump_key_values([](KeyValue kv) {
+		fwrite(kv._0.data, sizeof(char), kv._0.len, stdout);
+		printf(" : %zu\n", kv._1);
+		return true;
+	});
 }
 

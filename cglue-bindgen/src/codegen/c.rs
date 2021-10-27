@@ -174,6 +174,39 @@ typedef struct .+_{} \{{
     Ok(header.to_string().into())
 }
 
+fn vtbl_regex() -> Result<Regex> {
+    Regex::new(
+        r"(?P<declaration>/\*\*
+ \* CGlue vtable for trait (?P<trait2>\w+).
+ \*
+ \* This virtual function table contains ABI-safe interface for the given trait.
+ \*/
+struct (?P<trait>\w+)Vtbl) \{
+    (?P<functions>[^\}]+)
+\};",
+    )
+    .map_err(Into::into)
+}
+
+fn groups_regex(vtbls: &[Vtable], explicit_group: Option<&str>) -> Result<Regex> {
+    let group_fmt = explicit_group.unwrap_or("\\w+");
+
+    let vtbl_names =
+        Itertools::intersperse(vtbls.iter().map(|v| v.name.as_str()), "|").collect::<String>();
+
+    Regex::new(
+        &format!(r"(?P<definition_start> \* `as_ref_`, and `as_mut_` functions obtain references to safe objects, but do not
+ \* perform any memory transformations either. They are the safest to use, because
+ \* there is no risk of accidentally consuming the whole object.
+ \*/
+struct (?P<group>{group_fmt})_(?P<container>[\w_]+)_(?P<context>[\w_]+) \{{
+    (?P<vtbls>(\s*const struct ({vtbl_names})Vtbl<.*> \*vtbl_\w+;)*)
+    (?P<group2>\w+)Container_(?P<container2>[\w_]+)_(?P<context2>[\w_]+) container;)
+\}} (?P<group3>{group_fmt})_(?P<container3>[\w_]+)_(?P<context3>[\w_]+);", group_fmt = group_fmt, vtbl_names = vtbl_names),
+    )
+    .map_err(Into::into)
+}
+
 fn zero_sized_ret_regex() -> Result<Regex> {
     Regex::new(
         r"
