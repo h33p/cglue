@@ -11,11 +11,6 @@
 //!
 //! ## FFI-safe trait generation, helper structures, and more!
 //!
-//! **WARNING: following documentation is currently valid for
-//! [stable 0.1.x series](https://github.com/h33p/cglue/tree/v0.1.3)**
-//!
-//! *This is a 0.2 development branch, documentation is to be updated ASAP*
-//!
 //! <!-- toc -->
 //! - [Overview](#overview)
 //! - [In-depth look](#in-depth-look)
@@ -77,11 +72,7 @@
 //!
 //! A CGlue object is ABI-safe, meaning it can be used across FFI-boundary - C code, or dynamically loaded Rust libraries. While Rust does not guarantee your code will work with 2 different compiler versions clashing, CGlue glues it all together in a way that works.
 //!
-//! This is done by generating wrapper vtables (virtual function tables) for the specified trait, and creating an opaque object with matching table. Here is what's behind the `trait_obj` macro:
-//!
-//! ```ignore
-//! let obj = InfoPrinterBase::from(&mut info).into_opaque();
-//! ```
+//! This is done by generating wrapper vtables (virtual function tables) for the specified trait, and creating an opaque object with matching table.
 //!
 //! `cglue_trait` annotation generates a `InfoPrinterVtbl` structure, and all the code needed to construct it for a type implementing the `InfoPrinter` trait. Then, a `CGlueTraitObj` is constructed that wraps the input object and implements the `InfoPrinter` trait.
 //!
@@ -187,62 +178,61 @@
 //!
 //! `#[cglue_trait]` macro for `MyTrait` will generate the following important types:
 //!
-//! | Name | Purpose |
-//! --- | ---
-//! | `MyTraitBox` | Typedef for opaque owned CGlue object. Its container is a [`CBox<c_void>`](crate::boxed::CBox) |
-//! | `MyTraitCtxBox<D>` | Typedef for opaque owned CGlue object with an [opaque context](#plugin-system) `D`. Its container is a [`CtxBox<c_void, D>`](crate::boxed::CtxBox) |
-//! | `MyTraitNoCtxBox` | Typedef for opaque owned CGlue object. Its container is a [`CtxBox<c_void, NoContext>`](crate::boxed::CtxBox) |
-//! | `MyTraitArcBox` | Typedef for opaque owned CGlue object with an opaque reference counted context. Its container is a [`CtxBox<c_void, COptArc<c_void>>`](crate::boxed::CtxBox) |
-//! | `MyTraitMut` | Typedef for opaque by-mut-ref CGlue object. Its container is a `&mut c_void`. |
-//! | `MyTraitRef` | Typedef for opaque by-ref (const) CGlue object. Its container is a `&c_void`. |
-//! | `MyTraitAny<T, D>` | Typedef for opaque CGlue object. It can have any compatible container `T` dereferencing to `c_void`, with opaque context `D` |
+//! | Name | Purpose | Instance type | [Context](#plugin-system) |
+//! --- | --- | --- | ----
+//! | `MyTraitBox` | Regular owned CGlue object. | [`CBox<c_void>`](crate::boxed::CBox) | [`NoContext`](crate::trait_group::NoContext) |
+//! | `MyTraitCtxBox<Ctx>` | Owned CGlue object with a [context](#plugin-system). | [`CBox<c_void>`](crate::boxed::CBox) | custom `Ctx` |
+//! | `MyTraitArcBox` | Owned CGlue object with a reference counted context. | [`CBox<c_void>`](crate::boxed::CBox) | [`COptArc<c_void>`](crate::arc::COptArc) |
+//! | `MyTraitMut` | By-mut-ref CGlue object. | `&mut c_void`. | [`NoContext`](crate::trait_group::NoContext) |
+//! | `MyTraitRef` | By-ref (const) CGlue object. | `&c_void`. | [`NoContext`](crate::trait_group::NoContext) |
 //!
 //! Only opaque types provide functionality. Non-opaque types can be used as `Into` trait bounds
 //! and are required to type check trait bounds.
 //!
 //! These are the generic types needed for bounds checking:
 //!
-//! | Name | Purpose |
-//! --- | ---
-//! | `MyTraitBaseBox<F>` | Typedef for generic owned CGlue object. Its container is a [`CBox<F>`](crate::boxed::CBox) |
-//! | `MyTraitBaseCtxBox<F, C>` | Typedef for generic owned CGlue object with [some context](#plugin-system). Its container is a [`CtxBox<F, C>`](crate::boxed::CtxBox) |
-//! | `MyTraitBaseNoCtxBox<F>` | Typedef for generic owned CGlue object with some context. Its container is a [`CtxBox<F, NoContext>`](crate::boxed::CtxBox) |
-//! | `MyTraitBaseArcBox<F, C>` | Typedef for generic owned CGlue object with reference counted context. Its container is a [`CtxBox<F, COptArc<C>`](crate::boxed::CtxBox) |
-//! | `MyTraitBaseMut<F>` | Typedef for generic by-mut-ref CGlue object. Its container is a `&mut F`. |
-//! | `MyTraitBaseRef<F>` | Typedef for generic by-ref (const) CGlue object. Its container is a `&F`. |
-//! | `MyTraitBase<T, F, C, D>` | Base typedef for a CGlue object. It allows for any container type `T`, dereferencing to a concrete type `F`, with context `C` with its opaque version `D`. |
+//! | Name | Purpose | Instance type | Context |
+//! --- | --- | --- | ---
+//! | `MyTraitBaseBox<T>` | Base owned CGlue object. | [`CBox<T>`](crate::boxed::CBox) | [`NoContext`](crate::trait_group::NoContext) |
+//! | `MyTraitBaseCtxBox<T, Ctx>` | Base owned CGlue object with [some context](#plugin-system). | [`CBox<T>`](crate::boxed::CBox) | `Ctx` |
+//! | `MyTraitBaseArcBox<T, Ctx>` | Base owned CGlue object with reference counted context. | [`CBox<T>`](crate::boxed::CtxBox) | [`COptArc<Ctx>`](crate::arc::COptArc) |
+//! | `MyTraitBaseMut<T>` | Base by-mut-ref CGlue object. | `&mut T`. | [`NoContext`](crate::trait_group::NoContext) |
+//! | `MyTraitBaseRef<T>` | Typedef for generic by-ref (const) CGlue object. | `&T`. | [`NoContext`](crate::trait_group::NoContext) |
+//! | `MyTraitBase<Inst, Ctx>` | Base (non-opaque) CGlue object. It can have any compatible instance and context | `Inst` | `Ctx` |
 //!
 //! Finally, the following underlying types exist, but do not need to be interacted with in Rust:
 //!
 //! | Name | Purpose |
 //! --- | ---
-//! | `MyTraitVtbl<T, F, C, D>` | Table of all functions of the trait. Should be opaque to the user. |
-//! | `MyTraitOpaqueVtbl<D>` | Opaque version of the table. This is the type every object's table will have. |
-//! | `MyTraitRetTmp` | Structure for temporary return values. It should be opaque to the user. |
+//! | `MyTraitVtbl<C>` | Table of all functions of the trait. Should be opaque to the user. |
+//! | `MyTraitRetTmp<Ctx>` | Structure for temporary return values. It should be opaque to the user. |
 //!
 //! `cglue_trait_group!` macro for `MyGroup` will generate the following main types:
 //!
-//! | Name | Purpose |
-//! --- | ---
-//! | `MyGroupBox` | Typedef for opaque owned CGlue trait group. Its container is a [`CBox<c_void>`](crate::boxed::CBox) |
-//! | `MyGroupCtxBox<D>` | Typedef for opaque owned CGlue trait group with [some context](#plugin-system) `D`. Its container is a [`CtxBox<c_void, D>`](crate::boxed::CtxBox) |
-//! | `MyGroupNoCtxBox` | Typedef for opaque owned CGlue trait group with no true context. Its container is a [`CtxBox<c_void, NoContext>`](crate::boxed::CtxBox) |
-//! | `MyGroupArcBox` | Typedef for opaque owned CGlue trait group with reference counted context. Its container is a [`CtxBox<c_void, COptArc<c_void>>`](crate::boxed::CtxBox) |
-//! | `MyGroupMut` | Typedef for opaque by-mut-ref CGlue trait group. Its container is a `&mut c_void`. |
-//! | `MyGroupRef` | Typedef for opaque by-ref (const) CGlue trait group. Its container is a `&c_void`. |
-//! | `MyGroupAny<T, D>` | Typedef for opaque CGlue trait group. It can have any container. |
+//! | Name | Purpose | Instance type | Context |
+//! --- | --- | --- | ---
+//! | `MyGroupBox` | Owned CGlue trait group. | [`CBox<c_void>`](crate::boxed::CBox) | [`NoContext`](crate::trait_group::NoContext) |
+//! | `MyGroupCtxBox<Ctx>` | Owned CGlue trait group with [some context](#plugin-system). | [`CtxBox<c_void, D>`](crate::boxed::CtxBox) | `Ctx` |
+//! | `MyGroupArcBox` | Typedef for opaque owned CGlue trait group with reference counted context. | [`CtxBox<c_void, COptArc<c_void>>`](crate::boxed::CBox) | [`COptArc<c_void>`](crate::arc::COptArc) |
+//! | `MyGroupMut` | Typedef for opaque by-mut-ref CGlue trait group. | `&mut c_void`. | [`NoContext`](crate::trait_group::NoContext) |
+//! | `MyGroupRef` | Typedef for opaque by-ref (const) CGlue trait group. | `&c_void`. | [`NoContext`](crate::trait_group::NoContext) |
 //!
 //! Base types are as follows:
 //!
+//! | Name | Purpose | Instance type | Context |
+//! --- | --- | --- | ---
+//! | `MyGroupBaseBox<T>` | Base owned CGlue trait group. Its container is a [`CBox<T>`](crate::boxed::CBox) |
+//! | `MyGroupBaseCtxBox<T, Ctx>` | Base owned CGlue trait group with [some context](#plugin-system). | [`CBox<T>`](crate::boxed::CBox) | `Ctx` |
+//! | `MyGroupBaseArcBox<T, Ctx>` | Base owned CGlue trait group with reference counted context. | [`CtxBox<T>`](crate::boxed::CBox) | [`COptArc<Ctx>`](crate::arc::COptArc) |
+//! | `MyGroupBaseMut<T>` | Base by-mut-ref CGlue trait group. | `&mut T`. | [`NoContext`](crate::trait_group::NoContext) |
+//! | `MyGroupBaseRef<T>` | Base by-ref (const) CGlue trait group. | `&T`. | [`NoContext`](crate::trait_group::NoContext) |
+//! | `MyGroup<Inst, Ctx>` | Base definiton of the group. It needs to be manually made opaque. | `Inst` | `Ctx` |
+//!
+//! Container type (opaque to Rust users) that is placed within the group:
+//!
 //! | Name | Purpose |
 //! --- | ---
-//! | `MyGroupBaseBox<F>` | Typedef for generic owned CGlue trait group. Its container is a [`CBox<F>`](crate::boxed::CBox) |
-//! | `MyGroupBaseCtxBox<F, C>` | Typedef for generic owned CGlue trait group with [some context](#plugin-system) `C`. Its container is a [`CtxBox<F, C>`](crate::boxed::CtxBox) |
-//! | `MyGroupBaseNoCtxBox<F>` | Typedef for generic owned CGlue trait group with no context. Its container is a [`CtxBox<F, NoContext>`](crate::boxed::CtxBox) |
-//! | `MyGroupBaseArcBox<F, C>` | Typedef for generic owned CGlue trait group with reference counted context. Its container is a [`CtxBox<F, COptArc<C>>`](crate::boxed::CtxBox) |
-//! | `MyGroupBaseMut<F>` | Typedef for generic by-mut-ref CGlue trait group. Its container is a `&mut F`. |
-//! | `MyGroupBaseRef<F>` | Typedef for generic by-ref (const) CGlue trait group. Its container is a `&F`. |
-//! | `MyGroup<T, F, C, D>` | Base definiton of the group. It is not opaque and not usable yet. |
+//! | MyGroupContainer<Inst, Ctx> | Stores temporary return storage. Vtables are built for this type.
 //!
 //! And finally, the filler trait that is required for an object to be grouppable:
 //!

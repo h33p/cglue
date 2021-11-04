@@ -14,10 +14,10 @@ use std::prelude::v1::*;
 ///
 /// # Examples
 ///
-/// Using [`IntoCIterator`](IntoCIterator) helper:
+/// Using [`AsCIterator`](AsCIterator) helper:
 ///
 /// ```
-/// use cglue::iter::{CIterator, IntoCIterator};
+/// use cglue::iter::{CIterator, AsCIterator};
 ///
 /// extern "C" fn sum_all(iter: CIterator<usize>) -> usize {
 ///     iter.sum()
@@ -25,13 +25,13 @@ use std::prelude::v1::*;
 ///
 /// let mut iter = (0..10).map(|v| v * v);
 ///
-/// assert_eq!(sum_all(iter.into_citer()), 285);
+/// assert_eq!(sum_all(iter.as_citer()), 285);
 /// ```
 ///
 /// Converting with `Into` trait:
 ///
 /// ```
-/// use cglue::iter::{CIterator, IntoCIterator};
+/// use cglue::iter::{CIterator, AsCIterator};
 ///
 /// extern "C" fn sum_all(iter: CIterator<usize>) -> usize {
 ///     iter.sum()
@@ -91,10 +91,10 @@ impl<'a, T> Iterator for CIterator<'a, T> {
     }
 }
 
-pub trait IntoCIterator: Iterator + Sized {
-    fn into_citer(&mut self) -> CIterator<Self::Item> {
+pub trait AsCIterator: Iterator + Sized {
+    fn as_citer(&mut self) -> CIterator<Self::Item> {
         self.into()
     }
 }
 
-impl<T: Iterator> IntoCIterator for T {}
+impl<T: Iterator> AsCIterator for T {}

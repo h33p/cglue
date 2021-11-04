@@ -133,7 +133,7 @@ impl ParsedGenerics {
                 gen_use.push_value(ident_path(decl.ident.clone()));
                 gen_use.push_punct(Default::default());
 
-                applied_typenames.insert(&ident);
+                applied_typenames.insert(ident);
             }
         }
 
@@ -328,7 +328,7 @@ impl From<&Punctuated<GenericArgument, Comma>> for ParsedGenerics {
         for param in input {
             match param {
                 GenericArgument::Type(ty) => {
-                    if let Some(ident) = ty_ident(&ty).cloned() {
+                    if let Some(ident) = ty_ident(ty).cloned() {
                         gen_declare.push_value(TypeParam {
                             attrs: vec![],
                             ident,

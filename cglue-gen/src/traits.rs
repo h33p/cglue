@@ -505,7 +505,7 @@ pub fn parse_trait(
                     int_result
                         .filter(|_| !attrs.iter().any(|i| i == "no_int_result"))
                         .is_some(),
-                    &crate_path,
+                    crate_path,
                 ));
             }
             _ => {}

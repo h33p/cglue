@@ -559,7 +559,7 @@ impl TraitGroup {
         let full_opt_vtbl_list = self.vtbl_list(self.optional_vtbl.iter());
         let mandatory_as_ref_impls = self.mandatory_as_ref_impls(&trg_path);
 
-        let get_container_impl = self.get_container_impl(&name, &trg_path, &self.generics);
+        let get_container_impl = self.get_container_impl(name, &trg_path, &self.generics);
 
         let mandatory_internal_trait_impls = self.internal_trait_impls(
             name,
@@ -569,7 +569,7 @@ impl TraitGroup {
         );
         let vtbl_where_bounds = Self::vtbl_where_bounds(
             self.mandatory_vtbl.iter(),
-            &cont_name,
+            cont_name,
             quote!(CGlueInst),
             quote!(CGlueCtx),
             &self.generics,
@@ -577,7 +577,7 @@ impl TraitGroup {
         );
         let vtbl_where_bounds_noctx = Self::vtbl_where_bounds(
             self.mandatory_vtbl.iter(),
-            &cont_name,
+            cont_name,
             quote!(CGlueInst),
             quote!(#trg_path::NoContext),
             &self.generics,
@@ -585,7 +585,7 @@ impl TraitGroup {
         );
         let vtbl_where_bounds_boxed = Self::vtbl_where_bounds(
             self.mandatory_vtbl.iter(),
-            &cont_name,
+            cont_name,
             quote!(#crate_path::boxed::CBox<'cglue_a, CGlueT>),
             quote!(#crate_path::trait_group::NoContext),
             &self.generics,
@@ -593,7 +593,7 @@ impl TraitGroup {
         );
         let vtbl_where_bounds_ctxboxed = Self::vtbl_where_bounds(
             self.mandatory_vtbl.iter(),
-            &cont_name,
+            cont_name,
             quote!(#crate_path::boxed::CBox<'cglue_a, CGlueT>),
             quote!(CGlueCtx),
             &self.generics,
@@ -602,8 +602,16 @@ impl TraitGroup {
         let ret_tmp_defs = self.ret_tmp_defs(self.optional_vtbl.iter());
 
         let mut enable_funcs = TokenStream::new();
+        let mut enable_funcs_vtbl = TokenStream::new();
 
         let all_gen_use = &gen_use;
+
+        // Work around needless_update lint
+        let fill_rest = if self.optional_vtbl.len() + self.mandatory_vtbl.len() > 1 {
+            quote!(..self)
+        } else {
+            quote!()
+        };
 
         for TraitInfo {
             enable_vtbl_name,
@@ -614,15 +622,19 @@ impl TraitGroup {
             ..
         } in &self.optional_vtbl
         {
-            enable_funcs.extend(quote! {
-                pub fn #enable_vtbl_name (self) -> Self
-                    where &'cglue_a #path #vtbl_typename<'cglue_a, #cont_name<CGlueInst, CGlueCtx, #all_gen_use>, #gen_use>: Default {
-                    Self {
-                        #vtbl_name: Some(Default::default()),
-                        ..self
+            for (funcs, fill_rest) in &mut [
+                (&mut enable_funcs, &quote!(..self)),
+                (&mut enable_funcs_vtbl, &fill_rest),
+            ] {
+                funcs.extend(quote! {
+                    pub fn #enable_vtbl_name (self) -> Self
+                        where &'cglue_a #path #vtbl_typename<'cglue_a, #cont_name<CGlueInst, CGlueCtx, #all_gen_use>, #gen_use>: Default {
+                            Self {
+                                #vtbl_name: Some(Default::default()),#fill_rest
+                            }
                     }
-                }
-            });
+                });
+            }
         }
 
         let mut trait_funcs = TokenStream::new();
@@ -666,8 +678,8 @@ impl TraitGroup {
             let func_name_check = Self::optional_func_name("check", traits.iter().copied());
             let func_name_mut = Self::optional_func_name("as_mut", traits.iter().copied());
             let func_name_ref = Self::optional_func_name("as_ref", traits.iter().copied());
-            let opt_final_name = Self::optional_group_ident(&name, "Final", traits.iter().copied());
-            let opt_name = Self::optional_group_ident(&name, "", traits.iter().copied());
+            let opt_final_name = Self::optional_group_ident(name, "Final", traits.iter().copied());
+            let opt_name = Self::optional_group_ident(name, "", traits.iter().copied());
             let opt_vtbl_defs = self.mandatory_vtbl_defs(traits.iter().copied());
             let opt_mixed_vtbl_defs = self.mixed_opt_vtbl_defs(traits.iter().copied());
 
@@ -1070,7 +1082,7 @@ impl TraitGroup {
                     #cont_name<CGlueInst, CGlueCtx, #gen_use>: #trg_path::CGlueObjBase,
                     #gen_where_bounds
                 {
-                    #enable_funcs
+                    #enable_funcs_vtbl
                 }
 
                 pub trait #filler_trait<'cglue_a, CGlueInst, CGlueCtx: #ctx_bound, #gen_declare>: Sized
@@ -1309,7 +1321,7 @@ impl TraitGroup {
             ..
         } in iter
         {
-            if let Some((ext_path, tr_info)) = self.ext_traits.get(&ident) {
+            if let Some((ext_path, tr_info)) = self.ext_traits.get(ident) {
                 let mut impls = TokenStream::new();
 
                 let ext_name = format_ident!("{}Ext", ident);
@@ -1318,7 +1330,7 @@ impl TraitGroup {
                     super::traits::parse_trait(tr_info, crate_path, super::traits::process_item);
 
                 for func in &funcs {
-                    func.int_trait_impl(Some(&ext_path), &ext_name, &mut impls);
+                    func.int_trait_impl(Some(ext_path), &ext_name, &mut impls);
                 }
 
                 let gen = quote! {

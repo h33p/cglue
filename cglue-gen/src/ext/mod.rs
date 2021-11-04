@@ -123,7 +123,7 @@ pub fn prelude_remap(path: Path) -> Path {
 pub fn prelude_remap_with_ident(path: Path, ident: &Ident) -> Path {
     if !path.segments.is_empty() {
         path
-    } else if let Some(path) = get_exports().get(&ident) {
+    } else if let Some(path) = get_exports().get(ident) {
         path.clone()
     } else {
         path
@@ -259,7 +259,7 @@ fn impl_inner(
     if let Some(root) = modules.remove(&0) {
         for (p, (ts, children)) in root {
             let name = &p.segments.iter().next_back().unwrap().ident;
-            out.extend(impl_mod(&p, &name, 0, ts, children, &mut modules))
+            out.extend(impl_mod(&p, name, 0, ts, children, &mut modules))
         }
     } else if !modules.is_empty() {
         panic!("Module implementations defined, but everything is disjoint from the root!");

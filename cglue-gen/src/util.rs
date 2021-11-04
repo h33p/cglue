@@ -45,7 +45,7 @@ pub fn crate_path_fixed() -> Option<FoundCrate> {
 pub fn parse_maybe_braced<T: Parse>(input: ParseStream) -> Result<Vec<T>> {
     let mut ret = vec![];
 
-    if let Ok(braces) = syn::group::parse_braces(&input) {
+    if let Ok(braces) = syn::group::parse_braces(input) {
         let content = braces.content;
 
         while !content.is_empty() {

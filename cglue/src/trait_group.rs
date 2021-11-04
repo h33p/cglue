@@ -140,7 +140,7 @@ pub trait GetVtbl<V> {
 
 impl<T, V, C, R> GetVtbl<V> for CGlueTraitObj<'_, T, V, C, R> {
     fn get_vtbl(&self) -> &V {
-        &self.vtbl
+        self.vtbl
     }
 }
 

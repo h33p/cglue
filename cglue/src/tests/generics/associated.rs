@@ -44,9 +44,11 @@ pub trait ObjResultReturn {
     #[wrap_with_obj(TA)]
     type ReturnType: TA + 'static;
 
+    #[allow(clippy::result_unit_err)]
     fn orr_1(&self) -> Result<Self::ReturnType, ()>;
 
     #[no_int_result]
+    #[allow(clippy::result_unit_err)]
     fn orr_2(&self) -> Result<Self::ReturnType, ()> {
         self.orr_1()
     }
