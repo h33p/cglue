@@ -22,7 +22,7 @@ pub fn parse_header(header: &str) -> Result<String> {
     let vtbls = vtbl_regex
         .captures_iter(header)
         .filter(|c| c["trait"] == c["trait2"])
-        .map(|c| Vtable::new(c["trait"].to_string(), &c["functions"]))
+        .map(|c| Vtable::new(c["trait"].to_string(), &c["functions"], "CGlueC"))
         .collect::<Result<Vec<_>>>()?;
 
     let mut vtbls_map = HashMap::new();

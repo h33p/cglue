@@ -15,11 +15,11 @@ void kvdump(FeaturesGroupArcBox *obj);
 #define this_call(obj, func, ...) (obj) -> func (this(obj), ## __VA_ARGS__)
 #define this_owned_call(obj, func, ...) (obj) -> func (*this(obj), ## __VA_ARGS__)
 
-#define drop_arc(obj) (obj).container.context.drop_fn((obj).container.context.inner) \
+#define drop_arc(obj) (obj).container.context.drop_fn((obj).container.context.instance) \
 
 #define drop_box(obj) { \
 	drop_arc(obj); \
-	(obj).container.instance.drop((obj).container.instance.instance); \
+	(obj).container.instance.drop_fn((obj).container.instance.instance); \
 }
 
 int main() {
@@ -33,9 +33,9 @@ int main() {
 	PluginInnerArcBox obj = load_plugin(len > 0 ? name : "plugin_lib");
 
 	{
-		FeaturesGroupArcBox borrowed = this_call(&obj, vtbl->borrow_features);
+		FeaturesGroupArcBox borrowed = borrow_features(&obj);
 
-		this_call(&borrowed, vtbl_mainfeature->print_self);
+		featuresgroup_print_self(&borrowed);
 
 		if (borrowed.vtbl_keyvaluestore != NULL) {
 			printf("Using borrowed kvstore:\n");
@@ -49,13 +49,13 @@ int main() {
 
 		printf("Borrowed done.\n");
 
-		drop_box(borrowed);
+		featuresgroup_arc_box_drop(borrowed);
 	}
 
 	{
-		FeaturesGroupArcBox owned = this_owned_call(&obj, vtbl->into_features);
+		FeaturesGroupArcBox owned = arc_box_into_features(obj);
 
-		this_call(&owned, vtbl_mainfeature->print_self);
+		featuresgroup_print_self(&owned);
 
 		if (owned.vtbl_keyvaluestore != NULL) {
 			printf("Using owned kvstore:\n");
@@ -67,7 +67,7 @@ int main() {
 			kvdump(&owned);
 		}
 
-		drop_box(owned);
+		featuresgroup_arc_box_drop(owned);
 	}
 
 	return 0;
@@ -102,7 +102,7 @@ void use_kvstore(FeaturesGroupArcBox *obj) {
 	key_slice.data = (unsigned char *)key;
 	key_slice.len = len;
 
-	printf("Cur val: %zu\n", this_call(obj, vtbl_keyvaluestore->get_key_value, key_slice));
+	printf("Cur val: %zu\n", featuresgroup_get_key_value(obj, key_slice));
 
 	size_t new_val = 0;
 
@@ -112,7 +112,7 @@ void use_kvstore(FeaturesGroupArcBox *obj) {
 	char nl[2];
 	fgets(nl, sizeof(nl), stdin);
 
-	this_call(obj, vtbl_keyvaluestore->write_key_value, key_slice, new_val);
+	featuresgroup_write_key_value(obj, key_slice, new_val);
 }
 
 bool kvdump_callback(void *, KeyValue kv) {
@@ -126,6 +126,6 @@ void kvdump(FeaturesGroupArcBox *obj) {
 	callback.context = NULL;
 	callback.func = kvdump_callback;
 
-	this_call(obj, vtbl_keyvaluedumper->dump_key_values, callback);
+	featuresgroup_dump_key_values(obj, callback);
 }
 

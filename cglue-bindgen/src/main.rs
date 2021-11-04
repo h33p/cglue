@@ -91,7 +91,7 @@ fn main() -> Result<()> {
 
     let out = std::str::from_utf8(&output.stdout)?.to_string();
 
-    let output = cpp::parse_header(&out)?;
+    let output = c::parse_header(&out)?;
 
     if let Some(path) = output_file {
         let mut file = File::create(path)?;
