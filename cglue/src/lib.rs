@@ -24,9 +24,7 @@
 //!   - [Plugin system](#plugin-system)
 //!   - [Working with cbindgen](#working-with-cbindgen)
 //!     - [Setup](#setup)
-//!     - [Automatic cleanup](#automatic-cleanup)
-//!     - [Cleanup C](#cleanup-c)
-//!     - [Cleanup C++](#cleanup-c-1)
+//!     - [cglue-bindgen](#cglue-bindgen)
 //! - [Limitations](#limitations)
 //! <!-- /toc -->
 //!
@@ -181,10 +179,14 @@
 //! | Name | Purpose | Instance type | [Context](#plugin-system) |
 //! --- | --- | --- | ----
 //! | `MyTraitBox` | Regular owned CGlue object. | [`CBox<c_void>`](crate::boxed::CBox) | [`NoContext`](crate::trait_group::NoContext) |
-//! | `MyTraitCtxBox<Ctx>` | Owned CGlue object with a [context](#plugin-system). | [`CBox<c_void>`](crate::boxed::CBox) | custom `Ctx` |
+//! | `MyTraitCtxBox<Ctx>` | Owned CGlue object with a [context](#plugin-system). | [`CBox<c_void>`](crate::boxed::CBox) | `Ctx` |
 //! | `MyTraitArcBox` | Owned CGlue object with a reference counted context. | [`CBox<c_void>`](crate::boxed::CBox) | [`COptArc<c_void>`](crate::arc::COptArc) |
 //! | `MyTraitMut` | By-mut-ref CGlue object. | `&mut c_void`. | [`NoContext`](crate::trait_group::NoContext) |
+//! | `MyTraitCtxMut<Ctx>` | By-mut-ref CGlue object with a context. | `&mut c_void`. | `Ctx` |
+//! | `MyTraitArcMut` | By-mut-ref CGlue object with a reference counted context. | `&mut c_void`. | [`COptArc<c_void>`](crate::arc::COptArc) |
 //! | `MyTraitRef` | By-ref (const) CGlue object. | `&c_void`. | [`NoContext`](crate::trait_group::NoContext) |
+//! | `MyTraitCtxRef<Ctx>` | By-ref (const) CGlue object with a context. | `&c_void`. | `Ctx` |
+//! | `MyTraitArcRef` | By-ref (const) CGlue object with a reference counted context. | `&c_void`. | [`COptArc<c_void>`](crate::arc::COptArc) |
 //!
 //! Only opaque types provide functionality. Non-opaque types can be used as `Into` trait bounds
 //! and are required to type check trait bounds.
@@ -195,7 +197,7 @@
 //! --- | --- | --- | ---
 //! | `MyTraitBaseBox<T>` | Base owned CGlue object. | [`CBox<T>`](crate::boxed::CBox) | [`NoContext`](crate::trait_group::NoContext) |
 //! | `MyTraitBaseCtxBox<T, Ctx>` | Base owned CGlue object with [some context](#plugin-system). | [`CBox<T>`](crate::boxed::CBox) | `Ctx` |
-//! | `MyTraitBaseArcBox<T, Ctx>` | Base owned CGlue object with reference counted context. | [`CBox<T>`](crate::boxed::CtxBox) | [`COptArc<Ctx>`](crate::arc::COptArc) |
+//! | `MyTraitBaseArcBox<T, Ctx>` | Base owned CGlue object with reference counted context. | [`CBox<T>`](crate::boxed::CBox) | [`COptArc<Ctx>`](crate::arc::COptArc) |
 //! | `MyTraitBaseMut<T>` | Base by-mut-ref CGlue object. | `&mut T`. | [`NoContext`](crate::trait_group::NoContext) |
 //! | `MyTraitBaseRef<T>` | Typedef for generic by-ref (const) CGlue object. | `&T`. | [`NoContext`](crate::trait_group::NoContext) |
 //! | `MyTraitBase<Inst, Ctx>` | Base (non-opaque) CGlue object. It can have any compatible instance and context | `Inst` | `Ctx` |
@@ -212,10 +214,14 @@
 //! | Name | Purpose | Instance type | Context |
 //! --- | --- | --- | ---
 //! | `MyGroupBox` | Owned CGlue trait group. | [`CBox<c_void>`](crate::boxed::CBox) | [`NoContext`](crate::trait_group::NoContext) |
-//! | `MyGroupCtxBox<Ctx>` | Owned CGlue trait group with [some context](#plugin-system). | [`CtxBox<c_void, D>`](crate::boxed::CtxBox) | `Ctx` |
-//! | `MyGroupArcBox` | Typedef for opaque owned CGlue trait group with reference counted context. | [`CtxBox<c_void, COptArc<c_void>>`](crate::boxed::CBox) | [`COptArc<c_void>`](crate::arc::COptArc) |
+//! | `MyGroupCtxBox<Ctx>` | Owned CGlue trait group with [some context](#plugin-system). | [`CBox<c_void>`](crate::boxed::CBox) | `Ctx` |
+//! | `MyGroupArcBox` | Typedef for opaque owned CGlue trait group with reference counted context. | [`CBox<c_void>`](crate::boxed::CBox) | [`COptArc<c_void>`](crate::arc::COptArc) |
 //! | `MyGroupMut` | Typedef for opaque by-mut-ref CGlue trait group. | `&mut c_void`. | [`NoContext`](crate::trait_group::NoContext) |
+//! | `MyGroupCtxMut<Ctx>` | Typedef for opaque by-mut-ref CGlue trait group with a custom context. | `&mut c_void`. | `Ctx` |
+//! | `MyGroupArcMut` | Typedef for opaque by-mut-ref CGlue trait group with a reference counted context. | `&mut c_void`. | [`COptArc<c_void>`](crate::arc::COptArc) |
 //! | `MyGroupRef` | Typedef for opaque by-ref (const) CGlue trait group. | `&c_void`. | [`NoContext`](crate::trait_group::NoContext) |
+//! | `MyGroupCtxRef<Ctx>` | Typedef for opaque by-ref (const) CGlue trait group with a custom context. | `&c_void`. | `Ctx` |
+//! | `MyGroupArcRef` | Typedef for opaque by-ref (const) CGlue trait group with a reference counted context. | `&c_void`. | [`COptArc<c_void>`](crate::arc::COptArc) |
 //!
 //! Base types are as follows:
 //!
@@ -223,9 +229,13 @@
 //! --- | --- | --- | ---
 //! | `MyGroupBaseBox<T>` | Base owned CGlue trait group. Its container is a [`CBox<T>`](crate::boxed::CBox) |
 //! | `MyGroupBaseCtxBox<T, Ctx>` | Base owned CGlue trait group with [some context](#plugin-system). | [`CBox<T>`](crate::boxed::CBox) | `Ctx` |
-//! | `MyGroupBaseArcBox<T, Ctx>` | Base owned CGlue trait group with reference counted context. | [`CtxBox<T>`](crate::boxed::CBox) | [`COptArc<Ctx>`](crate::arc::COptArc) |
+//! | `MyGroupBaseArcBox<T, Ctx>` | Base owned CGlue trait group with reference counted context. | [`CBox<T>`](crate::boxed::CBox) | [`COptArc<Ctx>`](crate::arc::COptArc) |
 //! | `MyGroupBaseMut<T>` | Base by-mut-ref CGlue trait group. | `&mut T`. | [`NoContext`](crate::trait_group::NoContext) |
+//! | `MyGroupBaseCtxMut<T, Ctx>` | Base by-mut-ref CGlue trait group with a context. | `&mut T`. | `Ctx` |
+//! | `MyGroupBaseArcMut<T, Ctx>` | Base by-mut-ref CGlue trait group with a reference counted context. | `&mut T`. | [`COptArc<Ctx>`](crate::arc::COptArc) |
 //! | `MyGroupBaseRef<T>` | Base by-ref (const) CGlue trait group. | `&T`. | [`NoContext`](crate::trait_group::NoContext) |
+//! | `MyGroupBaseCtxRef<T, Ctx>` | Base by-ref (const) CGlue trait group with a context. | `&T`. | `Ctx` |
+//! | `MyGroupBaseArcRef<T, Ctx>` | Base by-ref (const) CGlue trait group with a reference counted context. | `&T`. | [`COptArc<Ctx>`](crate::arc::COptArc) |
 //! | `MyGroup<Inst, Ctx>` | Base definiton of the group. It needs to be manually made opaque. | `Inst` | `Ctx` |
 //!
 //! Container type (opaque to Rust users) that is placed within the group:
@@ -444,7 +454,7 @@
 //! It is also possible to manually implement the groups by implementing `MyGroupVtableFiller`. Here is what
 //! the above 2 macro invocations expand to:
 //!
-//! ```ignore
+//! ```
 //! # use cglue::*;
 //! # #[cglue_trait]
 //! # pub trait TA {
@@ -469,41 +479,33 @@
 //! # }
 //! # cglue_trait_group!(GenGroup<T: Eq>, Getter<T>, { TA });
 //! # use core::ops::Deref;
-//! # use cglue::trait_group::{ContextRef, Opaquable};
+//! # use cglue::trait_group::{Opaquable};
 //! impl<
 //!         'cglue_a,
-//!         // Container type
-//!         CGlueT: ContextRef<Context = CGlueC> + Deref<Target = GA<T>>,
-//!         // Base context type, that opaques to `CGlueD`
-//!         CGlueC: 'static + Clone + Send + Sync + Opaquable<OpaqueTarget = CGlueD>,
-//!         // Opaque context type, that has been short-circuit to opaque to self
-//!         CGlueD: 'static + Clone + Send + Sync + Opaquable<OpaqueTarget = CGlueD>,
-//!         // This is the user-provided Eq bound
+//!         CGlueInst: ::core::ops::Deref<Target = GA<T>>,
+//!         CGlueCtx: 'static + Clone + Send + Sync,
 //!         T: Eq,
-//!     > GenGroupVtableFiller<'cglue_a, CGlueT, CGlueC, CGlueD, T> for GA<T>
+//!     > GenGroupVtableFiller<'cglue_a, CGlueInst, CGlueCtx, T> for GA<T>
 //! where
-//!     // When we want to enable TA, we must mark that the vtable can be generated
-//!     &'cglue_a TAVtbl<'cglue_a, CGlueT, GA<T>, CGlueC, CGlueD>: 'cglue_a + Default,
+//!     Self: TA,
+//!     &'cglue_a TAVtbl<'cglue_a, GenGroupContainer<CGlueInst, CGlueCtx, T>>:
+//!         'cglue_a + Default,
 //! {
 //!     fn fill_table(
-//!         table: GenGroupVtables<'cglue_a, CGlueT, GA<T>, CGlueC, CGlueD, T>,
-//!     ) -> GenGroupVtables<'cglue_a, CGlueT, GA<T>, CGlueC, CGlueD, T> {
+//!         table: GenGroupVtables<'cglue_a, CGlueInst, CGlueCtx, T>,
+//!     ) -> GenGroupVtables<'cglue_a, CGlueInst, CGlueCtx, T> {
 //!         table.enable_ta()
 //!     }
 //! }
 //! impl<
 //!         'cglue_a,
-//!         // Container type
-//!         CGlueT: ContextRef<Context = CGlueC> + Deref<Target = GA<u64>>,
-//!         // Base context type, that opaques to `CGlueD`
-//!         CGlueC: 'static + Clone + Send + Sync + Opaquable<OpaqueTarget = CGlueD>,
-//!         // Opaque context type, that has been short-circuit to opaque to self
-//!         CGlueD: 'static + Clone + Send + Sync + Opaquable<OpaqueTarget = CGlueD>,
-//!     > GenGroupVtableFiller<'cglue_a, CGlueT, CGlueC, CGlueD, u64> for GA<u64>
+//!         CGlueInst: ::core::ops::Deref<Target = GA<u64>>,
+//!         CGlueCtx: 'static + Clone + Send + Sync,
+//!     > GenGroupVtableFiller<'cglue_a, CGlueInst, CGlueCtx, u64> for GA<u64>
 //! {
 //!     fn fill_table(
-//!         table: GenGroupVtables<'cglue_a, CGlueT, GA<u64>, CGlueC, CGlueD, u64>,
-//!     ) -> GenGroupVtables<'cglue_a, CGlueT, GA<u64>, CGlueC, CGlueD, u64> {
+//!         table: GenGroupVtables<'cglue_a, CGlueInst, CGlueCtx, u64>,
+//!     ) -> GenGroupVtables<'cglue_a, CGlueInst, CGlueCtx, u64> {
 //!         table
 //!     }
 //! }
@@ -589,7 +591,7 @@
 //!
 //! // Generated vtable entry:
 //!
-//! with_slice: extern "C" fn(&CGlueF, slice: CSlice<usize>),
+//! with_slice: extern "C" fn(&CGlueC, slice: CSlice<usize>),
 //! ```
 //!
 //! `Option` types that can not have [nullable pointer optimization](https://doc.rust-lang.org/nomicon/ffi.html#the-nullable-pointer-optimization) are wrapped into [COption](crate::option::COption):
@@ -599,7 +601,7 @@
 //!
 //! // Generated vtable entry:
 //!
-//! non_npo_option: extern "C" fn(&CGlueF, opt: Option<usize>),
+//! non_npo_option: extern "C" fn(&CGlueC, opt: Option<usize>),
 //! ```
 //!
 //! `Result` is automatically wrapped into [CResult](crate::result::CResult):
@@ -609,7 +611,7 @@
 //!
 //! // Generated vtable entry:
 //!
-//! with_cresult: extern "C" fn(&CGlueF) -> CResult<usize, usize>,
+//! with_cresult: extern "C" fn(&CGlueC) -> CResult<usize, usize>,
 //! ```
 //!
 //! `Result` with [IntError](crate::result::IntError) type can return an integer code with `Ok` value written to a variable:
@@ -620,7 +622,7 @@
 //!
 //! // Generated vtable entry:
 //!
-//! with_int_result: extern "C" fn(&CGlueF, ok_out: &mut MaybeUninit<usize>) -> i32,
+//! with_int_result: extern "C" fn(&CGlueC, ok_out: &mut MaybeUninit<usize>) -> i32,
 //! ```
 //!
 //! All wrapping and conversion is handled transparently behind the scenes, with user's control.
@@ -719,8 +721,8 @@
 //!
 //! CGlue currently does not provide an out-of-the box plugin system, but there are primitives in
 //! place for relatively safe trait usage using dynamically loaded libraries. The core primitive is
-//! the `CtxBox` type - this type allows to house a context, such as a `libloading::Library` Arc
-//! which will be automatically cloned into every owned object the trait creates.
+//! a cloneable context, such as a libloading::Library` Arc, which will keep the library opened
+//! until all of the CGlue objects are dropped.
 //!
 //! ```
 //! use cglue::prelude::v1::*;
@@ -749,7 +751,7 @@
 //! of `PluginRoot`, for instance an `InfoPrinter` object, the Arc gets moved/cloned into the new
 //! object.
 //!
-//! ```ignore
+//! ```
 //! # use cglue::prelude::v1::*;
 //! # use std::sync::Arc;
 //! # #[cglue_trait]
@@ -784,9 +786,7 @@
 //! let root = ();
 //! // This could be a `libloading::Library` arc.
 //! let ref_to_count = CArc::from(()).into_opt();
-//! // Construct a `CtxBox` to be more explicit.
-//! let wrapped = CtxBox::from((root, ref_to_count));
-//! let obj = trait_obj!(wrapped as PluginRoot);
+//! let obj = trait_obj!((root, ref_to_count) as PluginRoot);
 //! let printer = obj.get_printer();
 //! // It is safe to drop obj now:
 //! std::mem::drop(obj);
@@ -801,16 +801,13 @@
 //! `IntError` types, and mark the trait with `#[int_result]`, which would prevent this particular
 //! issue from happening.
 //!
-//! Another note, any by-ref objects do not have a context attached to them - their context is a
-//! `NoContext` type. If there is a way to construct an owned object out of them, the said object
-//! will not have the original context passed through. If reference counted context is used, this
-//! problem is easy to be type checked, because the returned type will be `MyTraitNoCtxBox`, rather
-//! than `MyTraitArcBox`.
-//!
 //! ### Working with cbindgen
 //!
 //! [cbindgen](https://github.com/eqrion/cbindgen) can be used to generate C and C++ bindings.
 //! There is some important setup needed.
+//!
+//! In addition, [`cglue-bindgen`](https://crates.io/crates/cglue-bindgen) provides additional
+//! helper method generation, making working with CGlue from C/C++ much more convenient.
 //!
 //! #### Setup
 //!
@@ -840,108 +837,26 @@
 //! language = "C"
 //! ```
 //!
-//! #### Automatic cleanup
+//! Export any shortened typedefs that are not used by any of the extern C functions:
 //!
-//! cbindgen will generate mostly clean output, however, there is one special case it does not
-//! handle well - empty typedefs.
+//! ```toml
+//! [export]
+//! include = ["FeaturesGroupArcBox", "PluginInnerRef", "PluginInnerMut"]
+//! ```
+//!
+//! #### cglue-bindgen
 //!
 //! [`cglue-bindgen`](https://crates.io/crates/cglue-bindgen) is a cbindgen wrapper that attempts
 //! to automatically clean up the headers. It also adds an ability to automatically invoke nightly
-//! rust with `+nightly` flag. The change is simple - just move all cbindgen arguments after `--`:
+//! rust with `+nightly` flag, and also generates vtable wrappers for simpler usage. The change is
+//! simple - just move all cbindgen arguments after `--`:
 //!
 //! ```sh
 //! cglue-bindgen +nightly -- --config cbindgen.toml --crate your_crate --output output_header.h
 //! ```
 //!
-//! If something does not work, below are the steps for manual cleanup in both C and C++ modes.
-//!
-//! #### Cleanup C
-//!
-//! Open the output header, and notice these typedefs:
-//!
-//! ```c
-//! /**
-//!  * Type definition for temporary return value wrapping storage.
-//!  *
-//!  * The trait does not use return wrapping, thus is a typedef to `PhantomData`.
-//!  *
-//!  * Note that `cbindgen` will generate wrong structures for this type. It is important
-//!  * to go inside the generated headers and fix it - all RetTmp structures without a
-//!  * body should be completely deleted, both as types, and as fields in the
-//!  * groups/objects. If C++11 templates are generated, it is important to define a
-//!  * custom type for CGlueTraitObj that does not have `ret_tmp` defined, and change all
-//!  * type aliases of this trait to use that particular structure.
-//!  */
-//! typedef struct CloneRetTmp CloneRetTmp;
-//! ```
-//!
-//! Remove all usage of these types. Any variables in the structures with these types should not be
-//! generated as they are intentionally zero-sized. Finally, remove the typedefs.
-//!
-//! Then, you might notice the following typedef:
-//!
-//! ```c
-//! /**
-//!  * Describes absence of a context.
-//!  *
-//!  * This context is used for regular `CBox` trait objects as well as by-ref or by-mut objects.
-//!  */
-//! typedef struct NoContext NoContext;
-//! ```
-//!
-//! Remove it, as well as any usages of it. It works the same way as zero-sized RetTmp variables.
-//!
-//! #### Cleanup C++
-//!
-//! Similar error is present in C++ headers, but due to templates, cleanup is slightly different.
-//!
-//! 1. Remove all references to the incomplete types in the generated group structures.
-//!
-//! 2. Change all incomplete `struct TraitRetTmp;` definitions to `typedef void TraitRetTmp;`
-//!
-//! 3. Define a specialized type for `CGlueTraitObj` without the final value:
-//!
-//! ```cpp
-//! template<typename T, typename V, typename S>
-//! struct CGlueTraitObj {
-//!     T instance;
-//!     const V *vtbl;
-//!     S ret_tmp;
-//! };
-//!
-//! // Make sure it goes after the original declaration.
-//!
-//! template<typename T, typename V>
-//! struct CGlueTraitObj<T, V, void> {
-//!     T instance;
-//!     const V *vtbl;
-//! };
-//! ```
-//!
-//! Similar specialization should be done for the `CtxBox` type:
-//!
-//! ```cpp
-//! template<typename T>
-//! struct CtxBox<T, void> {
-//!     CBox<T> inner;
-//! };
-//! ```
-//!
-//! Finally, there usually is a wrongly generated `MaybeUninit` typedef. Replace it from this:
-//!
-//! ```cpp
-//! template<typename T = void>
-//! struct MaybeUninit;
-//! ```
-//!
-//! To this:
-//!
-//! ```cpp
-//! template<typename T = void>
-//! using MaybeUninit = T;
-//! ```
-//!
-//! Other than that, everything should be good to go!
+//! This wrapper is probably the most fragile part of CGlue - if something does not work, please
+//! open up an issue report. In the future, we will aim to integrate CGlue directly with cbindgen.
 //!
 //! ## Limitations
 //!

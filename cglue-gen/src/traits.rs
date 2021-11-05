@@ -26,7 +26,7 @@ pub fn process_item(
     types: &mut BTreeMap<Ident, WrappedType>,
     crate_path: &TokenStream,
 ) {
-    let c_void = quote!(::core::ffi::c_void);
+    let c_void = crate::util::void_type();
 
     let static_lifetime = Lifetime {
         apostrophe: proc_macro2::Span::call_site(),
@@ -528,7 +528,7 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
 
     let trait_impl_name = ext_name.unwrap_or(trait_name);
 
-    let c_void = quote!(::core::ffi::c_void);
+    let c_void = crate::util::void_type();
 
     // Additional identifiers
     let vtbl_ident = format_ident!("{}Vtbl", trait_name);
@@ -539,14 +539,22 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
     let base_ctx_trait_obj_ident = format_ident!("{}BaseCtxBox", trait_name);
     let base_arc_trait_obj_ident = format_ident!("{}BaseArcBox", trait_name);
     let base_mut_trait_obj_ident = format_ident!("{}BaseMut", trait_name);
+    let base_ctx_mut_trait_obj_ident = format_ident!("{}BaseCtxMut", trait_name);
+    let base_arc_mut_trait_obj_ident = format_ident!("{}BaseArcMut", trait_name);
     let base_ref_trait_obj_ident = format_ident!("{}BaseRef", trait_name);
+    let base_ctx_ref_trait_obj_ident = format_ident!("{}BaseCtxRef", trait_name);
+    let base_arc_ref_trait_obj_ident = format_ident!("{}BaseArcRef", trait_name);
     let base_trait_obj_ident = format_ident!("{}Base", trait_name);
 
     let opaque_box_trait_obj_ident = format_ident!("{}Box", trait_name);
     let opaque_ctx_trait_obj_ident = format_ident!("{}CtxBox", trait_name);
     let opaque_arc_trait_obj_ident = format_ident!("{}ArcBox", trait_name);
     let opaque_mut_trait_obj_ident = format_ident!("{}Mut", trait_name);
+    let opaque_ctx_mut_trait_obj_ident = format_ident!("{}CtxMut", trait_name);
+    let opaque_arc_mut_trait_obj_ident = format_ident!("{}ArcMut", trait_name);
     let opaque_ref_trait_obj_ident = format_ident!("{}Ref", trait_name);
+    let opaque_ctx_ref_trait_obj_ident = format_ident!("{}CtxRef", trait_name);
+    let opaque_arc_ref_trait_obj_ident = format_ident!("{}ArcRef", trait_name);
 
     let (funcs, generics, trait_type_defs) = parse_trait(&tr, &crate_path, process_item);
 
@@ -717,9 +725,13 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
         " CtxBoxed CGlue trait object for trait {} with context.",
         trait_name
     );
-    let base_arc_trait_obj_doc = format!(" CtxBoxed CGlue trait object for trait {} with a [`COptArc`](cglue::arc::COptArc) reference counted context.", trait_name);
+    let base_arc_trait_obj_doc = format!(" Boxed CGlue trait object for trait {} with a [`COptArc`](cglue::arc::COptArc) reference counted context.", trait_name);
     let base_mut_trait_obj_doc = format!(" By-mut CGlue trait object for trait {}.", trait_name);
+    let base_ctx_mut_trait_obj_doc = format!(" By-mut CGlue trait object for trait {} with a context.", trait_name);
+    let base_arc_mut_trait_obj_doc = format!(" By-mut CGlue trait object for trait {} with a [`COptArc`](cglue::arc::COptArc) reference counted context.", trait_name);
     let base_ref_trait_obj_doc = format!(" By-ref CGlue trait object for trait {}.", trait_name);
+    let base_ctx_ref_trait_obj_doc = format!(" By-ref CGlue trait object for trait {} with a context.", trait_name);
+    let base_arc_ref_trait_obj_doc = format!(" By-ref CGlue trait object for trait {} with a [`COptArc`](cglue::arc::COptArc) reference counted context.", trait_name);
     let base_trait_obj_doc = format!(" Base CGlue trait object for trait {}.", trait_name);
     let opaque_box_trait_obj_doc =
         format!(" Opaque Boxed CGlue trait object for trait {}.", trait_name);
@@ -727,13 +739,29 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
         " Opaque CtxBoxed CGlue trait object for trait {} with a context.",
         trait_name
     );
-    let opaque_arc_trait_obj_doc = format!(" Opaque CtxBoxed CGlue trait object for trait {} with a [`COptArc`](cglue::arc::COptArc) reference counted context.", trait_name);
+    let opaque_arc_trait_obj_doc = format!(" Opaque Boxed CGlue trait object for trait {} with a [`COptArc`](cglue::arc::COptArc) reference counted context.", trait_name);
     let opaque_mut_trait_obj_doc = format!(
         " Opaque by-mut CGlue trait object for trait {}.",
         trait_name
     );
+    let opaque_ctx_mut_trait_obj_doc = format!(
+        " Opaque by-mut CGlue trait object for trait {} with a context.",
+        trait_name
+    );
+    let opaque_arc_mut_trait_obj_doc = format!(
+        " Opaque by-mut CGlue trait object for trait {} with a [`COptArc`](cglue::arc::COptArc) reference counted context.",
+        trait_name
+    );
     let opaque_ref_trait_obj_doc = format!(
         " Opaque by-ref CGlue trait object for trait {}.",
+        trait_name
+    );
+    let opaque_ctx_ref_trait_obj_doc = format!(
+        " Opaque by-ref CGlue trait object for trait {} with a context.",
+        trait_name
+    );
+    let opaque_arc_ref_trait_obj_doc = format!(
+        " Opaque by-ref CGlue trait object for trait {} with a [`COptArc`](cglue::arc::COptArc) reference counted context.",
         trait_name
     );
     let submod_name = format_ident!("cglue_{}", trait_name.to_string().to_lowercase());
@@ -804,14 +832,22 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
             #base_ctx_trait_obj_ident,
             #base_arc_trait_obj_ident,
             #base_mut_trait_obj_ident,
+            #base_ctx_mut_trait_obj_ident,
+            #base_arc_mut_trait_obj_ident,
             #base_ref_trait_obj_ident,
+            #base_ctx_ref_trait_obj_ident,
+            #base_arc_ref_trait_obj_ident,
             #base_trait_obj_ident,
 
             #opaque_box_trait_obj_ident,
             #opaque_ctx_trait_obj_ident,
             #opaque_arc_trait_obj_ident,
             #opaque_mut_trait_obj_ident,
+            #opaque_ctx_mut_trait_obj_ident,
+            #opaque_arc_mut_trait_obj_ident,
             #opaque_ref_trait_obj_ident,
+            #opaque_ctx_ref_trait_obj_ident,
+            #opaque_arc_ref_trait_obj_ident,
         };
 
         mod #submod_name {
@@ -893,9 +929,25 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
             pub type #base_mut_trait_obj_ident<'cglue_a, CGlueT, #gen_use>
                 = #base_trait_obj_ident<'cglue_a, &'cglue_a mut CGlueT, #trg_path::NoContext, #gen_use>;
 
+            #[doc = #base_ctx_mut_trait_obj_doc]
+            pub type #base_ctx_mut_trait_obj_ident<'cglue_a, CGlueT, CGlueCtx, #gen_use>
+                = #base_trait_obj_ident<'cglue_a, &'cglue_a mut CGlueT, CGlueCtx, #gen_use>;
+
+            #[doc = #base_arc_mut_trait_obj_doc]
+            pub type #base_arc_mut_trait_obj_ident<'cglue_a, CGlueT, CGlueC, #gen_use>
+                = #base_trait_obj_ident<'cglue_a, &'cglue_a mut CGlueT, #crate_path::arc::COptArc<CGlueC>, #gen_use>;
+
             #[doc = #base_ref_trait_obj_doc]
             pub type #base_ref_trait_obj_ident<'cglue_a, CGlueT, #gen_use>
                 = #base_trait_obj_ident<'cglue_a, &'cglue_a CGlueT, #trg_path::NoContext, #gen_use>;
+
+            #[doc = #base_ctx_ref_trait_obj_doc]
+            pub type #base_ctx_ref_trait_obj_ident<'cglue_a, CGlueT, CGlueCtx, #gen_use>
+                = #base_trait_obj_ident<'cglue_a, &'cglue_a CGlueT, CGlueCtx, #gen_use>;
+
+            #[doc = #base_arc_ref_trait_obj_doc]
+            pub type #base_arc_ref_trait_obj_ident<'cglue_a, CGlueT, CGlueC, #gen_use>
+                = #base_trait_obj_ident<'cglue_a, &'cglue_a CGlueT, #crate_path::arc::COptArc<CGlueC>, #gen_use>;
 
             #[doc = #base_trait_obj_doc]
             pub type #base_trait_obj_ident<'cglue_a, CGlueInst, CGlueCtx, #gen_use>
@@ -927,9 +979,25 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
             pub type #opaque_mut_trait_obj_ident<'cglue_a, #gen_use>
                 = #base_mut_trait_obj_ident<'cglue_a, #c_void, #gen_use>;
 
+            #[doc = #opaque_ctx_mut_trait_obj_doc]
+            pub type #opaque_ctx_mut_trait_obj_ident<'cglue_a, CGlueCtx, #gen_use>
+                = #base_ctx_mut_trait_obj_ident<'cglue_a, #c_void, CGlueCtx, #gen_use>;
+
+            #[doc = #opaque_arc_mut_trait_obj_doc]
+            pub type #opaque_arc_mut_trait_obj_ident<'cglue_a, #gen_use>
+                = #base_arc_mut_trait_obj_ident<'cglue_a, #c_void, #c_void, #gen_use>;
+
             #[doc = #opaque_ref_trait_obj_doc]
             pub type #opaque_ref_trait_obj_ident<'cglue_a, #gen_use>
                 = #base_ref_trait_obj_ident<'cglue_a, #c_void, #gen_use>;
+
+            #[doc = #opaque_ctx_ref_trait_obj_doc]
+            pub type #opaque_ctx_ref_trait_obj_ident<'cglue_a, CGlueCtx, #gen_use>
+                = #base_ctx_ref_trait_obj_ident<'cglue_a, #c_void, CGlueCtx, #gen_use>;
+
+            #[doc = #opaque_arc_ref_trait_obj_doc]
+            pub type #opaque_arc_ref_trait_obj_ident<'cglue_a, #gen_use>
+                = #base_arc_ref_trait_obj_ident<'cglue_a, #c_void, #c_void, #gen_use>;
 
             /* Internal wrapper functions. */
 

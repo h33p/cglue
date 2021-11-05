@@ -7,6 +7,10 @@ use syn::token::Colon2;
 use syn::token::Comma;
 use syn::*;
 
+pub fn void_type() -> TokenStream {
+    quote!(::core::ffi::c_void)
+}
+
 pub fn crate_path() -> TokenStream {
     let (col, ident) = crate_path_ident();
     quote!(#col #ident)

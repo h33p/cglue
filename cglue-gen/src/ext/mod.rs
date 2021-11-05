@@ -191,13 +191,21 @@ pub fn impl_store() -> TokenStream {
                     "CtxBox",
                     "ArcBox",
                     "Mut",
+                    "CtxMut",
+                    "ArcMut",
                     "Ref",
+                    "CtxRef",
+                    "ArcRef",
                     "Base",
                     "BaseBox",
                     "BaseCtxBox",
                     "BaseArcBox",
                     "BaseMut",
+                    "BaseCtxMut",
+                    "BaseArcMut",
                     "BaseRef",
+                    "BaseCtxRef",
+                    "BaseArcRef",
                 ]
                 .iter()
                 .map(|p| format_ident!("{}{}", k, p))
