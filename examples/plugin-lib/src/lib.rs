@@ -72,6 +72,8 @@ cglue_impl_group!(KvStore, FeaturesGroup,
 });
 
 #[no_mangle]
-pub extern "C" fn create_plugin(lib: &COptArc<::core::ffi::c_void>) -> PluginInnerArcBox<'static> {
+pub extern "C" fn create_plugin(
+    lib: &COptArc<cglue::trait_group::c_void>,
+) -> PluginInnerArcBox<'static> {
     trait_obj!((KvRoot::default(), lib.clone()) as PluginInner)
 }
