@@ -71,3 +71,26 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           args: --all-targets --all-features
+
+  patched-miri:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        toolchain: ["nightly-2021-11-05"]
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          override: true
+      - run: rustup component add miri
+      - name: Patch out a part of miri to allow type erasure
+        run: |
+          cargo install --git https://github.com/h33p/miri-rustabi-patcher.git
+          miri-rustabi-patcher ~/.rustup/toolchains/${{ matrix.toolchain }}-x86_64-unknown-linux-gnu/bin/miri
+          mv ~/.rustup/toolchains/${{ matrix.toolchain }}-x86_64-unknown-linux-gnu/bin/miri.patched ~/.rustup/toolchains/${{ matrix.toolchain }}-x86_64-unknown-linux-gnu/bin/miri
+          chmod +x ~/.rustup/toolchains/${{ matrix.toolchain }}-x86_64-unknown-linux-gnu/bin/miri
+      - name: Run miri
+        run: |
+          cd cglue
+          MIRIFLAGS="-Zmiri-disable-stacked-borrows" cargo miri test --features rust_void

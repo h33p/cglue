@@ -7,6 +7,12 @@ use syn::token::Colon2;
 use syn::token::Comma;
 use syn::*;
 
+#[cfg(feature = "rust_void")]
+pub fn void_type() -> TokenStream {
+    quote!(())
+}
+
+#[cfg(not(feature = "rust_void"))]
 pub fn void_type() -> TokenStream {
     quote!(::core::ffi::c_void)
 }

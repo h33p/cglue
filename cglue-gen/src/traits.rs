@@ -727,10 +727,16 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
     );
     let base_arc_trait_obj_doc = format!(" Boxed CGlue trait object for trait {} with a [`COptArc`](cglue::arc::COptArc) reference counted context.", trait_name);
     let base_mut_trait_obj_doc = format!(" By-mut CGlue trait object for trait {}.", trait_name);
-    let base_ctx_mut_trait_obj_doc = format!(" By-mut CGlue trait object for trait {} with a context.", trait_name);
+    let base_ctx_mut_trait_obj_doc = format!(
+        " By-mut CGlue trait object for trait {} with a context.",
+        trait_name
+    );
     let base_arc_mut_trait_obj_doc = format!(" By-mut CGlue trait object for trait {} with a [`COptArc`](cglue::arc::COptArc) reference counted context.", trait_name);
     let base_ref_trait_obj_doc = format!(" By-ref CGlue trait object for trait {}.", trait_name);
-    let base_ctx_ref_trait_obj_doc = format!(" By-ref CGlue trait object for trait {} with a context.", trait_name);
+    let base_ctx_ref_trait_obj_doc = format!(
+        " By-ref CGlue trait object for trait {} with a context.",
+        trait_name
+    );
     let base_arc_ref_trait_obj_doc = format!(" By-ref CGlue trait object for trait {} with a [`COptArc`](cglue::arc::COptArc) reference counted context.", trait_name);
     let base_trait_obj_doc = format!(" Base CGlue trait object for trait {}.", trait_name);
     let opaque_box_trait_obj_doc =

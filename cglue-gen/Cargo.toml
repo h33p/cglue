@@ -22,3 +22,4 @@ lazy_static = "1"
 [features]
 default = []
 no_empty_retwrap = []
+rust_void = []

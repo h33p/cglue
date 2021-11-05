@@ -1,6 +1,6 @@
 //! Describes an FFI-safe Arc.
+use crate::trait_group::c_void;
 use crate::trait_group::Opaquable;
-use std::ffi::c_void;
 use std::sync::Arc;
 
 /// FFI-Safe Arc

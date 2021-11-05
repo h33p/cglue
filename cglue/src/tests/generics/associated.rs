@@ -138,7 +138,9 @@ fn use_assoc_return() {
 
     println!("{:?}", ret);
 
-    assert_eq!(unsafe { *(ret as *const usize) }, 42);
+    // SAFETY: the underlying type is a usize box, we are just testing.
+    let b = unsafe { Box::from_raw(ret as *mut usize) };
+    assert_eq!(*b, 42);
 }
 
 #[test]

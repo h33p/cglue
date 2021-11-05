@@ -3,9 +3,13 @@
 // TODO: split everything up
 
 use crate::boxed::CBox;
-use core::ffi::c_void;
+#[cfg(not(feature = "rust_void"))]
+pub use core::ffi::c_void;
 use core::mem::ManuallyDrop;
 use core::ops::{Deref, DerefMut};
+#[cfg(feature = "rust_void")]
+#[allow(non_camel_case_types)]
+pub type c_void = ();
 
 /// Simple CGlue trait object.
 ///
@@ -393,6 +397,7 @@ unsafe impl<T: Opaquable> Opaquable for std::marker::PhantomData<T> {
     type OpaqueTarget = std::marker::PhantomData<T::OpaqueTarget>;
 }
 
+#[cfg(not(feature = "rust_void"))]
 unsafe impl Opaquable for () {
     type OpaqueTarget = ();
 }

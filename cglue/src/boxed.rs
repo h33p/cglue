@@ -1,8 +1,8 @@
 //! Describes an FFI-safe wrapped box.
+use crate::trait_group::c_void;
 use crate::trait_group::*;
 use core::ops::{Deref, DerefMut};
 use std::boxed::Box;
-use std::ffi::c_void;
 
 /// FFI-safe box
 ///
