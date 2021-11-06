@@ -1,5 +1,5 @@
 CC = cc
-CFLAGS = -g -O0 -L../../target/release
+CFLAGS = -Wl,--no-as-needed -g -O0 -L../../target/release
 LIBS=-lm -ldl -lpthread -l:libplugin_api.a -lstdc++
 
 ODIR=./

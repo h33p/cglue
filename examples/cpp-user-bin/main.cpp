@@ -119,6 +119,6 @@ void kvdump(T& obj) {
 		ints.push_back(i * i);
 	}
 
-	obj.print_ints(CPPIterator(ints));
+	obj.print_ints(CPPIterator<std::vector<int>>(ints));
 }
 

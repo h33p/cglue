@@ -121,9 +121,21 @@ jobs:
         run: |
           cd examples/c-user-bin/
           make
-          echo "\nsdf\n34\nasdf\n33" | ./main.out && cd ../../
+          ./main.out << EOF
+          plugin_lib
+          asdf
+          23
+          asd
+          24
+          EOF
       - name: Build and test C++ binary
         run: |
           cd examples/cpp-user-bin/
           make
-          echo "\nsdf\n34\nasdf\n33" | ./main.out && cd ../../
+          ./main.out << EOF
+          plugin_lib
+          asdf
+          23
+          asd
+          24
+          EOF
