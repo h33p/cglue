@@ -94,3 +94,32 @@ jobs:
         run: |
           cd cglue
           MIRIFLAGS="-Zmiri-disable-stacked-borrows" cargo miri test --features rust_void
+
+  c-examples:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        toolchain: ["1.45.0", "stable"]
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          override: true
+      - name: Set up GCC
+        uses: egor-tensin/setup-gcc@v1
+        with:
+          version: latest
+          platform: x64
+      - name: Build the plugins
+        run: cargo build --release -p plugin-api -p plugin-lib -p cglue-bindgen
+      - name: Build and test C binary
+        run: |
+          cd examples/c-user-bin/
+          make
+          echo "\nsdf\n34\nasdf\n33" | ./main.out && cd ../../
+      - name: Build and test C++ binary
+        run: |
+          cd examples/cpp-user-bin/
+          make
+          echo "\nsdf\n34\nasdf\n33" | ./main.out && cd ../../
