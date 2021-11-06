@@ -23,13 +23,10 @@ pub struct Function {
 impl Function {
     pub fn create_wrapper(
         &self,
-        container: &str,
-        vtbl: &str,
+        (container, vtbl): (&str, &str),
         prefix: &str,
-        cpp_mode: bool,
-        cast_self: bool,
-        this_ty: &str,
-        vtbls: &[&str],
+        (cpp_mode, cast_self): (bool, bool),
+        (this_ty, vtbls): (&str, &[&str]),
         container_info: (&str, &str, bool),
         context: (&str, &str, bool),
     ) -> String {
@@ -97,9 +94,9 @@ impl Function {
 
         let mut post_call = if self.moves_self {
             if cpp_mode {
-                format!("\n    mem_forget({}container);", this_access)
+                format!("    mem_forget({}container);\n", this_access)
             } else if context.2 && self.calls_vtbl {
-                format!("\n    ctx_{}_drop(&___ctx);", context.1)
+                format!("    ctx_{}_drop(&___ctx);\n", context.1)
             } else {
                 String::new()
             }
@@ -112,14 +109,14 @@ impl Function {
         if self.moves_self && !self.calls_vtbl && !cpp_mode {
             if container_info.2 {
                 post_call += &format!(
-                    "\n    cont_{}_drop(&{}container.instance);",
+                    "    cont_{}_drop(&{}container.instance);\n",
                     container_info.1, this_access
                 );
             }
 
             if context.2 {
                 post_call += &format!(
-                    "\n    ctx_{}_drop(&{}container.context);",
+                    "    ctx_{}_drop(&{}container.context);\n",
                     context.1, this_access
                 );
             }
@@ -127,7 +124,7 @@ impl Function {
 
         let func_call = if self.calls_vtbl {
             format!(
-                "({this_access}{vtbl})->{name}({call_args});",
+                "({this_access}{vtbl})->{name}({call_args});\n",
                 this_access = this_access,
                 vtbl = vtbl,
                 name = &self.name,
@@ -140,7 +137,7 @@ impl Function {
         format!(
             r"
 {inline} {return_type} {prefix}{name}({args}) {constness}{noexcept} {{
-    {ctx_clone}{func_result}{func_call}{post_call}{finish}
+{ctx_clone}{func_result}{func_call}{post_call}{finish}
 }}
 ",
             inline = if cpp_mode { "inline" } else { "static inline" },
@@ -164,11 +161,11 @@ impl Function {
             noexcept = if cpp_mode { "noexcept" } else { "" },
             ctx_clone = if self.moves_self && self.calls_vtbl {
                 if cpp_mode {
-                    "auto ___ctx = StoreAll()[this->container.clone_context(), StoreAll()];\n    "
+                    "    auto ___ctx = StoreAll()[this->container.clone_context(), StoreAll()];\n"
                         .to_string()
                 } else if context.2 {
                     format!(
-                        "{} ___ctx = ctx_{}_clone(&{}container.context);\n    ",
+                        "    {} ___ctx = ctx_{}_clone(&{}container.context);\n",
                         context.0, context.1, this_access
                     )
                 } else {
@@ -181,17 +178,17 @@ impl Function {
             post_call = post_call,
             func_result = if wrap_in_container {
                 format!(
-                    r"{} __ret;{}
+                    r"    {} __ret;{}
     __ret.container = ",
                     this_ty, copied_vtbls
                 )
             } else if return_type != "void" {
-                format!("{} __ret = ", return_type)
+                format!("    {} __ret = ", return_type)
             } else {
                 String::new()
             },
             finish = if return_type != "void" {
-                "\n    return __ret;"
+                "    return __ret;"
             } else {
                 ""
             },
@@ -286,7 +283,7 @@ impl Vtable {
             cont_ty = container_ty
         ))?;
 
-        for func in functions_str.split(";").filter(|s| !s.is_empty()) {
+        for func in functions_str.split(';').filter(|s| !s.is_empty()) {
             if let Some(cap) = reg.captures(&func) {
                 let cont = &cap["cont"];
 
@@ -294,7 +291,7 @@ impl Vtable {
 
                 let args = &cap["args"];
 
-                if args.len() > 0 {
+                if !args.is_empty() {
                     for (ty, name) in parse_arguments(&args[1..]) {
                         arguments.push(FunctionArg {
                             ty: ty.into(),
@@ -308,7 +305,7 @@ impl Vtable {
                     return_type: cap["ret_type"].to_string(),
                     arguments,
                     is_const: cont.contains("const"),
-                    moves_self: !cont.contains("*"),
+                    moves_self: !cont.contains('*'),
                     calls_vtbl: true,
                 });
             }
@@ -319,13 +316,13 @@ impl Vtable {
 
     pub fn create_wrappers(
         &self,
-        container: &str,
-        vtbl: &str,
+        cont_vtbl: (&str, &str),
         check_duplicates: impl Fn(&str) -> bool,
-        this_ty: &str,
-        vtbls: &[&str],
+        (this_ty, vtbls): (&str, &[&str]),
     ) -> String {
         let mut ret = String::new();
+
+        let regex = Regex::new(r"(\n)[^\S\r\n]+(\n|$)").unwrap();
 
         for f in &self.functions {
             let prefix = if check_duplicates(&f.name) {
@@ -335,19 +332,15 @@ impl Vtable {
             };
 
             let wrapper = f.create_wrapper(
-                container,
-                vtbl,
+                cont_vtbl,
                 &prefix,
-                true,
-                false,
-                this_ty,
-                vtbls,
-                ("", "", false),
+                (true, false),
+                (this_ty, vtbls),
                 ("CGlueC", "", false),
+                ("", "", false),
             );
 
-            ret += "    ";
-            ret += &wrapper.replace("\n", "\n    ");
+            ret += &regex.replace_all(&wrapper.replace("\n", "\n    "), "$1$2");
         }
 
         ret
@@ -355,14 +348,11 @@ impl Vtable {
 
     pub fn create_wrappers_c<'a>(
         &self,
-        container: &str,
-        vtbl: &str,
-        prefix: &str,
-        ty_prefix: &'a impl Fn(&Function) -> Option<&'a str>,
-        this_ty: &str,
+        cont_vtbl: (&str, &str),
+        (prefix, ty_prefix): (&str, &'a impl Fn(&Function) -> Option<&'a str>),
         container_info: (&str, &str, bool),
         context_info: (&str, &str, bool),
-        vtbls: &[&str],
+        (this_ty, vtbls): (&str, &[&str]),
         generated_funcs: &mut HashSet<(String, String)>,
     ) -> String {
         let mut ret = String::new();
@@ -414,13 +404,10 @@ impl Vtable {
 
             if generated_funcs.insert((prefix.clone(), f.name.clone())) {
                 ret += &f.create_wrapper(
-                    container,
-                    vtbl,
+                    cont_vtbl,
                     &prefix,
-                    false,
-                    cast_self,
-                    this_ty,
-                    vtbls,
+                    (false, cast_self),
+                    (this_ty, vtbls),
                     container_info,
                     context_info,
                 );
@@ -466,8 +453,7 @@ impl Group {
 
         for (v, get) in &self.vtables {
             ret += &vtables.get(v.as_str()).unwrap().create_wrappers(
-                container,
-                get,
+                (container, get),
                 |name| {
                     self.vtables
                         .iter()
@@ -475,8 +461,7 @@ impl Group {
                         .filter(|cv| &cv.name != v)
                         .any(|v| v.functions.iter().any(|f| f.name == name))
                 },
-                &self.name,
-                &vtbls,
+                (&self.name, &vtbls),
             );
         }
 

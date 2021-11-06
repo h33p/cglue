@@ -2,25 +2,10 @@
 #include <string.h>
 #include "bindings.h"
 
-
 int trim(char *str);
 
 void use_kvstore(FeaturesGroupArcBox *obj);
 void kvdump(FeaturesGroupArcBox *obj);
-
-// Retrieves this object inside of a CtxBox container
-#define this(obj) (&((obj) ->container))
-
-// Allows to safely call functions that take a single self parameter
-#define this_call(obj, func, ...) (obj) -> func (this(obj), ## __VA_ARGS__)
-#define this_owned_call(obj, func, ...) (obj) -> func (*this(obj), ## __VA_ARGS__)
-
-#define drop_arc(obj) (obj).container.context.drop_fn((obj).container.context.instance) \
-
-#define drop_box(obj) { \
-	drop_arc(obj); \
-	(obj).container.instance.drop_fn((obj).container.instance.instance); \
-}
 
 int main() {
 	char name[256];
@@ -115,17 +100,23 @@ void use_kvstore(FeaturesGroupArcBox *obj) {
 	featuresgroup_write_key_value(obj, key_slice, new_val);
 }
 
-bool kvdump_callback(void *, KeyValue kv) {
+bool kvdump_callback(void *unused, KeyValue kv) {
 	fwrite(kv._0.data, sizeof(char), kv._0.len, stdout);
 	printf(" : %zu\n", kv._1);
 	return true;
 }
 
 void kvdump(FeaturesGroupArcBox *obj) {
-	KeyValueCallback callback;
-	callback.context = NULL;
-	callback.func = kvdump_callback;
+	featuresgroup_dump_key_values(obj, CALLBACK(KeyValue, NULL, kvdump_callback));
 
-	featuresgroup_dump_key_values(obj, callback);
+	int ints[32];
+
+	for (int i = 0; i < 32; i++) {
+		ints[i] = i * i;
+	}
+
+	BUF_ITER_ARR_SPEC(i32, int, int_iter, ints);
+
+	featuresgroup_print_ints(obj, int_iter);
 }
 

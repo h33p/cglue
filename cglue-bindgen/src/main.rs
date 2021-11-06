@@ -37,19 +37,14 @@ pub mod codegen;
 use codegen::{c, cpp};
 
 fn main() -> Result<()> {
-    let args = env::args()
-        .into_iter()
-        .skip_while(|v| v != "--")
-        .collect::<Vec<_>>();
+    let args = env::args().skip_while(|v| v != "--").collect::<Vec<_>>();
 
     // Hijack the output
 
     let mut output_file = None;
     let mut args_out = vec![];
 
-    let mut windows = args.windows(2);
-
-    while let Some(a) = windows.next() {
+    for a in args.windows(2) {
         // Skip the first arg, the "--", which also allows us to filter 2 args in one go when we
         // need that.
         match a[0].as_str() {
@@ -86,12 +81,18 @@ fn main() -> Result<()> {
 
     if !output.status.success() {
         eprintln!("{}", std::str::from_utf8(&output.stderr)?);
-        Err("cbindgen failed")?
+        return Err("cbindgen failed".into());
     }
 
     let out = std::str::from_utf8(&output.stdout)?.to_string();
 
-    let output = c::parse_header(&out)?;
+    let output = if cpp::is_cpp(&out)? {
+        cpp::parse_header(&out)?
+    } else if c::is_c(&out)? {
+        c::parse_header(&out)?
+    } else {
+        return Err("Unsupported header format!".into());
+    };
 
     if let Some(path) = output_file {
         let mut file = File::create(path)?;

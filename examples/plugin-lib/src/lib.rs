@@ -58,6 +58,12 @@ impl KeyValueDumper for KvStore {
             .map(|(k, v)| KeyValue(k.as_str().into(), *v))
             .feed_into(callback);
     }
+
+    fn print_ints(&self, iter: CIterator<i32>) {
+        for (cnt, i) in iter.enumerate() {
+            println!("{}: {}", cnt, i);
+        }
+    }
 }
 
 cglue_impl_group!(KvStore, FeaturesGroup,

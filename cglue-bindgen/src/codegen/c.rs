@@ -1,7 +1,16 @@
 use crate::types::*;
 use itertools::Itertools;
+use log::trace;
 use regex::*;
 use std::collections::{HashMap, HashSet};
+
+pub fn is_c(header: &str) -> Result<bool> {
+    Ok(Regex::new(
+        r"
+typedef struct [^\s]+ \{|",
+    )?
+    .is_match(header))
+}
 
 pub fn parse_header(header: &str) -> Result<String> {
     // COLLECTION:
@@ -18,7 +27,7 @@ pub fn parse_header(header: &str) -> Result<String> {
 
     for (cap, ctx) in &zst_rets {
         contexts.insert(ctx.clone());
-        println!("CAP: {} {}", cap, ctx);
+        trace!("CAP: {} {}", cap, ctx);
     }
 
     // PROCESSING:
@@ -135,6 +144,7 @@ pub fn parse_header(header: &str) -> Result<String> {
     // function does not consume self).
 
     let mut all_wrappers = String::new();
+    let mut fwd_declarations = String::new();
 
     // Create context clone/drop wrappers
     for (ty, prefix, impl_clone, impl_drop) in
@@ -192,7 +202,7 @@ void ctx_{prefix}_drop({ty} *self) {{
     }
 
     for (t, second_half, inner, context, funcs) in obj_vtbls {
-        println!("{}Vtbl_CGlueObjContainer_{}", t, second_half);
+        trace!("{}Vtbl_CGlueObjContainer_{}", t, second_half);
 
         let obj_regex = obj_regex(&format!("{}Vtbl_CGlueObjContainer_{}", t, second_half))?;
 
@@ -200,8 +210,11 @@ void ctx_{prefix}_drop({ty} *self) {{
             .captures(&header)
             .ok_or("Unable to find trait obj")?["objtype"];
 
-        //let this_ty = format!("struct CGlueTraitObj_{}", second_half);
+        let this_ty = format!("struct {}", this_ty);
         let container_ty = format!("struct CGlueObjContainer_{}", second_half);
+
+        fwd_declarations += &format!("{};\n", this_ty);
+        fwd_declarations += &format!("{};\n", container_ty);
 
         let vtbl = Vtable::new(t.clone(), &funcs, &container_ty)?;
 
@@ -215,20 +228,17 @@ void ctx_{prefix}_drop({ty} *self) {{
             .unwrap_or((context.as_str(), None));
 
         let wrappers = vtbl.create_wrappers_c(
-            "container",
-            "vtbl",
-            &"",
-            &|f| {
+            ("container", "vtbl"),
+            (&"", &|f| {
                 if f.name == "drop" || vtbl_types.get(&f.name).unwrap().len() > 1 {
                     Some(&t)
                 } else {
                     None
                 }
-            },
-            &this_ty,
+            }),
             (&container_ty, cont, container_wrappers.is_some()),
             (&context, ctx, context_wrappers.is_some()),
-            &[],
+            (&this_ty, &[]),
             &mut generated_funcs,
         );
 
@@ -240,6 +250,9 @@ void ctx_{prefix}_drop({ty} *self) {{
     for (t, cont, second_half, inner, context, funcs) in group_vtbls {
         let this_ty = format!("struct {}_{}", cont, second_half);
         let container_ty = format!("struct {}Container_{}", cont, second_half);
+
+        fwd_declarations += &format!("{};\n", this_ty);
+        fwd_declarations += &format!("{};\n", container_ty);
 
         let vtbl = Vtable::new(t, &funcs, &container_ty)?;
 
@@ -253,19 +266,186 @@ void ctx_{prefix}_drop({ty} *self) {{
             .unwrap_or((context.as_str(), None));
 
         let wrappers = vtbl.create_wrappers_c(
-            "container",
-            &format!("vtbl_{}", vtbl.name.to_lowercase()),
-            "",
-            &|_| Some(&cont),
-            &this_ty,
+            ("container", &format!("vtbl_{}", vtbl.name.to_lowercase())),
+            ("", &|_| Some(&cont)),
             (&container_ty, &inner, container_wrappers.is_some()),
             (&context, ctx, context_wrappers.is_some()),
-            &[],
+            (&this_ty, &[]),
             &mut generated_funcs,
         );
 
         all_wrappers += &wrappers;
     }
+
+    // Create callback and iterator wrappers
+
+    all_wrappers += r"
+struct CollectBase {
+    /* Pointer to array of data */
+    void *buf;
+    /* Capacity of the buffer (in elements) */
+    size_t capacity;
+    /* Current size of the buffer (in elements) */
+    size_t size;
+};
+
+void *memcpy(void *dest, const void *src, size_t n);
+
+static bool cb_collect_static_base(struct CollectBase *ctx, size_t elem_size, void *info) {
+
+    if (ctx->size < ctx->capacity) {
+        memcpy(ctx->buf + elem_size * ctx->size++, info, elem_size);
+    }
+
+    return ctx->size < ctx->capacity;
+}
+
+static bool cb_collect_dynamic_base(struct CollectBase *ctx, size_t elem_size, void *info) {
+
+    if (!ctx->buf || ctx->size >= ctx->capacity) {
+        size_t new_capacity = ctx->buf ? ctx->capacity * 2 : 64;
+        void *buf = realloc(ctx->buf, elem_size * new_capacity);
+        if (buf) {
+            ctx->buf = buf;
+            ctx->capacity = new_capacity;
+        }
+    }
+
+    if (!ctx->buf || ctx->size >= ctx->capacity) return false;
+
+    memcpy(ctx->buf + elem_size * ctx->size++, info, elem_size);
+
+    return true;
+}
+
+struct BufferIterator {
+    /* Pointer to the data buffer */
+    const void *buf;
+    /* Number of elements in the buffer */
+    size_t size;
+    /* Current element index */
+    size_t i;
+    /* Size of the data element */
+    size_t sz_elem;
+};
+
+static bool buf_iter_next(struct BufferIterator *iter, void *out) {
+    if (iter->i >= iter->size) return 1;
+    memcpy(out, iter->buf + iter->i++ * iter->sz_elem, iter->sz_elem);
+    return 0;
+}
+";
+
+    for caps in callback_regex()?.captures_iter(&header) {
+        all_wrappers += &format!(
+            r"
+static inline bool cb_collect_static_{typename}(struct CollectBase *ctx, {typename} info) {{
+    return cb_collect_static_base(ctx, sizeof({typename}), &info);
+}}
+
+static inline bool cb_collect_dynamic_{typename}(struct CollectBase *ctx, {typename} info) {{
+    return cb_collect_dynamic_base(ctx, sizeof({typename}), &info);
+}}
+
+static inline bool cb_count_{typename}(size_t *cnt, {typename} info) {{
+    return ++(*cnt);
+}}
+",
+            typename = &caps["typename"]
+        );
+    }
+
+    // Also define helper macros
+
+    let helper_macros = r"// Construct a typed slice for rust functions
+#define REF_SLICE(ty, buf, len) ((struct CSliceRef_##ty){(buf), (len)})
+
+// Constructs a typed mutable slice for rust functions
+#define MUT_SLICE(ty, buf, len) ((struct CSliceMut_##ty){(buf), (len)})
+
+// Constructs a slice from a string for rust functions
+// Note that strlen() is optimized out for string literals here
+#define STR(string) \
+    REF_SLICE(u8, (const unsigned char *)string, strlen(string))
+
+// Constructs a callback
+#define CALLBACK(ty, ctx, func) \
+    (struct Callback_c_void__##ty){(ctx), (bool (*)(void *, ty))(func)}
+
+// Constructs a dynamic collect callback
+//
+// This callback will collect all elements into a buffer accessible within `(*name_data)`.
+// It is the same buffer as `name_base.buf`, but cast into the correct type. The buffer must
+// be freed with `free(3)`.
+//
+// Number of elements is accessible within `name_base.size`, alongside its capacity.
+//
+// After creation, this callback should not exit its scope.
+#define COLLECT_CB(ty, name) \
+    struct CollectBase name##_base = {}; \
+    ty **name##_data = (ty **)&name##_base.buf; \
+    Callback_c_void__##ty name = CALLBACK(ty, &name##_base, cb_collect_dynamic_##ty)
+
+// Constructs a static collect callback
+//
+// This callback will collect all elements into the provided buffer up to given length.
+//
+// Any additional elements that do not fit will be skipped.
+//
+// Number of elements is accessible within `name_base.size`.
+//
+// After creation, this callback should not exit its scope.
+#define COLLECT_CB_INTO(ty, name, data, len) \
+    struct CollectBase name##_base = (struct CollectBase){ (void *)data, (size_t)len, 0 }; \
+    ty **name##_data = (ty **)&name##_base.buf; \
+    Callback_c_void__##ty name = CALLBACK(ty, &name##_base, cb_collect_static_##ty)
+
+// Constructs a static collect callback (for arrays)
+//
+// This is the same as `COLLECT_CB_INTO`, but performs an automatic array size calculation.
+//
+// Number of elements is accessible within `name_base.size`.
+//
+// After creation, this callback should not exit its scope.
+#define COLLECT_CB_INTO_ARR(ty, name, data) \
+    COLLECT_CB_INTO(ty, name, data, sizeof(data) / sizeof(*data))
+
+// Constructs a count callback
+//
+// This callback will simply count the number of elements encountered, and this value is
+// accessible through `name_count` variable.
+//
+// After creation, this callback should not exit its scope.
+#define COUNT_CB(ty, name) \
+    size_t name##_count = 0; \
+    Callback_c_void__##ty name = CALLBACK(ty, &name##_count, cb_count_##ty)
+
+#define BUF_ITER_SPEC(ty, ty2, name, buf, len) \
+    struct BufferIterator name##_base = (struct BufferIterator){(const void *)(const ty2 *)buf, len, 0, sizeof(ty2)}; \
+    CIterator_##ty name = (CIterator_##ty){ &name##_base, (int32_t (*)(void *, ty2 *))buf_iter_next }
+
+#define BUF_ITER_ARR_SPEC(ty, ty2, name, buf) BUF_ITER_SPEC(ty, ty2, name, buf, sizeof(buf) / sizeof(*buf))
+
+#define BUF_ITER(ty, name, buf, len) \
+    BUF_ITER_SPEC(ty, ty, name, buf, len)
+
+#define BUF_ITER_ARR(ty, name, buf) BUF_ITER(ty, name, buf, sizeof(buf) / sizeof(*buf))
+";
+
+    // Insert forward decls at the start
+
+    let fwd_declarations = if fwd_declarations.is_empty() {
+        format!("$0\n{}", helper_macros)
+    } else {
+        format!(
+            "$0\n{}\n// Forward declarations for vtables and their wrappers\n{}",
+            helper_macros, fwd_declarations
+        )
+    };
+
+    // TODO: improve start detection
+    let header = Regex::new("(#ifndef [^\n]+\n#define [^\n]+\n|.*(#include [^\n]+\n)+)|^")?
+        .replace(&header, fwd_declarations);
 
     // Insert the wrappers at the end
 
@@ -293,7 +473,7 @@ fn monomorphize_contexts(
     let ctx_matches =
         Itertools::intersperse(contexts.iter().map(String::as_str), "|").collect::<String>();
 
-    let context_regex = Regex::new("Context context;")?;
+    let context_match = "Context context;";
 
     let cfield_regex = Regex::new("struct (?P<typename>.+)_Context")?;
 
@@ -324,15 +504,14 @@ typedef struct {}_{}{}{}_{};",
                 caps.name("comment").map(|m| m.as_str()).unwrap_or(""),
                 name,
                 context,
-                context_regex.replace_all(
-                    &cfield_regex.replace_all(&caps["inside"], |caps: &Captures| {
+                cfield_regex
+                    .replace_all(&caps["inside"], |caps: &Captures| {
                         let ty = caps["typename"]
                             .to_string()
                             .replace("_Context_", &context_ty);
                         format!("struct {}_{}", ty, context)
-                    }),
-                    format!("{} context;", context)
-                ),
+                    })
+                    .replace(context_match, &format!("{} context;", context)),
                 name2,
                 context
             ));
@@ -402,7 +581,7 @@ typedef struct .+_{} \{{
         }
     }
 
-    Ok(header.to_string().into())
+    Ok(header.into())
 }
 
 fn vtbl_regex() -> Result<Regex> {
@@ -435,21 +614,9 @@ typedef struct (?P<objtype>CGlueTraitObj_[^\s]+_{}_[^\s]+) \{{",
     .map_err(Into::into)
 }
 
-fn groups_regex(vtbls: &[Vtable], explicit_group: Option<&str>) -> Result<Regex> {
-    let group_fmt = explicit_group.unwrap_or("\\w+");
-
-    let vtbl_names =
-        Itertools::intersperse(vtbls.iter().map(|v| v.name.as_str()), "|").collect::<String>();
-
+fn callback_regex() -> Result<Regex> {
     Regex::new(
-        &format!(r"(?P<definition_start> \* `as_ref_`, and `as_mut_` functions obtain references to safe objects, but do not
- \* perform any memory transformations either. They are the safest to use, because
- \* there is no risk of accidentally consuming the whole object.
- \*/
-struct (?P<group>{group_fmt})_(?P<container>[\w_]+)_(?P<context>[\w_]+) \{{
-    (?P<vtbls>(\s*const struct ({vtbl_names})Vtbl<.*> \*vtbl_\w+;)*)
-    (?P<group2>\w+)Container_(?P<container2>[\w_]+)_(?P<context2>[\w_]+) container;)
-\}} (?P<group3>{group_fmt})_(?P<container3>[\w_]+)_(?P<context3>[\w_]+);", group_fmt = group_fmt, vtbl_names = vtbl_names),
+        r"typedef struct Callback_c_void__(?P<typename>[^\s]+) \{[^}]*\} Callback_c_void__[^\s]+;",
     )
     .map_err(Into::into)
 }

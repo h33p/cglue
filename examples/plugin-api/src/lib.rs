@@ -48,6 +48,7 @@ pub trait KeyValueStore {
 #[cglue_trait]
 pub trait KeyValueDumper {
     fn dump_key_values<'a>(&'a self, callback: KeyValueCallback<'a>);
+    fn print_ints(&self, iter: CIterator<i32>);
 }
 
 cglue_trait_group!(FeaturesGroup, {

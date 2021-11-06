@@ -1,7 +1,18 @@
 use crate::types::*;
 use itertools::Itertools;
+use log::trace;
 use regex::*;
 use std::collections::HashMap;
+
+pub fn is_cpp(header: &str) -> Result<bool> {
+    Ok(Regex::new(
+        r"
+template<typename|
+using [^\s]+ =|
+#include <cstd[^>]+>",
+    )?
+    .is_match(header))
+}
 
 pub fn parse_header(header: &str) -> Result<String> {
     // COLLECTION:
@@ -14,7 +25,7 @@ pub fn parse_header(header: &str) -> Result<String> {
         .collect::<Vec<_>>();
 
     for cap in &zst_rets {
-        println!("CAP: {}", cap);
+        trace!("CAP: {}", cap);
     }
 
     // Collect all vtables
@@ -29,7 +40,7 @@ pub fn parse_header(header: &str) -> Result<String> {
 
     for vtbl in &vtbls {
         vtbls_map.insert(vtbl.name.as_str(), vtbl);
-        println!("TRAIT: {}", vtbl.name);
+        trace!("TRAIT: {}", vtbl.name);
     }
 
     // Collect groups
@@ -40,14 +51,14 @@ pub fn parse_header(header: &str) -> Result<String> {
         .collect::<Result<Vec<_>>>()?;
 
     for g in &groups {
-        println!("GROUP: {} {:?}", g.name, g.vtables);
+        trace!("GROUP: {} {:?}", g.name, g.vtables);
     }
 
     // PROCESSING:
 
     // Fix up the MaybeUninit
-    let header = maybe_uninit_regex()?.replace_all(
-        header,
+    let header = header.replace(
+        "struct MaybeUninit;",
         r"using MaybeUninit = T;
 
 template<typename T>
@@ -74,10 +85,13 @@ struct CIterator \{
         &header,
         r"$definition
 
-template<typename T, typename Iterator>
+template<typename Container>
 struct CPPIterator {
+
+    typedef typename Container::iterator::value_type T;
+
     CIterator<T> iter;
-    Iterator cur, end;
+    typename Container::iterator cur, end;
 
     static int32_t next(void *data, MaybeUninit<T> *out) {
         CPPIterator *i = (CPPIterator *)data;
@@ -87,14 +101,14 @@ struct CPPIterator {
         } else {
             *out = *i->cur;
             i->cur++;
+            return 0;
         }
     }
 
-    template<typename Container>
     CPPIterator(Container &cont)
         : cur(cont.begin()), end(cont.end())
     {
-        iter.iter = &this;
+        iter.iter = &iter - offsetof(CPPIterator<Container>, iter);
         iter.func = &CPPIterator::next;
     }
 
@@ -381,7 +395,7 @@ struct CGlueObjContainer<T, void, void> {
     // Add Context typedef to group containers
     // Create group container specializations
 
-    let gr_regex = Regex::new(&format!("\\s(?P<ret_tmp>([^\\s])RetTmp<CGlueCtx>)",))?;
+    let gr_regex = Regex::new("\\s(?P<ret_tmp>([^\\s])RetTmp<CGlueCtx>)")?;
 
     let header = group_container_regex(&groups)?.replace_all(&header, |caps: &Captures| {
         let ret_tmps = gr_regex.replace_all(&caps["ret_tmps"], "RustMaybeUninit<$ret_tmp>");
@@ -432,7 +446,7 @@ struct {group}Container<CGlueInst, void> {{
 
     // Create vtable functions to group objects
     for g in groups {
-        let helpers = g.create_wrappers(&vtbls_map, "(this->container)");
+        let helpers = g.create_wrappers(&vtbls_map, "container");
         header = self::groups_regex(&vtbls, Some(g.name.as_str()))?
             .replace_all(
                 &header,
@@ -478,11 +492,9 @@ struct CGlueTraitObj<T, {vtbl}Vtbl<CGlueObjContainer<T, C, R>>, C, R> {{
 ",
             vtbl = v.name,
             wrappers = v.create_wrappers(
-                "(this->container)",
-                "this->vtbl",
+                ("container", "vtbl"),
                 |_| false,
-                "CGlueTraitObj",
-                &["vtbl"]
+                ("CGlueTraitObj", &["vtbl"])
             )
         ));
     }
@@ -597,20 +609,5 @@ struct (?P<group>{})Container) \{{
 \}};",
         typenames, typenames, typenames_lc
     ))
-    .map_err(Into::into)
-}
-
-fn maybe_uninit_regex() -> Result<Regex> {
-    Regex::new(r"struct MaybeUninit;").map_err(Into::into)
-}
-
-fn trait_obj_regex() -> Result<Regex> {
-    Regex::new(
-        r"template<typename T, typename V, typename C, typename R>
-struct CGlueTraitObj \{
-    const V \*vtbl;
-    CGlueObjContainer<T, C, R> container;
-\};",
-    )
     .map_err(Into::into)
 }

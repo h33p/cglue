@@ -7,7 +7,7 @@ ODIR=./
 bindings:
 	sh ./bindgen.sh
 
-%.o: %.c $(DEPS) $bindings
+%.o: %.c $(DEPS) bindings
 	$(CC) -c -o $@ $< $(CFLAGS)
 
 main.out: main.o

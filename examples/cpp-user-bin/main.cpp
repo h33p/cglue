@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "bindings.h"
+#include <vector>
 
 int trim(char *str);
 
@@ -111,5 +112,13 @@ void kvdump(T& obj) {
 		printf(" : %zu\n", kv._1);
 		return true;
 	});
+
+	std::vector<int> ints;
+
+	for (int i = 0; i < 32; i++) {
+		ints.push_back(i * i);
+	}
+
+	obj.print_ints(CPPIterator(ints));
 }
 
