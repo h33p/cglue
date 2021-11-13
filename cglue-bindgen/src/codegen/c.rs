@@ -268,7 +268,7 @@ void ctx_{prefix}_drop({ty} *self) {{
         let vtbl = Vtable::new(t, &funcs, &container_ty)?;
 
         let ContainerType {
-            ty_prefix: cont,
+            ty_prefix: inner,
             drop_impl: container_wrappers,
             ..
         } = inner_map

@@ -45,10 +45,10 @@ impl<'a> ContainerType<'a> {
         .collect::<HashMap<_, _>>()
     }
 
-    pub fn get_prefix_map() -> HashMap<String, Self> {
+    pub fn get_prefix_map() -> HashMap<&'a str, Self> {
         Self::get_map()
             .into_iter()
-            .map(|(_, v)| (v.ty_prefix.to_lowercase(), v))
+            .map(|(_, v)| (v.ty_prefix, v))
             .collect()
     }
 
@@ -96,10 +96,10 @@ impl<'a> ContextType<'a> {
         .collect::<HashMap<_, _>>()
     }
 
-    pub fn get_prefix_map() -> HashMap<String, Self> {
+    pub fn get_prefix_map() -> HashMap<&'a str, Self> {
         Self::get_map()
             .into_iter()
-            .map(|(_, v)| (v.ty_prefix.to_lowercase(), v))
+            .map(|(_, v)| (v.ty_prefix, v))
             .collect()
     }
 
@@ -205,7 +205,7 @@ impl Function {
             if cpp_mode {
                 format!("    mem_forget({}container);\n", this_access)
             } else if context.2 && self.calls_vtbl {
-                format!("    ctx_{}_drop(&___ctx);\n", context.1)
+                format!("    ctx_{}_drop(&___ctx);\n", context.1.to_lowercase())
             } else {
                 String::new()
             }
@@ -219,14 +219,16 @@ impl Function {
             if container_info.2 {
                 post_call += &format!(
                     "    cont_{}_drop(&{}container.instance);\n",
-                    container_info.1, this_access
+                    container_info.1.to_lowercase(),
+                    this_access
                 );
             }
 
             if context.2 {
                 post_call += &format!(
                     "    ctx_{}_drop(&{}container.context);\n",
-                    context.1, this_access
+                    context.1.to_lowercase(),
+                    this_access
                 );
             }
         }
@@ -275,7 +277,9 @@ impl Function {
                 } else if context.2 {
                     format!(
                         "    {} ___ctx = ctx_{}_clone(&{}container.context);\n",
-                        context.0, context.1, this_access
+                        context.0,
+                        context.1.to_lowercase(),
+                        this_access
                     )
                 } else {
                     String::new()
