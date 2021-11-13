@@ -1366,8 +1366,12 @@ impl TraitGroup {
 
                 let ext_name = format_ident!("{}Ext", ident);
 
-                let (funcs, _, _) =
-                    super::traits::parse_trait(tr_info, crate_path, super::traits::process_item);
+                let (funcs, _, _) = super::traits::parse_trait(
+                    tr_info,
+                    crate_path,
+                    false,
+                    super::traits::process_item,
+                );
 
                 for func in &funcs {
                     func.int_trait_impl(Some(ext_path), &ext_name, &mut impls);

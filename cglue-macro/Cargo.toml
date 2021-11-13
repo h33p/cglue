@@ -24,3 +24,4 @@ cglue-gen = { version = "0.2", path = "../cglue-gen" }
 default = []
 no_empty_retwrap = ["cglue-gen/no_empty_retwrap"]
 rust_void = ["cglue-gen/rust_void"]
+nightly = ["cglue-gen/nightly"]

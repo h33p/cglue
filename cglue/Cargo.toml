@@ -17,7 +17,8 @@ no-std-compat = { version = "0.4", features = ["alloc"] }
 serde = { version = "1", optional = true, default-features = false, features = ["derive", "alloc"] }
 
 [features]
-default = ["std"]
+default = ["std", "nightly"]
 no_empty_retwrap = ["cglue-macro/no_empty_retwrap"]
 std = ["no-std-compat/std"]
 rust_void = ["cglue-macro/rust_void"]
+nightly = ["cglue-macro/nightly"]

@@ -2,7 +2,7 @@ use crate::types::*;
 use itertools::Itertools;
 use log::trace;
 use regex::*;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 pub fn is_c(header: &str) -> Result<bool> {
     Ok(Regex::new(
@@ -475,11 +475,13 @@ fn monomorphize_contexts(
 
     let context_match = "Context context;";
 
-    let cfield_regex = Regex::new("struct (?P<typename>.+)_Context")?;
+    let cfield_regex = Regex::new("(?P<typename>.+)_Context")?;
 
     let cstruct_regex = Regex::new(
-        r"(?P<comment>/\*[^*]*\*+(?:[^/*][^*]*\*+)*/)?
-typedef struct (?P<name>.+)_Context(?P<inside>( \{[^\}]*\} | ))(?P<name2>[^;]+)_Context;",
+        r"(?P<comment>/\*[^*]*\*+(?:[^/*][^*]*\*+)*/
+)?typedef struct (?P<name>.+)_Context(?P<inside>( \{[^\}]*\} | ))(?P<name2>[^;]+)_Context;
+
+",
     )?;
 
     let header = cstruct_regex.replace_all(&header, |caps: &Captures| {
@@ -489,7 +491,8 @@ typedef struct (?P<name>.+)_Context(?P<inside>( \{[^\}]*\} | ))(?P<name2>[^;]+)_
         let name2 = caps["name2"].to_string();
 
         for context in contexts {
-            let context_ty = format!("_{}_", context);
+            // TODO: is this always correct?? Seems to be for COptArc_c_void
+            let context_ty = format!("_{}____", context);
 
             let name = name.replace("_Context_", &context_ty);
             let name2 = name2.replace("_Context_", &context_ty);
@@ -499,8 +502,8 @@ typedef struct (?P<name>.+)_Context(?P<inside>( \{[^\}]*\} | ))(?P<name2>[^;]+)_
             }
 
             ret.push_str(&format!(
-                r"{}
-typedef struct {}_{}{}{}_{};",
+                r"{}typedef struct {}_{}{}{}_{};
+",
                 caps.name("comment").map(|m| m.as_str()).unwrap_or(""),
                 name,
                 context,
@@ -509,7 +512,7 @@ typedef struct {}_{}{}{}_{};",
                         let ty = caps["typename"]
                             .to_string()
                             .replace("_Context_", &context_ty);
-                        format!("struct {}_{}", ty, context)
+                        format!("{}_{}", ty, context)
                     })
                     .replace(context_match, &format!("{} context;", context)),
                 name2,
@@ -523,10 +526,11 @@ typedef struct {}_{}{}{}_{};",
     // Go through each struct that matches a context, and replace all types within that have _Context with parent type
 
     let cstruct_regex = Regex::new(&format!(
-        r"(?P<comment>/\*[^*]*\*+(?:[^/*][^*]*\*+)*/)?
-typedef struct (?P<name>.+)_(?P<context>{}) \{{
+        r"(?P<comment>/\*[^*]*\*+(?:[^/*][^*]*\*+)*/
+)?typedef struct (?P<name>.+)_(?P<context>{}) \{{
 (?P<inside>[^\}}]*)
-\}} (?P<fulltype>[^;]+);",
+\}} (?P<fulltype>[^;]+);
+",
         ctx_matches
     ))?;
 
@@ -535,33 +539,101 @@ typedef struct (?P<name>.+)_(?P<context>{}) \{{
             let context = &caps["context"];
 
             format!(
-                r"{}
-typedef struct {}_{} {{
+                r"{}typedef struct {}_{} {{
 {}
-}} {}_{};",
+}} {}_{};
+",
                 caps.name("comment").map(|m| m.as_str()).unwrap_or(""),
                 &caps["name"],
                 context,
-                cfield_regex.replace_all(
-                    &caps["inside"],
-                    &format!("struct ${{typename}}_{}", context)
-                ),
+                cfield_regex.replace_all(&caps["inside"], &format!("${{typename}}_{}", context)),
                 &caps["name"],
                 context
             )
         })
         .to_string();
 
+    let mut types_to_explore = VecDeque::new();
+
+    // Go through each struct that matches a context, find any of its typedefs, and move them after
+    // the said struct to avoid incomplete types.
+
+    for cap in cstruct_regex.captures_iter(&header) {
+        types_to_explore.push_back((
+            cap["fulltype"].to_string(),
+            format!("struct {}", &cap["fulltype"]), /*".+".to_string()*/
+            cap["fulltype"].to_string(),
+        ));
+    }
+
+    while let Some((root, old_ty, ty)) = types_to_explore.pop_front() {
+        // Check if the type has users beforehand. If so, move the root above there and restart the
+        // flow...
+        let ty_regex = Regex::new(&format!(
+            r"
+(?P<user_typedef>/\*[^*]*\*+(?:[^/*][^*]*\*+)*/
+typedef struct .+ \{{[^\}}]*{ty}[^\}}]*\}} .+;
+)(?P<inbetween>[\s\S]*)
+(?P<ty_typedef>/\*[^*]*\*+(?:[^/*][^*]*\*+)*/
+typedef (?P<old_ty_def>struct {old_ty})( \{{[^\}}]*\}})? {ty};
+)",
+            ty = ty,
+            old_ty = old_ty
+        ))?;
+
+        let mut matched = false;
+
+        // TODO: move non-ptr objects referenced by struct above it
+
+        header = ty_regex
+            .replace(&header, |caps: &Captures| {
+                matched = true;
+
+                format!(
+                    "{}{}{}",
+                    &caps["ty_typedef"], &caps["inbetween"], &caps["user_typedef"]
+                )
+            })
+            .into();
+
+        if matched {
+            types_to_explore.push_back((root, old_ty, ty));
+            continue;
+        }
+
+        let typedef_regex = Regex::new(&format!(
+            r"(?P<old_typedef>(/\*[^*]*\*+(?:[^/*][^*]*\*+)*/)?
+typedef (?P<old_ty>(struct )?{old_ty})( \{{[^\}}]*\}})? {ty};
+)(?P<inbetween>[\s\S]*)
+(?P<new_typedef>(/\*[^*]*\*+(?:[^/*][^*]*\*+)*/)
+typedef (struct )?{ty} (?P<new_ty>.+);
+)",
+            old_ty = old_ty,
+            ty = ty
+        ))?;
+
+        header = typedef_regex
+            .replace(&header, |caps: &Captures| {
+                let new_ty = caps["new_ty"].to_string();
+                types_to_explore.push_front((root.clone(), ty.clone(), new_ty.clone()));
+                format!(
+                    "{}{}{}",
+                    &caps["old_typedef"], &caps["new_typedef"], &caps["inbetween"]
+                )
+            })
+            .into();
+    }
+
     // Move all mentioned context types above their first use to avoid incomplete types.
 
     for context in contexts {
         let ctx_def_regex = Regex::new(&format!(
-            r"(/\\*[^*]*\\*+(?:[^/*][^*]*\\*+)*/)?
-typedef struct {} \{{
+            r"(/\\*[^*]*\\*+(?:[^/*][^*]*\\*+)*/
+)?typedef struct {context} \{{
 [^\}}]*
-\}} {};
+\}} {context};
 ",
-            context, context
+            context = context
         ))?;
 
         let ctx_user_regex = Regex::new(&format!(

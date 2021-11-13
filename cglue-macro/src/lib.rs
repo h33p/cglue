@@ -401,3 +401,24 @@ pub fn wrap_with_group_ref(_: TokenStream, input: TokenStream) -> TokenStream {
 pub fn wrap_with_group_mut(_: TokenStream, input: TokenStream) -> TokenStream {
     input
 }
+
+/// Emit a vtable entry, but do not use it in Rust.
+///
+/// This allows to expose functionality to C/C++ users with slight changes in return types,
+/// while making use of the blanket implementation in Rust. It is necessary when a function
+/// itself wraps `Self` into some specific type, and would otherwise be completely
+/// incompatible with `CGlue`.
+///
+/// User is able to specify one of the wrapping macros to configure the behavior:
+///
+/// ```ignore
+/// #[vtbl_only(wrap_with_obj(ExampleTrait))]
+/// ```
+///
+/// Note that there could be some parity issues between Rust and C/C++ APIs, because in Rust the
+/// blanket implementation will be invoked, while in FFI the underlying implementation will be
+/// called.
+#[proc_macro_attribute]
+pub fn vtbl_only(_: TokenStream, input: TokenStream) -> TokenStream {
+    input
+}

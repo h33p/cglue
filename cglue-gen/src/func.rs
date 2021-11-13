@@ -35,19 +35,37 @@ struct TraitArg {
     to_trait_arg: TokenStream,
 }
 
-fn wrap_type<'a>(
+fn ret_wrap_type<'a>(
     ty: &mut Type,
-    targets: &'a BTreeMap<Ident, WrappedType>,
-) -> Option<(Type, Ident, &'a WrappedType)> {
+    targets: &'a BTreeMap<Option<Ident>, WrappedType>,
+) -> Option<(Type, Option<Ident>, &'a WrappedType)> {
+    if let Some(wrapped) = targets.get(&None) {
+        let WrappedType { ty: new_ty, .. } = wrapped;
+
+        let ret = std::mem::replace(
+            ty,
+            syn::parse2(new_ty.to_token_stream()).expect("Failed to parse wrap_type"),
+        );
+
+        return Some((ret, None, wrapped));
+    } else {
+        do_wrap_type(ty, targets)
+    }
+}
+
+fn do_wrap_type<'a>(
+    ty: &mut Type,
+    targets: &'a BTreeMap<Option<Ident>, WrappedType>,
+) -> Option<(Type, Option<Ident>, &'a WrappedType)> {
     match ty {
-        Type::Reference(r) => wrap_type(&mut *r.elem, targets),
-        Type::Slice(s) => wrap_type(&mut *s.elem, targets),
+        Type::Reference(r) => do_wrap_type(&mut *r.elem, targets),
+        Type::Slice(s) => do_wrap_type(&mut *s.elem, targets),
         Type::Path(p) => {
             let mut iter = p.path.segments.iter();
             match (&p.qself, p.path.leading_colon, iter.next(), iter.next()) {
                 (None, None, Some(p1), Some(p2)) => {
                     if p1.ident == "Self" {
-                        if let Some(wrapped) = targets.get(&p2.ident) {
+                        if let Some(wrapped) = targets.get(&Some(p2.ident.clone())) {
                             let WrappedType { ty: new_ty, .. } = wrapped;
 
                             std::mem::drop(iter);
@@ -60,14 +78,15 @@ fn wrap_type<'a>(
                                     .expect("Failed to parse wrap_type"),
                             );
 
-                            return Some((ret, ident, wrapped));
+                            return Some((ret, Some(ident), wrapped));
                         }
                     }
                 }
                 (None, None, Some(p1), None) => {
                     if p1.ident == "Self" {
-                        let self_return_wrap =
-                            targets.get(&p1.ident).expect("No self-wrap rule specified");
+                        let self_return_wrap = targets
+                            .get(&Some(p1.ident.clone()))
+                            .expect("No self-wrap rule specified");
                         let WrappedType { ty: new_ty, .. } = self_return_wrap;
 
                         std::mem::drop(iter);
@@ -80,7 +99,7 @@ fn wrap_type<'a>(
                                 .expect("Failed to parse self-type wrap"),
                         );
 
-                        return Some((ret, ident, self_return_wrap));
+                        return Some((ret, Some(ident), self_return_wrap));
                     }
                 }
                 _ => {}
@@ -92,7 +111,7 @@ fn wrap_type<'a>(
                 if let PathArguments::AngleBracketed(brac) = &mut seg.arguments {
                     for arg in brac.args.iter_mut() {
                         if let GenericArgument::Type(ty) = arg {
-                            let ret = wrap_type(ty, targets);
+                            let ret = do_wrap_type(ty, targets);
                             if ret.is_some() {
                                 return ret;
                             }
@@ -103,11 +122,11 @@ fn wrap_type<'a>(
 
             None
         }
-        Type::Ptr(ptr) => wrap_type(&mut *ptr.elem, targets),
+        Type::Ptr(ptr) => do_wrap_type(&mut *ptr.elem, targets),
         Type::Tuple(tup) => tup
             .elems
             .iter_mut()
-            .filter_map(|e| wrap_type(e, targets))
+            .filter_map(|e| do_wrap_type(e, targets))
             .next(),
         // TODO: Other types
         _ => None,
@@ -117,7 +136,7 @@ fn wrap_type<'a>(
 impl TraitArg {
     fn new(
         mut arg: FnArg,
-        targets: &BTreeMap<Ident, WrappedType>,
+        targets: &BTreeMap<Option<Ident>, WrappedType>,
         crate_path: &TokenStream,
         inject_lifetime: Option<&Lifetime>,
         inject_lifetime_cast: Option<&Lifetime>,
@@ -162,7 +181,7 @@ impl TraitArg {
                 }
             }
             FnArg::Typed(t) => {
-                let _old = wrap_type(&mut *t.ty, targets);
+                let _old = do_wrap_type(&mut *t.ty, targets);
 
                 let name = &*t.pat;
 
@@ -305,6 +324,7 @@ pub struct ParsedFunc {
     out: ParsedReturnType,
     generics: ParsedGenerics,
     sig_generics: ParsedGenerics,
+    only_c_side: bool,
 }
 
 impl ParsedFunc {
@@ -312,10 +332,11 @@ impl ParsedFunc {
         sig: Signature,
         trait_name: Ident,
         generics: &ParsedGenerics,
-        wrap_types: &BTreeMap<Ident, WrappedType>,
+        wrap_types: &BTreeMap<Option<Ident>, WrappedType>,
         res_override: Option<&Ident>,
         int_result: bool,
         crate_path: &TokenStream,
+        only_c_side: bool,
     ) -> Option<Self> {
         let name = sig.ident;
         let safe = sig.unsafety.is_none();
@@ -370,6 +391,7 @@ impl ParsedFunc {
             out,
             generics,
             sig_generics,
+            only_c_side,
         })
     }
 
@@ -806,46 +828,48 @@ impl ParsedFunc {
     }
 
     pub fn trait_impl(&self, tokens: &mut TokenStream) -> (bool, bool, bool) {
-        let name = &self.name;
-        let args = self.trait_args();
-        let ParsedReturnType {
-            ty: out,
-            impl_func_ret,
-            c_ret_precall_def,
-            c_call_ret_args,
-            lifetime_cast,
-            unbounded_hrtb,
-            ..
-        } = &self.out;
-        let def_args = self.to_c_def_args();
-        let call_args = self.to_c_call_args();
-        let safety = self.get_safety();
-        let abi = self.abi.prefix();
+        if !self.only_c_side {
+            let name = &self.name;
+            let args = self.trait_args();
+            let ParsedReturnType {
+                ty: out,
+                impl_func_ret,
+                c_ret_precall_def,
+                c_call_ret_args,
+                lifetime_cast,
+                unbounded_hrtb,
+                ..
+            } = &self.out;
+            let def_args = self.to_c_def_args();
+            let call_args = self.to_c_call_args();
+            let safety = self.get_safety();
+            let abi = self.abi.prefix();
 
-        let ParsedGenerics {
-            life_declare: sig_life_declare,
-            ..
-        } = &self.sig_generics;
+            let ParsedGenerics {
+                life_declare: sig_life_declare,
+                ..
+            } = &self.sig_generics;
 
-        let get_vfunc = if lifetime_cast.is_some() && *unbounded_hrtb {
-            let name_lifetimed = format_ident!("{}_lifetimed", name);
-            quote!(unsafe { self.get_vtbl().#name_lifetimed() })
-        } else {
-            quote!(self.get_vtbl().#name)
-        };
+            let get_vfunc = if lifetime_cast.is_some() && *unbounded_hrtb {
+                let name_lifetimed = format_ident!("{}_lifetimed", name);
+                quote!(unsafe { self.get_vtbl().#name_lifetimed() })
+            } else {
+                quote!(self.get_vtbl().#name)
+            };
 
-        let gen = quote! {
-            #[inline(always)]
-            #safety #abi fn #name <#sig_life_declare> (#args) #out {
-                let __cglue_vfunc = #get_vfunc;
-                #def_args
-                #c_ret_precall_def
-                let mut ret = __cglue_vfunc(#call_args #c_call_ret_args);
-                #impl_func_ret
-            }
-        };
+            let gen = quote! {
+                #[inline(always)]
+                #safety #abi fn #name <#sig_life_declare> (#args) #out {
+                    let __cglue_vfunc = #get_vfunc;
+                    #def_args
+                    #c_ret_precall_def
+                    let mut ret = __cglue_vfunc(#call_args #c_call_ret_args);
+                    #impl_func_ret
+                }
+            };
 
-        tokens.extend(gen);
+            tokens.extend(gen);
+        }
 
         (
             self.receiver.mutability.is_some(),
@@ -1050,7 +1074,7 @@ impl ParsedReturnType {
     #[allow(clippy::never_loop)]
     fn new(
         mut ty: ReturnType,
-        targets: &BTreeMap<Ident, WrappedType>,
+        targets: &BTreeMap<Option<Ident>, WrappedType>,
         res_override: Option<&Ident>,
         int_result: bool,
         unsafety: &TokenStream,
@@ -1082,7 +1106,7 @@ impl ParsedReturnType {
         if let ReturnType::Type(_, ty) = &mut ty {
             let mut ty_cast = None;
 
-            if let Some(wrapped) = wrap_type(&mut *ty, targets) {
+            if let Some(wrapped) = ret_wrap_type(&mut *ty, targets) {
                 let old_ty = wrapped.0;
                 let trait_ty = wrapped.1;
                 let WrappedType {
@@ -1161,7 +1185,7 @@ impl ParsedReturnType {
 
                 let is_static = lifetime_type_bound.map(|l| l.ident == "static") == Some(true);
 
-                let (static_bound, static_bound_simple) = if is_static {
+                let (static_bound, static_bound_simple) = if is_static && trait_ty.is_some() {
                     if life_use.is_empty() {
                         (
                             quote!(for<'cglue_b> <CGlueC::ObjType as #trait_name<#gen_use>>::#trait_ty: 'static,),
@@ -1214,7 +1238,7 @@ impl ParsedReturnType {
                     .cloned()
                     .unwrap_or_else(|| quote!(ret));
 
-                let return_self = trait_ty == "Self";
+                let return_self = trait_ty.map(|i| i == "Self") == Some(true);
 
                 ret.c_out = quote!(-> #ty);
                 ret.c_cast_out = quote!(-> #ty_cast);

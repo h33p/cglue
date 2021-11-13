@@ -6,7 +6,38 @@ use super::func::{ParsedFunc, WrappedType};
 use super::generics::{GenericType, ParsedGenerics};
 
 use quote::*;
-use syn::*;
+use syn::{
+    parse::*,
+    punctuated::Punctuated,
+    token::{Add, Comma},
+    *,
+};
+
+pub struct PathTokens {
+    lifetime: Option<Lifetime>,
+    path: Path,
+    tokens: TokenStream,
+}
+
+impl Parse for PathTokens {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let lifetime = if let Ok(lifetime) = input.parse() {
+            input.parse::<Comma>()?;
+            Some(lifetime)
+        } else {
+            None
+        };
+
+        let path = input.parse()?;
+        let tokens = input.parse()?;
+
+        Ok(Self {
+            lifetime,
+            path,
+            tokens,
+        })
+    }
+}
 
 // TODO: Add dynamic setting of Send / Sync
 pub fn ctx_bound() -> TokenStream {
@@ -19,11 +50,15 @@ pub fn cglue_c_opaque_bound() -> TokenStream {
 }
 
 pub fn process_item(
-    ty: &TraitItemType,
+    (ty_ident, ty_bounds, ty_attrs): (
+        &Option<Ident>,
+        &Punctuated<TypeParamBound, Add>,
+        &[Attribute],
+    ),
     trait_name: &Ident,
     generics: &ParsedGenerics,
     trait_type_defs: &mut TokenStream,
-    types: &mut BTreeMap<Ident, WrappedType>,
+    types: &mut BTreeMap<Option<Ident>, WrappedType>,
     crate_path: &TokenStream,
 ) {
     let c_void = crate::util::void_type();
@@ -43,18 +78,30 @@ pub fn process_item(
         ident: format_ident!("cglue_b"),
     };
 
-    let mut lifetime_bounds = ty.bounds.iter().filter_map(|b| match b {
+    let cglue_c_lifetime = Lifetime {
+        apostrophe: proc_macro2::Span::call_site(),
+        ident: format_ident!("cglue_c"),
+    };
+
+    let mut lifetime_bounds = ty_bounds.iter().filter_map(|b| match b {
         TypeParamBound::Lifetime(lt) => Some(lt),
         _ => None,
     });
 
     let orig_lifetime_bound = lifetime_bounds.next();
 
+    // When anonymous lifetime is passed, use self lifetime
+    let orig_lifetime_bound = if orig_lifetime_bound.map(|lt| lt.ident == "_") == Some(true) {
+        Some(&cglue_c_lifetime)
+    } else {
+        orig_lifetime_bound
+    };
+
     if lifetime_bounds.next().is_some() {
         panic!("Traits with multiple lifetime bounds are not supported!");
     }
 
-    for attr in &ty.attrs {
+    for attr in ty_attrs {
         let s = attr.path.to_token_stream().to_string();
 
         let x = s.as_str();
@@ -65,9 +112,9 @@ pub fn process_item(
                     .parse_args::<GenericType>()
                     .expect("Invalid type in wrap_with.");
 
-                let ty_ident = &ty.ident;
-
-                trait_type_defs.extend(quote!(type #ty_ident = #new_ty;));
+                if let Some(ty_ident) = ty_ident {
+                    trait_type_defs.extend(quote!(type #ty_ident = #new_ty;));
+                }
 
                 types.insert(
                     ty_ident.clone(),
@@ -92,7 +139,7 @@ pub fn process_item(
                     .expect("A valid closure must be supplied accepting the wrapped type!");
 
                 types
-                    .get_mut(&ty.ident)
+                    .get_mut(ty_ident)
                     .expect("Type must be first wrapped with #[wrap_with(T)] atribute.")
                     .return_conv = Some(closure);
             }
@@ -156,131 +203,157 @@ pub fn process_item(
 
                 from_new_ty_simple.push_lifetime_start(from_lifetime_simple);
 
-                let ty_ident = &ty.ident;
-
                 let gen_use = &generics.gen_use;
 
                 let mut new_ty_trait_impl = new_ty.clone();
                 let mut new_ty_ret_tmp = new_ty.clone();
 
-                let (type_bounds, type_bounds_simple) = {
-                    // Here we must inject a lifetime, if the trait has no lifetime,
-                    // and its a group we are wrapping
-                    let hrtb_lifetime = quote!(#cglue_b_lifetime);
+                let (other_bounds, other_bounds_simple) = {
+                    let (type_bounds, type_bounds_simple) = {
+                        // Here we must inject a lifetime, if the trait has no lifetime,
+                        // and its a group we are wrapping
+                        let hrtb_lifetime = quote!(#cglue_b_lifetime);
 
-                    let hrtb_lifetime_use = if generics.life_use.is_empty() {
-                        quote!()
-                    } else {
-                        quote!(#from_lifetime)
+                        let hrtb_lifetime_use = if generics.life_use.is_empty() {
+                            quote!()
+                        } else {
+                            quote!(#from_lifetime)
+                        };
+
+                        let simple_lifetime_use = if generics.life_use.is_empty() {
+                            quote!()
+                        } else {
+                            quote!(#from_lifetime_simple)
+                        };
+
+                        let cglue_f_tys = if let Some(ty_ident) = ty_ident {
+                            Some((
+                                quote!(<CGlueC::ObjType as #trait_name<#hrtb_lifetime_use #gen_use>>::#ty_ident),
+                                quote!(<CGlueC::ObjType as #trait_name<#simple_lifetime_use #gen_use>>::#ty_ident),
+                            ))
+                        } else {
+                            None
+                        };
+
+                        let mut new_ty_hrtb = from_new_ty.clone();
+                        let mut new_ty_simple = from_new_ty_simple.clone();
+
+                        if x == "wrap_with_group" || x == "wrap_with_obj" {
+                            // <CGlueO::ContType as crate::trait_group::CGlueObjBase>::Context
+                            new_ty.push_types_start(
+                                quote!(#crate_path::boxed::CBox<#lifetime, #c_void>, CGlueC::Context, ),
+                            );
+                            new_ty_ret_tmp.push_types_start(
+                                quote!(#crate_path::boxed::CBox<#lifetime, #c_void>, CGlueCtx, ),
+                            );
+                            new_ty_trait_impl.push_types_start(
+                                quote!(#crate_path::boxed::CBox<#lifetime, #c_void>, <CGlueO::ContType as #crate_path::trait_group::CGlueObjBase>::Context, ),
+                            );
+                            new_ty_hrtb.push_types_start(
+                                quote!(#crate_path::boxed::CBox<#from_lifetime, #c_void>, CGlueC::Context,),
+                            );
+                            new_ty_simple.push_types_start(
+                                quote!(#crate_path::boxed::CBox<#from_lifetime_simple, #c_void>, CGlueC::Context,),
+                            );
+                            new_ty_static.push_types_start(
+                                quote!(#crate_path::boxed::CBox<'static, #c_void>, CGlueCtx,),
+                            );
+                            if let Some((cglue_f_ty_ident, cglue_f_ty_simple_ident)) = &cglue_f_tys
+                            {
+                                from_new_ty.push_types_start(
+                                    quote!(#crate_path::boxed::CBox<#from_lifetime, #cglue_f_ty_ident>, CGlueC::Context, ),
+                                );
+                                from_new_ty_simple.push_types_start(
+                                    quote!(#crate_path::boxed::CBox<#from_lifetime_simple, #cglue_f_ty_simple_ident>, CGlueC::Context,),
+                                );
+                            }
+                        } else if x == "wrap_with_group_ref" || x == "wrap_with_obj_ref" {
+                            let no_context = quote!(CGlueC::Context); //#crate_path::trait_group::NoContext);
+                            new_ty.push_types_start(quote!(&#lifetime #c_void, CGlueC::Context,));
+                            new_ty_ret_tmp.push_types_start(quote!(&#lifetime #c_void, CGlueCtx,));
+                            new_ty_trait_impl.push_types_start(
+                                quote!(&#lifetime #c_void, <CGlueO::ContType as crate::trait_group::CGlueObjBase>::Context,),
+                            );
+                            new_ty_hrtb.push_types_start(
+                                quote!(&#from_lifetime #c_void, CGlueC::Context,),
+                            );
+                            new_ty_simple.push_types_start(
+                                quote!(&#from_lifetime_simple #c_void, CGlueC::Context,),
+                            );
+                            new_ty_static.push_types_start(quote!(&'static #c_void, CGlueCtx,));
+                            from_new_ty.push_types_start(
+                                quote!(&#from_lifetime <CGlueC::ObjType as #trait_name<#hrtb_lifetime_use #gen_use>>::#ty_ident, #no_context,),
+                            );
+                            from_new_ty_ref.extend(quote!(&#from_lifetime));
+                            from_new_ty_simple.push_types_start(
+                                quote!(&#from_lifetime_simple <CGlueC::ObjType as #trait_name<#hrtb_lifetime_use #gen_use>>::#ty_ident, #no_context,),
+                            );
+                            from_new_ty_simple_ref.extend(quote!(&#from_lifetime_simple));
+                        } else if x == "wrap_with_group_mut" || x == "wrap_with_obj_mut" {
+                            let no_context = quote!(CGlueC::Context);
+                            new_ty
+                                .push_types_start(quote!(&#lifetime mut #c_void, CGlueC::Context,));
+                            new_ty_ret_tmp
+                                .push_types_start(quote!(&#lifetime mut #c_void, CGlueCtx,));
+                            new_ty_trait_impl.push_types_start(
+                                quote!(&#lifetime mut #c_void, <CGlueO::ContType as crate::trait_group::CGlueObjBase>::Context,),
+                            );
+                            new_ty_hrtb.push_types_start(
+                                quote!(&#from_lifetime mut #c_void, CGlueC::Context,),
+                            );
+                            new_ty_simple.push_types_start(
+                                quote!(&#from_lifetime_simple mut #c_void, CGlueC::Context,),
+                            );
+                            new_ty_static.push_types_start(quote!(&'static mut #c_void, CGlueCtx,));
+                            if let Some((cglue_f_ty_ident, cglue_f_ty_simple_ident)) = &cglue_f_tys
+                            {
+                                from_new_ty.push_types_start(
+                                    quote!(&#from_lifetime mut #cglue_f_ty_ident, #no_context,),
+                                );
+                                from_new_ty_ref.extend(quote!(&#from_lifetime mut));
+                                from_new_ty_simple.push_types_start(
+                                    quote!(&#from_lifetime_simple mut #cglue_f_ty_simple_ident, #no_context,),
+                                );
+                                from_new_ty_simple_ref.extend(quote!(&#from_lifetime_simple mut));
+                            }
+                        } else {
+                            unreachable!()
+                        }
+
+                        if let Some((cglue_f_ty_ident, cglue_f_ty_simple_ident)) = cglue_f_tys {
+                            let (ty_ref, ty_ref_simple) = {
+                                (
+                                    quote!((#from_new_ty_ref #cglue_f_ty_ident, CGlueC::Context)),
+                                    quote!((#from_new_ty_simple_ref #cglue_f_ty_simple_ident, CGlueC::Context)),
+                                )
+                            };
+
+                            let type_bounds = quote! {
+                                for<#hrtb_lifetime> #ty_ref: Into<#from_new_ty>,
+                                for<#hrtb_lifetime> #from_new_ty: #crate_path::trait_group::Opaquable<OpaqueTarget = #new_ty_hrtb>,
+                            };
+
+                            let type_bounds_simple = quote! {
+                                #ty_ref_simple: Into<#from_new_ty_simple>,
+                                #from_new_ty_simple: #crate_path::trait_group::Opaquable<OpaqueTarget = #new_ty_simple>,
+                            };
+                            (Some(type_bounds), Some(type_bounds_simple))
+                        } else if lifetime_bound == Some(&static_lifetime) {
+                            (
+                                Some(quote!(CGlueC::ObjType: 'static,)),
+                                Some(quote!(CGlueC::ObjType: 'static,)),
+                            )
+                        } else {
+                            (None, None)
+                        }
                     };
 
-                    let simple_lifetime_use = if generics.life_use.is_empty() {
-                        quote!()
-                    } else {
-                        quote!(#from_lifetime_simple)
-                    };
-
-                    let cglue_f_ty_ident = quote!(<CGlueC::ObjType as #trait_name<#hrtb_lifetime_use #gen_use>>::#ty_ident);
-
-                    let cglue_f_ty_simple_ident = quote!(<CGlueC::ObjType as #trait_name<#simple_lifetime_use #gen_use>>::#ty_ident);
-
-                    let mut new_ty_hrtb = from_new_ty.clone();
-                    let mut new_ty_simple = from_new_ty_simple.clone();
-
-                    if x == "wrap_with_group" || x == "wrap_with_obj" {
-                        // <CGlueO::ContType as crate::trait_group::CGlueObjBase>::Context
-                        new_ty.push_types_start(
-                            quote!(#crate_path::boxed::CBox<#lifetime, #c_void>, CGlueC::Context, ),
-                        );
-                        new_ty_ret_tmp.push_types_start(
-                            quote!(#crate_path::boxed::CBox<#lifetime, #c_void>, CGlueCtx, ),
-                        );
-                        new_ty_trait_impl.push_types_start(
-                            quote!(#crate_path::boxed::CBox<#lifetime, #c_void>, <CGlueO::ContType as #crate_path::trait_group::CGlueObjBase>::Context, ),
-                        );
-                        new_ty_hrtb.push_types_start(
-                            quote!(#crate_path::boxed::CBox<#from_lifetime, #c_void>, CGlueC::Context,),
-                        );
-                        new_ty_simple.push_types_start(
-                            quote!(#crate_path::boxed::CBox<#from_lifetime_simple, #c_void>, CGlueC::Context,),
-                        );
-                        new_ty_static.push_types_start(
-                            quote!(#crate_path::boxed::CBox<'static, #c_void>, CGlueCtx,),
-                        );
-                        from_new_ty.push_types_start(
-                            quote!(#crate_path::boxed::CBox<#from_lifetime, #cglue_f_ty_ident>, CGlueC::Context, ),
-                        );
-                        from_new_ty_simple.push_types_start(
-                            quote!(#crate_path::boxed::CBox<#from_lifetime_simple, #cglue_f_ty_simple_ident>, CGlueC::Context,),
-                        );
-                    } else if x == "wrap_with_group_ref" || x == "wrap_with_obj_ref" {
-                        let no_context = quote!(CGlueC::Context); //#crate_path::trait_group::NoContext);
-                        new_ty.push_types_start(quote!(&#lifetime #c_void, CGlueC::Context,));
-                        new_ty_ret_tmp.push_types_start(quote!(&#lifetime #c_void, CGlueCtx,));
-                        new_ty_trait_impl.push_types_start(
-                            quote!(&#lifetime #c_void, <CGlueO::ContType as crate::trait_group::CGlueObjBase>::Context,),
-                        );
-                        new_ty_hrtb
-                            .push_types_start(quote!(&#from_lifetime #c_void, CGlueC::Context,));
-                        new_ty_simple.push_types_start(
-                            quote!(&#from_lifetime_simple #c_void, CGlueC::Context,),
-                        );
-                        new_ty_static.push_types_start(quote!(&'static #c_void, CGlueCtx,));
-                        from_new_ty.push_types_start(
-                            quote!(&#from_lifetime <CGlueC::ObjType as #trait_name<#hrtb_lifetime_use #gen_use>>::#ty_ident, #no_context,),
-                        );
-                        from_new_ty_ref.extend(quote!(&#from_lifetime));
-                        from_new_ty_simple.push_types_start(
-                            quote!(&#from_lifetime_simple <CGlueC::ObjType as #trait_name<#hrtb_lifetime_use #gen_use>>::#ty_ident, #no_context,),
-                        );
-                        from_new_ty_simple_ref.extend(quote!(&#from_lifetime_simple));
-                    } else if x == "wrap_with_group_mut" || x == "wrap_with_obj_mut" {
-                        let no_context = quote!(CGlueC::Context);
-                        new_ty.push_types_start(quote!(&#lifetime mut #c_void, CGlueC::Context,));
-                        new_ty_ret_tmp.push_types_start(quote!(&#lifetime mut #c_void, CGlueCtx,));
-                        new_ty_trait_impl.push_types_start(
-                            quote!(&#lifetime mut #c_void, <CGlueO::ContType as crate::trait_group::CGlueObjBase>::Context,),
-                        );
-                        new_ty_hrtb.push_types_start(
-                            quote!(&#from_lifetime mut #c_void, CGlueC::Context,),
-                        );
-                        new_ty_simple.push_types_start(
-                            quote!(&#from_lifetime_simple mut #c_void, CGlueC::Context,),
-                        );
-                        new_ty_static.push_types_start(quote!(&'static mut #c_void, CGlueCtx,));
-                        from_new_ty.push_types_start(
-                            quote!(&#from_lifetime mut #cglue_f_ty_ident, #no_context,),
-                        );
-                        from_new_ty_ref.extend(quote!(&#from_lifetime mut));
-                        from_new_ty_simple.push_types_start(
-                            quote!(&#from_lifetime_simple mut #cglue_f_ty_simple_ident, #no_context,),
-                        );
-                        from_new_ty_simple_ref.extend(quote!(&#from_lifetime_simple mut));
-                    } else {
-                        unreachable!()
+                    if let Some(ty_ident) = ty_ident {
+                        trait_type_defs.extend(quote!(type #ty_ident = #new_ty_trait_impl;));
                     }
-
-                    let (ty_ref, ty_ref_simple) = {
-                        (
-                            quote!((#from_new_ty_ref #cglue_f_ty_ident, CGlueC::Context)),
-                            quote!((#from_new_ty_simple_ref #cglue_f_ty_simple_ident, CGlueC::Context)),
-                        )
-                    };
-
-                    let type_bounds = quote! {
-                        for<#hrtb_lifetime> #ty_ref: Into<#from_new_ty>,
-                        for<#hrtb_lifetime> #from_new_ty: #crate_path::trait_group::Opaquable<OpaqueTarget = #new_ty_hrtb>,
-                    };
-
-                    let type_bounds_simple = quote! {
-                        #ty_ref_simple: Into<#from_new_ty_simple>,
-                        #from_new_ty_simple: #crate_path::trait_group::Opaquable<OpaqueTarget = #new_ty_simple>,
-                    };
 
                     (type_bounds, type_bounds_simple)
                 };
-
-                trait_type_defs.extend(quote!(type #ty_ident = #new_ty_trait_impl;));
 
                 let ret_write_unsafe = quote! {
                     // SAFETY:
@@ -387,8 +460,8 @@ pub fn process_item(
                         impl_return_conv: None,
                         lifetime_bound,
                         lifetime_type_bound,
-                        other_bounds: Some(type_bounds),
-                        other_bounds_simple: Some(type_bounds_simple),
+                        other_bounds,
+                        other_bounds_simple,
                         inject_ret_tmp,
                         unbounded_hrtb: false,
                     },
@@ -402,12 +475,17 @@ pub fn process_item(
 pub fn parse_trait(
     tr: &ItemTrait,
     crate_path: &TokenStream,
+    also_parse_vtbl_only: bool,
     mut process_item: impl FnMut(
-        &TraitItemType,
+        (
+            &Option<Ident>,
+            &Punctuated<TypeParamBound, Add>,
+            &[Attribute],
+        ),
         &Ident,
         &ParsedGenerics,
         &mut TokenStream,
-        &mut BTreeMap<Ident, WrappedType>,
+        &mut BTreeMap<Option<Ident>, WrappedType>,
         &TokenStream,
     ),
 ) -> (Vec<ParsedFunc>, ParsedGenerics, TokenStream) {
@@ -415,11 +493,12 @@ pub fn parse_trait(
     let generics = ParsedGenerics::from(&tr.generics);
     let mut trait_type_defs = TokenStream::new();
     let mut types = BTreeMap::new();
+    let mut types_vtbl = BTreeMap::new();
 
     let trait_name = &tr.ident;
 
     types.insert(
-        format_ident!("Self"),
+        Some(format_ident!("Self")),
         WrappedType {
             ty: parse2(quote!(CGlueC)).unwrap(),
             // TODO: should we forward ty in here??
@@ -457,7 +536,7 @@ pub fn parse_trait(
         match item {
             // We assume types are defined before methods here...
             TraitItem::Type(ty) => process_item(
-                ty,
+                (&Some(ty.ident.clone()), &ty.bounds, &ty.attrs),
                 &tr.ident,
                 &generics,
                 &mut trait_type_defs,
@@ -474,6 +553,60 @@ pub fn parse_trait(
                 if attrs.iter().any(|i| i == "skip_func") {
                     continue;
                 }
+
+                let only_c_side = m
+                    .attrs
+                    .iter()
+                    .filter(|a| a.path.to_token_stream().to_string() == "vtbl_only")
+                    .map(|a| {
+                        a.parse_args::<PathTokens>().ok().map(
+                            |PathTokens {
+                                 lifetime,
+                                 path,
+                                 tokens,
+                             }| {
+                                (
+                                    lifetime,
+                                    Attribute {
+                                        pound_token: Default::default(),
+                                        style: AttrStyle::Outer,
+                                        bracket_token: Default::default(),
+                                        path,
+                                        tokens,
+                                    },
+                                )
+                            },
+                        )
+                    })
+                    .next();
+
+                let (only_c_side, types) = if let Some(attr) = only_c_side {
+                    if !also_parse_vtbl_only {
+                        continue;
+                    }
+
+                    types_vtbl.clear();
+                    if let Some((lt, attr)) = attr {
+                        let mut punctuated = Punctuated::default();
+
+                        if let Some(lt) = lt {
+                            punctuated.push_value(TypeParamBound::Lifetime(lt));
+                        }
+
+                        let attr_slice = std::slice::from_ref(&attr);
+                        process_item(
+                            (&None, &punctuated, attr_slice),
+                            &tr.ident,
+                            &generics,
+                            &mut trait_type_defs,
+                            &mut types_vtbl,
+                            crate_path,
+                        );
+                    }
+                    (true, &types_vtbl)
+                } else {
+                    (false, &types)
+                };
 
                 let mut iter = m.sig.generics.params.iter();
 
@@ -500,12 +633,13 @@ pub fn parse_trait(
                     m.sig.clone(),
                     trait_name.clone(),
                     &generics,
-                    &types,
+                    types,
                     int_result,
                     int_result
                         .filter(|_| !attrs.iter().any(|i| i == "no_int_result"))
                         .is_some(),
                     crate_path,
+                    only_c_side,
                 ));
             }
             _ => {}
@@ -556,7 +690,7 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
     let opaque_ctx_ref_trait_obj_ident = format_ident!("{}CtxRef", trait_name);
     let opaque_arc_ref_trait_obj_ident = format_ident!("{}ArcRef", trait_name);
 
-    let (funcs, generics, trait_type_defs) = parse_trait(&tr, &crate_path, process_item);
+    let (funcs, generics, trait_type_defs) = parse_trait(&tr, &crate_path, true, process_item);
 
     let cglue_c_opaque_bound = cglue_c_opaque_bound();
     let ctx_bound = ctx_bound();

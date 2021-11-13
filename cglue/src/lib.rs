@@ -893,8 +893,8 @@ pub mod trait_group;
 pub use ::cglue_macro::{
     as_mut, as_ref, cast, cglue_forward, cglue_forward_ext, cglue_impl_group, cglue_trait,
     cglue_trait_ext, cglue_trait_group, group_obj, int_result, into, no_int_result, return_wrap,
-    skip_func, trait_obj, wrap_with, wrap_with_group, wrap_with_group_mut, wrap_with_group_ref,
-    wrap_with_obj, wrap_with_obj_mut, wrap_with_obj_ref,
+    skip_func, trait_obj, vtbl_only, wrap_with, wrap_with_group, wrap_with_group_mut,
+    wrap_with_group_ref, wrap_with_obj, wrap_with_obj_mut, wrap_with_obj_ref,
 };
 
 pub mod ext {
