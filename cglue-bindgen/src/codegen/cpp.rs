@@ -1,3 +1,4 @@
+use crate::config::*;
 use crate::types::*;
 use itertools::Itertools;
 use log::trace;
@@ -14,7 +15,7 @@ using [^\s]+ =|
     .is_match(header))
 }
 
-pub fn parse_header(header: &str) -> Result<String> {
+pub fn parse_header(header: &str, config: &Config) -> Result<String> {
     // COLLECTION:
 
     // Collect zsized ret tmps
@@ -503,7 +504,104 @@ struct CGlueTraitObj<T, {vtbl}Vtbl<CGlueObjContainer<T, C, R>>, C, R> {{
 
     // Probably a more hacky version - put specializations at the end of the file,
     // so that we do not encounter incomplete types.
-    let header = Regex::new(r"(#endif|$)")?.replace(&header, trait_obj_specs);
+    let mut header = Regex::new(r"(#endif|$)")?
+        .replace(&header, trait_obj_specs)
+        .to_string();
+
+    // Create shortened typedefs for all the types (if configured)
+    if config.default_container.is_some() || config.default_context.is_some() {
+        let container_map = ContainerType::get_prefix_map();
+        let context_map = ContextType::get_prefix_map();
+
+        let default_cont = config.default_container.as_deref().unwrap_or("");
+        let default_ctx = config.default_context.as_deref().unwrap_or("");
+
+        let mut ty = String::new();
+
+        // Groups merely need default types (TODO: Handle extra generics somehow?)
+
+        if let Some(ctx) = context_map.get(default_ctx) {
+            let ctx_regex = Regex::new(
+                r"typename CGlueCtx(?P<eq> =)?(?P<specialization>.*>
+struct [^\{\}\n]+<.*CGlueCtx.*>)?",
+            )?;
+
+            header = ctx_regex
+                .replace_all(&header, |caps: &Captures| {
+                    if caps.name("eq").is_some() || caps.name("specialization").is_some() {
+                        caps.get(0).unwrap().as_str().to_string()
+                    } else {
+                        format!("typename CGlueCtx = {}", ctx.cpp_type)
+                    }
+                })
+                .to_string();
+
+            ty += ctx.ty_prefix;
+        }
+
+        if let Some(ctx) = container_map.get(default_cont) {
+            let ctx_regex = Regex::new(
+                r"typename CGlueInst(?P<eq> =)?(?P<specialization>.*>
+struct [^\{\}\n]+<.*CGlueInst.*>)?",
+            )?;
+
+            header = ctx_regex
+                .replace_all(&header, |caps: &Captures| {
+                    if caps.name("eq").is_some() || caps.name("specialization").is_some() {
+                        caps.get(0).unwrap().as_str().to_string()
+                    } else {
+                        format!("typename CGlueInst = {}", ctx.cpp_type)
+                    }
+                })
+                .to_string();
+
+            ty += ctx.ty_prefix;
+        }
+
+        if !ty.is_empty() {
+            let using_regex = Regex::new(&format!(
+                r"(?P<template>template<(?P<template_args>.*)>
+)?using (?P<type>.+){} = [^;]+;",
+                ty
+            ))?;
+
+            header = using_regex
+                .replace_all(&header, |caps: &Captures| {
+                    let mut ret = caps.get(0).unwrap().as_str().to_string();
+
+                    let base_ty = &caps["type"];
+
+                    if !header.contains(&format!("using {} =", base_ty))
+                        && !header.contains(&format!("struct {} {{", base_ty))
+                    {
+                        ret += "\n// Typedef for default contaienr and context type\n";
+
+                        if let Some(tmplt) = caps.name("template") {
+                            ret += tmplt.as_str();
+                        }
+
+                        ret += &format!(
+                            "using {base_ty} = {base_ty}{ctxcont}",
+                            base_ty = base_ty,
+                            ctxcont = ty
+                        );
+
+                        if let Some(args) = caps.name("template_args") {
+                            ret += "<";
+                            for arg in args.as_str().split("typename").map(|s| s.trim()) {
+                                ret += arg;
+                            }
+                            ret += ">";
+                        }
+
+                        ret += ";";
+                    }
+
+                    ret
+                })
+                .into();
+        }
+    }
 
     Ok(header.into())
 }

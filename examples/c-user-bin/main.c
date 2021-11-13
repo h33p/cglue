@@ -4,8 +4,8 @@
 
 int trim(char *str);
 
-void use_kvstore(FeaturesGroupArcBox *obj);
-void kvdump(FeaturesGroupArcBox *obj);
+void use_kvstore(FeaturesGroup *obj);
+void kvdump(FeaturesGroup *obj);
 
 int main() {
 	char name[256];
@@ -15,10 +15,10 @@ int main() {
 	fgets(name, sizeof(name), stdin);
 	int len = trim(name);
 
-	PluginInnerArcBox obj = load_plugin(len > 0 ? name : "plugin_lib");
+	PluginInner obj = load_plugin(len > 0 ? name : "plugin_lib");
 
 	{
-		FeaturesGroupArcBox borrowed = borrow_features(&obj);
+		FeaturesGroup borrowed = borrow_features(&obj);
 
 		featuresgroup_print_self(&borrowed);
 
@@ -34,11 +34,11 @@ int main() {
 
 		printf("Borrowed done.\n");
 
-		featuresgroup_arc_box_drop(borrowed);
+		featuresgroup_drop(borrowed);
 	}
 
 	{
-		FeaturesGroupArcBox owned = arc_box_into_features(obj);
+		FeaturesGroup owned = into_features(obj);
 
 		featuresgroup_print_self(&owned);
 
@@ -52,7 +52,7 @@ int main() {
 			kvdump(&owned);
 		}
 
-		featuresgroup_arc_box_drop(owned);
+		featuresgroup_drop(owned);
 	}
 
 	return 0;
@@ -75,7 +75,7 @@ int trim(char *str) {
 	return len;
 }
 
-void use_kvstore(FeaturesGroupArcBox *obj) {
+void use_kvstore(FeaturesGroup *obj) {
 	char key[256];
 
 	printf("Enter key:\n");
@@ -106,7 +106,7 @@ bool kvdump_callback(void *unused, KeyValue kv) {
 	return true;
 }
 
-void kvdump(FeaturesGroupArcBox *obj) {
+void kvdump(FeaturesGroup *obj) {
 	featuresgroup_dump_key_values(obj, CALLBACK(KeyValue, NULL, kvdump_callback));
 
 	int ints[32];

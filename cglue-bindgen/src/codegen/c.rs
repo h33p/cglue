@@ -1,3 +1,4 @@
+use crate::config::*;
 use crate::types::*;
 use itertools::Itertools;
 use log::trace;
@@ -12,7 +13,7 @@ typedef struct [^\s]+ \{|",
     .is_match(header))
 }
 
-pub fn parse_header(header: &str) -> Result<String> {
+pub fn parse_header(header: &str, config: &Config) -> Result<String> {
     // COLLECTION:
 
     // Collect all zsized ret tmps
@@ -99,34 +100,9 @@ pub fn parse_header(header: &str) -> Result<String> {
         }
     }
 
-    let inner_map = [
-        (
-            "CBox_c_void",
-            ("box", Some("self->drop_fn(self->instance);")),
-        ),
-        ("____c_void", ("mut", None)),
-        ("_____c_void", ("ref", None)),
-    ]
-    .iter()
-    .cloned()
-    .collect::<HashMap<_, _>>();
+    let inner_map = ContainerType::get_map();
 
-    let context_map = [
-        ("NoContext", ("", None)),
-        (
-            "COptArc_c_void",
-            (
-                "arc",
-                Some((
-                    "ret.instance = self->clone_fn(self->instance);",
-                    "self->drop_fn(self->instance);",
-                )),
-            ),
-        ),
-    ]
-    .iter()
-    .cloned()
-    .collect::<HashMap<_, _>>();
+    let context_map = ContextType::get_map();
 
     // FINAL PROCESSING:
 
@@ -145,13 +121,27 @@ pub fn parse_header(header: &str) -> Result<String> {
 
     let mut all_wrappers = String::new();
     let mut fwd_declarations = String::new();
+    let mut shortened_typedefs = vec![];
 
     // Create context clone/drop wrappers
-    for (ty, prefix, impl_clone, impl_drop) in
-        context_map.iter().filter_map(|(ty, (prefix, imp))| {
-            imp.map(|(impl_clone, impl_drop)| (ty, prefix, impl_clone, impl_drop))
-        })
-    {
+    for (ty, prefix, impl_clone, impl_drop) in context_map.iter().filter_map(
+        |(
+            ty,
+            ContextType {
+                ty_prefix,
+                clone_impl,
+                drop_impl,
+                ..
+            },
+        )| {
+            match (clone_impl, drop_impl) {
+                (Some(impl_clone), Some(impl_drop)) => {
+                    Some((ty, ty_prefix.to_lowercase(), impl_clone, impl_drop))
+                }
+                _ => None,
+            }
+        },
+    ) {
         all_wrappers += &format!(
             r"{ty} ctx_{prefix}_clone({ty} *self) {{
     {ty} ret = *self;
@@ -170,10 +160,16 @@ void ctx_{prefix}_drop({ty} *self) {{
         );
     }
 
-    for (ty, prefix, impl_drop) in inner_map
-        .iter()
-        .filter_map(|(ty, (prefix, imp))| imp.map(|impl_drop| (ty, prefix, impl_drop)))
-    {
+    for (ty, prefix, impl_drop) in inner_map.iter().filter_map(
+        |(
+            ty,
+            ContainerType {
+                ty_prefix,
+                drop_impl,
+                ..
+            },
+        )| drop_impl.map(|impl_drop| (ty, ty_prefix.to_lowercase(), impl_drop)),
+    ) {
         all_wrappers += &format!(
             r"void cont_{prefix}_drop({ty} *self) {{
     {impl_drop}
@@ -218,18 +214,26 @@ void ctx_{prefix}_drop({ty} *self) {{
 
         let vtbl = Vtable::new(t.clone(), &funcs, &container_ty)?;
 
-        let (cont, container_wrappers) = inner_map
+        let ContainerType {
+            ty_prefix: cont,
+            drop_impl: container_wrappers,
+            ..
+        } = inner_map
             .get(inner.as_str())
             .copied()
-            .unwrap_or((inner.as_str(), None));
-        let (ctx, context_wrappers) = context_map
+            .unwrap_or(ContainerType::from_name(inner.as_str()));
+        let ContextType {
+            ty_prefix: ctx,
+            drop_impl: context_wrappers,
+            ..
+        } = context_map
             .get(context.as_str())
             .copied()
-            .unwrap_or((context.as_str(), None));
+            .unwrap_or(ContextType::from_name(context.as_str()));
 
         let wrappers = vtbl.create_wrappers_c(
             ("container", "vtbl"),
-            (&"", &|f| {
+            ("", &|f| {
                 if f.name == "drop" || vtbl_types.get(&f.name).unwrap().len() > 1 {
                     Some(&t)
                 } else {
@@ -240,7 +244,14 @@ void ctx_{prefix}_drop({ty} *self) {{
             (&context, ctx, context_wrappers.is_some()),
             (&this_ty, &[]),
             &mut generated_funcs,
+            config,
         );
+
+        if config.default_context.as_deref() == Some(ctx)
+            && config.default_container.as_deref() == Some(cont)
+        {
+            shortened_typedefs.push((this_ty, t));
+        }
 
         all_wrappers += &wrappers;
     }
@@ -256,14 +267,22 @@ void ctx_{prefix}_drop({ty} *self) {{
 
         let vtbl = Vtable::new(t, &funcs, &container_ty)?;
 
-        let (inner, container_wrappers) = inner_map
+        let ContainerType {
+            ty_prefix: cont,
+            drop_impl: container_wrappers,
+            ..
+        } = inner_map
             .get(inner.as_str())
             .copied()
-            .unwrap_or((&inner.as_str(), None));
-        let (ctx, context_wrappers) = context_map
+            .unwrap_or(ContainerType::from_name(inner.as_str()));
+        let ContextType {
+            ty_prefix: ctx,
+            drop_impl: context_wrappers,
+            ..
+        } = context_map
             .get(context.as_str())
             .copied()
-            .unwrap_or((context.as_str(), None));
+            .unwrap_or(ContextType::from_name(context.as_str()));
 
         let wrappers = vtbl.create_wrappers_c(
             ("container", &format!("vtbl_{}", vtbl.name.to_lowercase())),
@@ -272,9 +291,48 @@ void ctx_{prefix}_drop({ty} *self) {{
             (&context, ctx, context_wrappers.is_some()),
             (&this_ty, &[]),
             &mut generated_funcs,
+            config,
         );
 
+        if config.default_context.as_deref() == Some(ctx)
+            && config.default_container.as_deref() == Some(&inner)
+        {
+            shortened_typedefs.push((this_ty, cont.to_string()));
+        }
+
         all_wrappers += &wrappers;
+    }
+
+    let mut header = header.to_string();
+
+    let strip_root_regex = Regex::new("(struct )?(?P<root>.*)")?;
+
+    // Add shortened typedefs for config
+    for (root, ty) in shortened_typedefs {
+        if Regex::new(&format!(r"typedef (struct )?[^\s]+ {};", ty))?.is_match(&header) {
+            continue;
+        }
+
+        let root = strip_root_regex.replace(&root, "$root");
+
+        let regex = Regex::new(&format!(
+            r"(/\*[^*]*\*+(?:[^/*][^*]*\*+)*/
+)?typedef (?P<old_ty_def>struct {root})( \{{[^\}}]*\}})? {root};",
+            root = root
+        ))?;
+
+        header = regex
+            .replace(
+                &header,
+                format!(
+                    r"$0
+
+// Typedef for default container and context type
+typedef struct {} {};",
+                    root, ty
+                ),
+            )
+            .into();
     }
 
     // Create callback and iterator wrappers
@@ -561,7 +619,7 @@ fn monomorphize_contexts(
     for cap in cstruct_regex.captures_iter(&header) {
         types_to_explore.push_back((
             cap["fulltype"].to_string(),
-            format!("struct {}", &cap["fulltype"]), /*".+".to_string()*/
+            format!("struct {}", &cap["fulltype"]),
             cap["fulltype"].to_string(),
         ));
     }

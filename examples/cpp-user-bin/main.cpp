@@ -19,7 +19,7 @@ int main() {
 	fgets(name, sizeof(name), stdin);
 	int len = trim(name);
 
-	auto obj = load_plugin(len > 0 ? name : "plugin_lib");
+	PluginInner obj = load_plugin(len > 0 ? name : "plugin_lib");
 
 	{
 		printf("%p %p\n", obj.container.instance.instance, obj.container.instance.drop_fn);

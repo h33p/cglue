@@ -16,3 +16,5 @@ regex = "1"
 fancy-regex = "0.7"
 itertools = "0.10"
 log = "0.4"
+serde = { version = "1", features = ["derive"] }
+toml = "0.5"

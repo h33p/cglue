@@ -27,7 +27,7 @@
 
 use std::env;
 use std::fs::File;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::process::*;
 
 pub mod types;
@@ -36,7 +36,14 @@ use types::Result;
 pub mod codegen;
 use codegen::{c, cpp};
 
+pub mod config;
+use config::Config;
+
 fn main() -> Result<()> {
+    let args_pre = env::args()
+        .skip(1)
+        .take_while(|v| v != "--")
+        .collect::<Vec<_>>();
     let args = env::args().skip_while(|v| v != "--").collect::<Vec<_>>();
 
     // Hijack the output
@@ -61,9 +68,21 @@ fn main() -> Result<()> {
         }
     }
 
-    let use_nightly = env::args()
-        .take_while(|v| v != "--")
-        .any(|v| v == "+nightly");
+    let mut config = Config::default();
+
+    for a in args_pre.windows(2) {
+        match a[0].as_str() {
+            "-c" | "--config" => {
+                let mut f = File::open(&a[1])?;
+                let mut val = vec![];
+                f.read_to_end(&mut val)?;
+                config = toml::from_str(std::str::from_utf8(&val)?)?;
+            }
+            _ => {}
+        }
+    }
+
+    let use_nightly = args_pre.iter().any(|v| v == "+nightly");
 
     let mut cmd = if use_nightly {
         let mut cmd = Command::new("rustup");
@@ -87,9 +106,9 @@ fn main() -> Result<()> {
     let out = std::str::from_utf8(&output.stdout)?.to_string();
 
     let output = if cpp::is_cpp(&out)? {
-        cpp::parse_header(&out)?
+        cpp::parse_header(&out, &config)?
     } else if c::is_c(&out)? {
-        c::parse_header(&out)?
+        c::parse_header(&out, &config)?
     } else {
         return Err("Unsupported header format!".into());
     };

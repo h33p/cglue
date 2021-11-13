@@ -1,8 +1,117 @@
+use crate::config::Config;
 use itertools::Itertools;
 use regex::*;
 use std::collections::{HashMap, HashSet};
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
+#[derive(Debug, Clone, Copy)]
+pub struct ContainerType<'a> {
+    pub ty_prefix: &'a str,
+    pub cpp_type: &'a str,
+    pub drop_impl: Option<&'a str>,
+}
+
+impl<'a> ContainerType<'a> {
+    pub fn get_map() -> HashMap<&'a str, Self> {
+        [
+            (
+                "CBox_c_void",
+                ContainerType {
+                    ty_prefix: "Box",
+                    cpp_type: "CBox<void>",
+                    drop_impl: Some("self->drop_fn(self->instance);"),
+                },
+            ),
+            (
+                "____c_void",
+                ContainerType {
+                    ty_prefix: "Mut",
+                    cpp_type: "void *",
+                    drop_impl: None,
+                },
+            ),
+            (
+                "_____c_void",
+                ContainerType {
+                    ty_prefix: "Ref",
+                    cpp_type: "const void *",
+                    drop_impl: None,
+                },
+            ),
+        ]
+        .iter()
+        .cloned()
+        .collect::<HashMap<_, _>>()
+    }
+
+    pub fn get_prefix_map() -> HashMap<String, Self> {
+        Self::get_map()
+            .into_iter()
+            .map(|(_, v)| (v.ty_prefix.to_lowercase(), v))
+            .collect()
+    }
+
+    pub const fn from_name(name: &'a str) -> Self {
+        Self {
+            ty_prefix: name,
+            cpp_type: name,
+            drop_impl: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ContextType<'a> {
+    pub ty_prefix: &'a str,
+    pub cpp_type: &'a str,
+    pub clone_impl: Option<&'a str>,
+    pub drop_impl: Option<&'a str>,
+}
+
+impl<'a> ContextType<'a> {
+    pub fn get_map() -> HashMap<&'a str, Self> {
+        [
+            (
+                "NoContext",
+                ContextType {
+                    ty_prefix: "",
+                    cpp_type: "NoContext",
+                    clone_impl: None,
+                    drop_impl: None,
+                },
+            ),
+            (
+                "COptArc_c_void",
+                ContextType {
+                    ty_prefix: "Arc",
+                    cpp_type: "COptArc<void>",
+                    clone_impl: Some("ret.instance = self->clone_fn(self->instance);"),
+                    drop_impl: Some("self->drop_fn(self->instance);"),
+                },
+            ),
+        ]
+        .iter()
+        .cloned()
+        .collect::<HashMap<_, _>>()
+    }
+
+    pub fn get_prefix_map() -> HashMap<String, Self> {
+        Self::get_map()
+            .into_iter()
+            .map(|(_, v)| (v.ty_prefix.to_lowercase(), v))
+            .collect()
+    }
+
+    pub const fn from_name(name: &'a str) -> Self {
+        Self {
+            ty_prefix: name,
+            cpp_type: name,
+            drop_impl: None,
+            clone_impl: None,
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct FunctionArg {
@@ -354,6 +463,7 @@ impl Vtable {
         context_info: (&str, &str, bool),
         (this_ty, vtbls): (&str, &[&str]),
         generated_funcs: &mut HashSet<(String, String)>,
+        config: &Config,
     ) -> String {
         let mut ret = String::new();
 
@@ -371,28 +481,32 @@ impl Vtable {
             let ty_prefix = ty_prefix(&f);
 
             let (prefix, cast_self) = if f.moves_self || f.return_type == this_ty {
-                let ctx_prefix = if context_info.1.is_empty() {
+                let config_match = config.default_context.as_deref() == Some(context_info.1)
+                    && config.default_container.as_deref() == Some(container_info.1);
+
+                let ctx_prefix = if context_info.1.is_empty() || config_match {
                     String::new()
                 } else {
                     format!("{}_", context_info.1.to_lowercase())
                 };
 
+                let container_prefix = if config_match {
+                    String::new()
+                } else {
+                    format!("{}_", container_info.1.to_lowercase())
+                };
+
                 (
                     if let Some(ty) = ty_prefix {
                         format!(
-                            "{}{}_{}{}_",
+                            "{}{}_{}{}",
                             prefix,
                             ty.to_lowercase(),
                             ctx_prefix,
-                            container_info.1.to_lowercase()
+                            container_prefix,
                         )
                     } else {
-                        format!(
-                            "{}{}{}_",
-                            prefix,
-                            ctx_prefix,
-                            container_info.1.to_lowercase()
-                        )
+                        format!("{}{}{}", prefix, ctx_prefix, container_prefix,)
                     },
                     false,
                 )
