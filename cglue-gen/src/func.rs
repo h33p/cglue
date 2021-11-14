@@ -47,7 +47,7 @@ fn ret_wrap_type<'a>(
             syn::parse2(new_ty.to_token_stream()).expect("Failed to parse wrap_type"),
         );
 
-        return Some((ret, None, wrapped));
+        Some((ret, None, wrapped))
     } else {
         do_wrap_type(ty, targets)
     }
@@ -1267,93 +1267,82 @@ impl ParsedReturnType {
                 ret.lifetime_cast = lifetime_cast;
             }
 
-            if let Type::Path(p) = &mut **ty {
-                let last = p.path.segments.last();
-                if let Some((PathArguments::AngleBracketed(args), last)) =
-                    last.map(|l| (&l.arguments, l))
-                {
-                    let ident = &last.ident;
+            match &mut **ty {
+                Type::Reference(r) => {
+                    let is_mut = r.mutability.is_some();
 
-                    let result_ident = format_ident!("Result");
+                    let mut new_tys = vec![];
 
-                    let result_ident = res_override.unwrap_or(&result_ident);
+                    let default_lt = Lifetime {
+                        apostrophe: proc_macro2::Span::call_site(),
+                        ident: format_ident!("_"),
+                    };
 
-                    match ident.to_string().as_str() {
-                        "Option" => {
-                            if let Some(GenericArgument::Type(a)) = args.args.first() {
-                                if !crate::util::is_null_pointer_optimizable(a, &[]) {
-                                    let new_path: Path =
-                                        parse2(quote!(#crate_path::option::COption))
-                                            .expect("Failed to parse COption path");
+                    for r in Some(&*r)
+                        .into_iter()
+                        .chain(ty_cast.as_deref().into_iter().filter_map(|r| {
+                            if let Type::Reference(r) = r {
+                                Some(r)
+                            } else {
+                                None
+                            }
+                        }))
+                    {
+                        let lt = r.lifetime.as_ref().unwrap_or(&default_lt);
 
-                                    replace_path_keep_final_args(Some(&mut **ty), new_path.clone());
-                                    replace_path_keep_final_args(ty_cast.as_deref_mut(), new_path);
-
-                                    ret.c_out = quote!(-> #ty);
-                                    ret.c_cast_out = quote!(-> #ty_cast);
-                                    ret.c_ret.extend(quote!(.into()));
-                                    ret.impl_func_ret.extend(quote!(.into()));
+                        new_tys.push(match &*r.elem {
+                            Type::Slice(s) => {
+                                let ty = &*s.elem;
+                                Some(if is_mut {
+                                    quote!(#crate_path::slice::CSliceMut<#lt, #ty>)
+                                } else {
+                                    quote!(#crate_path::slice::CSliceRef<#lt, #ty>)
+                                })
+                            }
+                            Type::Path(p) => {
+                                if let Some("str") =
+                                    p.path.get_ident().map(|i| i.to_string()).as_deref()
+                                {
+                                    Some(if is_mut {
+                                        quote!(#crate_path::slice::CSliceMut<#lt, u8>)
+                                    } else {
+                                        quote!(#crate_path::slice::CSliceRef<#lt, u8>)
+                                    })
+                                } else {
+                                    None
                                 }
                             }
+                            _ => None,
+                        });
+                    }
+
+                    if let Some(slty) = &new_tys[0] {
+                        ret.c_out = quote!(-> #slty);
+                        if let Some(sltyc) = new_tys.get(1) {
+                            ret.c_cast_out = quote!(-> #sltyc);
                         }
-                        _ => {
-                            if ident == result_ident {
-                                let mut args = args.args.iter();
+                        ret.c_ret.extend(quote!(.into()));
+                        ret.impl_func_ret.extend(quote!(.into()));
+                    }
+                }
+                Type::Path(p) => {
+                    let last = p.path.segments.last();
+                    if let Some((PathArguments::AngleBracketed(args), last)) =
+                        last.map(|l| (&l.arguments, l))
+                    {
+                        let ident = &last.ident;
 
-                                let to_match = (args.next(), args.next(), args.next(), int_result);
+                        let result_ident = format_ident!("Result");
 
-                                std::mem::drop(args);
+                        let result_ident = res_override.unwrap_or(&result_ident);
 
-                                match to_match {
-                                    (Some(GenericArgument::Type(a)), _, None, true) => loop {
-                                        ret.c_out = quote!(-> i32);
-                                        ret.c_cast_out = quote!(-> i32);
-
-                                        let c_ret = &ret.c_ret;
-
-                                        let mapped_ret = quote! {
-                                            let ret = ret.map(|ret| {
-                                                #c_ret
-                                            });
-                                        };
-
-                                        if let Type::Tuple(tup) = a {
-                                            if tup.elems.is_empty() {
-                                                ret.c_ret = quote! {
-                                                    #mapped_ret
-                                                    #crate_path::result::into_int_result(ret)
-                                                };
-                                                let impl_func_ret = &ret.impl_func_ret;
-                                                ret.impl_func_ret = quote!(#crate_path::result::from_int_result_empty(#impl_func_ret));
-
-                                                break;
-                                            }
-                                        }
-
-                                        ret.c_ret_params.extend(
-                                            quote!(ok_out: &mut ::core::mem::MaybeUninit<#a>,),
-                                        );
-                                        ret.c_ret_precall_def.extend(quote!(let mut ok_out = ::core::mem::MaybeUninit::uninit();));
-                                        ret.c_call_ret_args.extend(quote!(&mut ok_out,));
-
-                                        ret.c_ret = quote! {
-                                            #mapped_ret
-                                            #crate_path::result::into_int_out_result(ret, ok_out)
-                                        };
-                                        let impl_func_ret = &ret.impl_func_ret;
-                                        ret.impl_func_ret = quote!(#unsafety { #crate_path::result::from_int_result(#impl_func_ret, ok_out) });
-
-                                        break;
-                                    },
-                                    (
-                                        Some(GenericArgument::Type(_)),
-                                        Some(GenericArgument::Type(_)),
-                                        None,
-                                        _,
-                                    ) => {
+                        match ident.to_string().as_str() {
+                            "Option" => {
+                                if let Some(GenericArgument::Type(a)) = args.args.first() {
+                                    if !crate::util::is_null_pointer_optimizable(a, &[]) {
                                         let new_path: Path =
-                                            parse2(quote!(#crate_path::result::CResult))
-                                                .expect("Failed to parse CResult path");
+                                            parse2(quote!(#crate_path::option::COption))
+                                                .expect("Failed to parse COption path");
 
                                         replace_path_keep_final_args(
                                             Some(&mut **ty),
@@ -1366,28 +1355,106 @@ impl ParsedReturnType {
 
                                         ret.c_out = quote!(-> #ty);
                                         ret.c_cast_out = quote!(-> #ty_cast);
-
-                                        let c_ret = &ret.c_ret;
-
-                                        let mapped_ret = quote! {
-                                            let ret = ret.map(|ret| {
-                                                #c_ret
-                                            });
-                                        };
-
-                                        ret.c_ret = quote! {
-                                            #mapped_ret
-                                            ret.into()
-                                        };
-
+                                        ret.c_ret.extend(quote!(.into()));
                                         ret.impl_func_ret.extend(quote!(.into()));
                                     }
-                                    _ => {}
-                                };
+                                }
+                            }
+                            _ => {
+                                if ident == result_ident {
+                                    let mut args = args.args.iter();
+
+                                    let to_match =
+                                        (args.next(), args.next(), args.next(), int_result);
+
+                                    std::mem::drop(args);
+
+                                    match to_match {
+                                        (Some(GenericArgument::Type(a)), _, None, true) => loop {
+                                            ret.c_out = quote!(-> i32);
+                                            ret.c_cast_out = quote!(-> i32);
+
+                                            let c_ret = &ret.c_ret;
+
+                                            let mapped_ret = quote! {
+                                                let ret = ret.map(|ret| {
+                                                    #c_ret
+                                                });
+                                            };
+
+                                            if let Type::Tuple(tup) = a {
+                                                if tup.elems.is_empty() {
+                                                    ret.c_ret = quote! {
+                                                        #mapped_ret
+                                                        #crate_path::result::into_int_result(ret)
+                                                    };
+                                                    let impl_func_ret = &ret.impl_func_ret;
+                                                    ret.impl_func_ret = quote!(#crate_path::result::from_int_result_empty(#impl_func_ret));
+
+                                                    break;
+                                                }
+                                            }
+
+                                            ret.c_ret_params.extend(
+                                                quote!(ok_out: &mut ::core::mem::MaybeUninit<#a>,),
+                                            );
+                                            ret.c_ret_precall_def.extend(quote!(let mut ok_out = ::core::mem::MaybeUninit::uninit();));
+                                            ret.c_call_ret_args.extend(quote!(&mut ok_out,));
+
+                                            ret.c_ret = quote! {
+                                                #mapped_ret
+                                                #crate_path::result::into_int_out_result(ret, ok_out)
+                                            };
+                                            let impl_func_ret = &ret.impl_func_ret;
+                                            ret.impl_func_ret = quote!(#unsafety { #crate_path::result::from_int_result(#impl_func_ret, ok_out) });
+
+                                            break;
+                                        },
+                                        (
+                                            Some(GenericArgument::Type(_)),
+                                            Some(GenericArgument::Type(_)),
+                                            None,
+                                            _,
+                                        ) => {
+                                            let new_path: Path =
+                                                parse2(quote!(#crate_path::result::CResult))
+                                                    .expect("Failed to parse CResult path");
+
+                                            replace_path_keep_final_args(
+                                                Some(&mut **ty),
+                                                new_path.clone(),
+                                            );
+                                            replace_path_keep_final_args(
+                                                ty_cast.as_deref_mut(),
+                                                new_path,
+                                            );
+
+                                            ret.c_out = quote!(-> #ty);
+                                            ret.c_cast_out = quote!(-> #ty_cast);
+
+                                            let c_ret = &ret.c_ret;
+
+                                            let mapped_ret = quote! {
+                                                let ret = ret.map(|ret| {
+                                                    #c_ret
+                                                });
+                                            };
+
+                                            ret.c_ret = quote! {
+                                                #mapped_ret
+                                                ret.into()
+                                            };
+
+                                            ret.impl_func_ret.extend(quote!(.into()));
+                                        }
+                                        _ => {}
+                                    };
+                                }
                             }
                         }
                     }
                 }
+                _ => {}
             }
         }
 

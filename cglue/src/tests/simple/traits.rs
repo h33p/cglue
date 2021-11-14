@@ -6,6 +6,12 @@ use cglue_macro::*;
 pub trait WithSlice {
     fn wslice_1(&mut self, _slc: &[usize]) {}
     fn wslice_2(&mut self, _str: &str) {}
+    fn wslice_3(&mut self) -> &str {
+        "slice"
+    }
+    fn wslice_4<'a>(&'a mut self, _val: &str) -> &'a str {
+        "slice"
+    }
 }
 
 #[cglue_trait]
@@ -62,6 +68,9 @@ fn slices_wrapped() {
     let vtbl = <&WithSliceVtbl<WSCont>>::default();
     let _: unsafe extern "C" fn(&mut WSCont, CSliceRef<usize>) = vtbl.wslice_1();
     let _: unsafe extern "C" fn(&mut WSCont, CSliceRef<u8>) = vtbl.wslice_2();
+    let _: unsafe extern "C" fn(&mut WSCont) -> CSliceRef<u8> = vtbl.wslice_3();
+    let _: for<'a> unsafe extern "C" fn(&'a mut WSCont, CSliceRef<u8>) -> CSliceRef<'a, u8> =
+        vtbl.wslice_4();
 }
 
 #[test]
