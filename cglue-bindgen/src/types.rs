@@ -586,9 +586,3 @@ impl Group {
         ret
     }
 }
-
-#[derive(Clone)]
-pub struct Header {
-    vtables: HashMap<String, Vtable>,
-    groups: Vec<Group>,
-}

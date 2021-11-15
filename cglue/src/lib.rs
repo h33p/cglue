@@ -68,7 +68,8 @@
 //! }
 //! ```
 //!
-//! A CGlue object is ABI-safe, meaning it can be used across FFI-boundary - C code, or dynamically loaded Rust libraries. While Rust does not guarantee your code will work with 2 different compiler versions clashing, CGlue glues it all together in a way that works.
+//! A CGlue object is ABI-safe, meaning it can be used across FFI-boundary - C code, or dynamically loaded Rust libraries. While Rust does not guarantee your code will work with
+//! neither 2 different compiler versions clashing, nor [any other minor changes](https://github.com/rust-lang/compiler-team/issues/457), CGlue glues it all together in a way that works.
 //!
 //! This is done by generating wrapper vtables (virtual function tables) for the specified trait, and creating an opaque object with matching table.
 //!
@@ -119,6 +120,8 @@
 //!
 //! // Implement the group for `Info` structure, defining
 //! // only that `InfoChanger` is optionally implemented.
+//! // This is not required if `unstable` feature is being used!
+//! # #[cfg(not(feature = "unstable"))]
 //! cglue_impl_group!(Info, InfoGroup, InfoChanger);
 //!
 //! # fn main() -> () {
@@ -480,6 +483,7 @@
 //! # cglue_trait_group!(GenGroup<T: Eq>, Getter<T>, { TA });
 //! # use core::ops::Deref;
 //! # use cglue::trait_group::{Opaquable};
+//! # #[cfg(not(feature = "unstable"))]
 //! impl<
 //!         'cglue_a,
 //!         CGlueInst: ::core::ops::Deref<Target = GA<T>>,
@@ -497,6 +501,7 @@
 //!         table.enable_ta()
 //!     }
 //! }
+//! # #[cfg(not(feature = "unstable"))]
 //! impl<
 //!         'cglue_a,
 //!         CGlueInst: ::core::ops::Deref<Target = GA<u64>>,
@@ -823,11 +828,11 @@
 //! crates = ["cglue", "your-crate"]
 //! ```
 //!
-//! Macro expansion currently requires nightly Rust. Thus, it is then possible to generate bindings
+//! Macro expansion currently requires unstable Rust. Thus, it is then possible to generate bindings
 //! like so:
 //!
 //! ```sh
-//! rustup run nightly cbindgen --config cbindgen.toml --crate your_crate --output output_header.h
+//! rustup run unstable cbindgen --config cbindgen.toml --crate your_crate --output output_header.h
 //! ```
 //!
 //! You can set C or C++ language mode by appending `-l c` or `-l c++` flag. Alternatively, set it
@@ -847,12 +852,12 @@
 //! #### cglue-bindgen
 //!
 //! [`cglue-bindgen`](https://crates.io/crates/cglue-bindgen) is a cbindgen wrapper that attempts
-//! to automatically clean up the headers. It also adds an ability to automatically invoke nightly
-//! rust with `+nightly` flag, and also generates vtable wrappers for simpler usage. The change is
+//! to automatically clean up the headers. It also adds an ability to automatically invoke unstable
+//! rust with `+unstable` flag, and also generates vtable wrappers for simpler usage. The change is
 //! simple - just move all cbindgen arguments after `--`:
 //!
 //! ```sh
-//! cglue-bindgen +nightly -- --config cbindgen.toml --crate your_crate --output output_header.h
+//! cglue-bindgen +unstable -- --config cbindgen.toml --crate your_crate --output output_header.h
 //! ```
 //!
 //! This wrapper is probably the most fragile part of CGlue - if something does not work, please
@@ -896,6 +901,9 @@ pub use ::cglue_macro::{
     skip_func, trait_obj, vtbl_only, wrap_with, wrap_with_group, wrap_with_group_mut,
     wrap_with_group_ref, wrap_with_obj, wrap_with_obj_mut, wrap_with_obj_ref,
 };
+
+#[cfg(feature = "unstable")]
+pub use try_default::TryDefault;
 
 pub mod ext {
     // Built-in external traits.

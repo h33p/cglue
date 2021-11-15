@@ -14,7 +14,7 @@ fn use_as_ref() {
 #[test]
 fn use_as_ref_group() {
     let sa = SA {};
-    let obj = group_obj!(sa as MaybeAsRef);
+    let obj = group_obj!(sa as MaybeAsRef<SA>);
     let obj = as_ref!(obj impl AsRef).unwrap();
     impl_as_ref(obj)
 }

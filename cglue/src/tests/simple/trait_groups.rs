@@ -15,7 +15,10 @@ fn test_group() {
 
     // Slight regression in 0.2, can not use const ref, because
     // (optional) TC requires mutable refs for the impl to work.
-    // Can be fixed through nightly.
+    // Can be fixed through unstable features.
+    #[cfg(feature = "unstable")]
+    let _ = group_obj!(&a as TestGroup);
+
     let _ = group_obj!(&mut a as TestGroup);
 
     let group = group_obj!(a as TestGroup);
@@ -29,7 +32,7 @@ fn test_group() {
 
     let cast = cast!(group impl TC).unwrap();
 
-    let mut group = TestGroup::from(cast);
+    let mut group = cast.upcast();
 
     assert!(as_mut!(group impl TB).is_none());
 }

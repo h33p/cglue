@@ -114,9 +114,15 @@ pub fn cglue_trait_group(args: TokenStream) -> TokenStream {
 /// 3. Optional traits that this object contains. Either a single trait, or a braced list of
 ///    traits.
 #[proc_macro]
+#[cfg_attr(feature = "unstable", allow(unused))]
 pub fn cglue_impl_group(args: TokenStream) -> TokenStream {
-    let args = parse_macro_input!(args as TraitGroupImpl);
-    args.implement_group().into()
+    #[cfg(not(feature = "unstable"))]
+    {
+        let args = parse_macro_input!(args as TraitGroupImpl);
+        args.implement_group().into()
+    }
+    #[cfg(feature = "unstable")]
+    TokenStream::new()
 }
 
 /// Convert into a CGlue trait group.

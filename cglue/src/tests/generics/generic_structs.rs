@@ -6,11 +6,6 @@ pub struct GA<T> {
     val: T,
 }
 
-#[derive(Clone, Default)]
-pub struct GB<T> {
-    val: T,
-}
-
 #[cglue_trait]
 pub trait Getter<T> {
     fn get_val(&self) -> &T;

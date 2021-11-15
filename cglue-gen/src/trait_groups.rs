@@ -63,6 +63,7 @@ impl From<Path> for TraitInfo {
 }
 
 /// Describes parse trait group, allows to generate code for it.
+#[cfg_attr(not(feature = "unstable"), allow(unused))]
 pub struct TraitGroup {
     name: Ident,
     cont_name: Ident,
@@ -214,6 +215,7 @@ impl Parse for TraitGroup {
 }
 
 /// Describes trait group to be implemented on a type.
+#[cfg(not(feature = "unstable"))]
 pub struct TraitGroupImpl {
     ty_path: Path,
     ty: Ident,
@@ -225,6 +227,7 @@ pub struct TraitGroupImpl {
     fwd_implemented_vtbl: Option<Vec<TraitInfo>>,
 }
 
+#[cfg(not(feature = "unstable"))]
 impl Parse for TraitGroupImpl {
     fn parse(input: ParseStream) -> Result<Self> {
         let path = input.parse()?;
@@ -303,10 +306,17 @@ impl Parse for TraitGroupImpl {
     }
 }
 
+#[cfg(not(feature = "unstable"))]
 impl TraitGroupImpl {
     /// Generate trait group conversion for a specific type.
     ///
     /// The type will have specified vtables implemented as a conversion function.
+    #[cfg(feature = "unstable")]
+    pub fn implement_group(&self) -> TokenStream {
+        Default::default()
+    }
+
+    #[cfg(not(feature = "unstable"))]
     pub fn implement_group(&self) -> TokenStream {
         let crate_path = crate_path();
 
@@ -554,7 +564,7 @@ impl TraitGroup {
         let mand_vtbl_default = self.mandatory_vtbl_defaults();
         let mand_ret_tmp_default = self.mandatory_ret_tmp_defaults();
         let full_opt_ret_tmp_default = Self::ret_tmp_defaults(self.optional_vtbl.iter());
-        let none_opt_vtbl_list = self.none_opt_vtbl_list();
+        let default_opt_vtbl_list = self.default_opt_vtbl_list();
         let mand_vtbl_list = self.vtbl_list(self.mandatory_vtbl.iter());
         let full_opt_vtbl_list = self.vtbl_list(self.optional_vtbl.iter());
         let mandatory_as_ref_impls = self.mandatory_as_ref_impls(&trg_path);
@@ -671,7 +681,9 @@ impl TraitGroup {
         let opaque_name_arc_box = format_ident!("{}ArcBox", name);
         let opaque_name_ctx_box = format_ident!("{}CtxBox", name);
 
+        #[cfg(not(feature = "unstable"))]
         let filler_trait = format_ident!("{}VtableFiller", name);
+        #[cfg(not(feature = "unstable"))]
         let fwd_filler_trait = format_ident!("{}FwdVtableFiller", name);
         let vtable_type = format_ident!("{}Vtables", name);
 
@@ -815,6 +827,17 @@ impl TraitGroup {
                     }
                 }
 
+                impl<'cglue_a, CGlueInst, CGlueCtx: #ctx_bound, #gen_declare> #opt_name<'cglue_a, CGlueInst, CGlueCtx, #gen_use>
+                    where Self: #trg_path::Opaquable,
+                    #cont_name<CGlueInst, CGlueCtx, #gen_use>: #trg_path::CGlueObjBase,
+                    #gen_where_bounds
+                {
+                    /// Cast back into the original group
+                    pub fn upcast(self) -> <Self as #trg_path::Opaquable>::OpaqueTarget {
+                        #trg_path::Opaquable::into_opaque(self)
+                    }
+                }
+
                 #get_container_impl
 
                 #opt_as_ref_impls
@@ -947,7 +970,8 @@ impl TraitGroup {
             });
         }
 
-        let (extra_filler_traits, extra_filler_trait_imports) = if self.extra_filler_traits {
+        #[cfg(not(feature = "unstable"))]
+        let (extra_filler_traits, filler_trait_imports) = if self.extra_filler_traits {
             let traits = quote! {
                 pub trait #fwd_filler_trait<'cglue_a, CGlueInst: ::core::ops::Deref, CGlueCtx: #ctx_bound, #gen_declare>: 'cglue_a + Sized
                 where
@@ -972,25 +996,53 @@ impl TraitGroup {
             };
 
             let imports = quote! {
+                #filler_trait,
                 #fwd_filler_trait,
             };
 
             (traits, imports)
         } else {
-            (quote!(), quote!())
+            (quote!(), quote!(#filler_trait,))
         };
+
+        #[cfg(feature = "unstable")]
+        let filler_trait_imports = quote!();
 
         let submod_name = format_ident!("cglue_{}", name.to_string().to_lowercase());
 
         let cglue_obj_impl = self.cglue_obj_impl(&trg_path, &self.generics);
+
+        #[cfg(feature = "unstable")]
+        let cglue_inst_filler_trait_bound = quote!();
+        #[cfg(not(feature = "unstable"))]
+        let cglue_inst_filler_trait_bound =
+            quote!(CGlueInst::Target: #filler_trait<'cglue_a, CGlueInst, CGlueCtx, #gen_use>,);
+        #[cfg(feature = "unstable")]
+        let create_vtbl = quote!(Default::default());
+        #[cfg(not(feature = "unstable"))]
+        let create_vtbl = quote!(CGlueInst::Target::fill_table(Default::default()));
+
+        #[cfg(feature = "unstable")]
+        let filler_trait_impl = quote!();
+        #[cfg(not(feature = "unstable"))]
+        let filler_trait_impl = quote! {
+            pub trait #filler_trait<'cglue_a, CGlueInst, CGlueCtx: #ctx_bound, #gen_declare>: Sized
+            where
+                #cont_name<CGlueInst, CGlueCtx, #gen_use>: #trg_path::CGlueObjBase,
+                #gen_where_bounds
+            {
+                fn fill_table(table: #vtable_type<'cglue_a, CGlueInst, CGlueCtx, #gen_use>) -> #vtable_type<'cglue_a, CGlueInst, CGlueCtx, #gen_use>;
+            }
+
+            #extra_filler_traits
+        };
 
         quote! {
 
             pub use #submod_name::{
                 #name,
                 #vtable_type,
-                #filler_trait,
-                #extra_filler_trait_imports
+                #filler_trait_imports
                 #base_name_ref,
                 #base_name_ctx_ref,
                 #base_name_arc_ref,
@@ -1080,7 +1132,7 @@ impl TraitGroup {
                     fn default() -> Self {
                         Self {
                             #mand_vtbl_default
-                            #none_opt_vtbl_list
+                            #default_opt_vtbl_list
                         }
                     }
                 }
@@ -1101,15 +1153,7 @@ impl TraitGroup {
                     #enable_funcs_vtbl
                 }
 
-                pub trait #filler_trait<'cglue_a, CGlueInst, CGlueCtx: #ctx_bound, #gen_declare>: Sized
-                where
-                    #cont_name<CGlueInst, CGlueCtx, #gen_use>: #trg_path::CGlueObjBase,
-                    #gen_where_bounds
-                {
-                    fn fill_table(table: #vtable_type<'cglue_a, CGlueInst, CGlueCtx, #gen_use>) -> #vtable_type<'cglue_a, CGlueInst, CGlueCtx, #gen_use>;
-                }
-
-                #extra_filler_traits
+                #filler_trait_impl
 
                 pub type #base_name_boxed<'cglue_a, CGlueT, #gen_use>
                     = #base_name_ctx_box<'cglue_a, CGlueT, #crate_path::trait_group::NoContext, #gen_use>;
@@ -1195,11 +1239,11 @@ impl TraitGroup {
                     From<#cont_name<CGlueInst, CGlueCtx, #gen_use>> for #name<'cglue_a, CGlueInst, CGlueCtx, #gen_use>
                 where
                     #cont_name<CGlueInst, CGlueCtx, #gen_use>: #trg_path::CGlueObjBase,
-                    CGlueInst::Target: #filler_trait<'cglue_a, CGlueInst, CGlueCtx, #gen_use>,
+                    #cglue_inst_filler_trait_bound
                     #vtbl_where_bounds #gen_where_bounds
                 {
                     fn from(container: #cont_name<CGlueInst, CGlueCtx, #gen_use>) -> Self {
-                        let vtbl = CGlueInst::Target::fill_table(Default::default());
+                        let vtbl = #create_vtbl;
 
                         let #vtable_type {
                             #mand_vtbl_list
@@ -1217,8 +1261,8 @@ impl TraitGroup {
                 impl<'cglue_a, CGlueInst: ::core::ops::Deref, CGlueCtx: #ctx_bound, #gen_declare>
                     From<(CGlueInst, CGlueCtx)> for #name<'cglue_a, CGlueInst, CGlueCtx, #gen_use>
                 where
+                    Self: From<#cont_name<CGlueInst, CGlueCtx, #gen_use>>,
                     #cont_name<CGlueInst, CGlueCtx, #gen_use>: #trg_path::CGlueObjBase,
-                    CGlueInst::Target: #filler_trait<'cglue_a, CGlueInst, CGlueCtx, #gen_use>,
                     #vtbl_where_bounds #gen_where_bounds
                 {
                     fn from((instance, context): (CGlueInst, CGlueCtx)) -> Self {
@@ -1229,7 +1273,7 @@ impl TraitGroup {
                 impl<'cglue_a, CGlueT, #gen_declare>
                     From<CGlueT> for #name<'cglue_a, #crate_path::boxed::CBox<'cglue_a, CGlueT>, #crate_path::trait_group::NoContext, #gen_use>
                 where
-                    CGlueT: #filler_trait<'cglue_a, #crate_path::boxed::CBox<'cglue_a, CGlueT>, #crate_path::trait_group::NoContext, #gen_use>,
+                    Self: From<(#crate_path::boxed::CBox<'cglue_a, CGlueT>, #crate_path::trait_group::NoContext)>,
                     #vtbl_where_bounds_boxed #gen_where_bounds
                 {
                     fn from(instance: CGlueT) -> Self {
@@ -1240,9 +1284,8 @@ impl TraitGroup {
                 impl<'cglue_a, CGlueInst: core::ops::Deref, #gen_declare> From<CGlueInst>
                     for #name<'cglue_a, CGlueInst, #trg_path::NoContext, #gen_use>
                 where
+                    Self: From<(CGlueInst, #crate_path::trait_group::NoContext)>,
                     #cont_name<CGlueInst, #trg_path::NoContext, #gen_use>: #trg_path::CGlueObjBase,
-                    CGlueInst::Target:
-                        #filler_trait<'cglue_a, CGlueInst, #trg_path::NoContext, #gen_use>,
                     #vtbl_where_bounds_noctx #gen_where_bounds
                 {
                     fn from(instance: CGlueInst) -> Self {
@@ -1253,12 +1296,12 @@ impl TraitGroup {
                 impl<'cglue_a, CGlueT, CGlueCtx: #ctx_bound, #gen_declare> From<(CGlueT, CGlueCtx)>
                     for #name<'cglue_a, #crate_path::boxed::CBox<'cglue_a, CGlueT>, CGlueCtx, #gen_use>
                 where
+                    Self: From<(#crate_path::boxed::CBox<'cglue_a, CGlueT>, CGlueCtx)>,
                     #cont_name<#crate_path::boxed::CBox<'cglue_a, CGlueT>, CGlueCtx, #gen_use>: #trg_path::CGlueObjBase,
-                    CGlueT: #filler_trait<'cglue_a, #crate_path::boxed::CBox<'cglue_a, CGlueT>, CGlueCtx, #gen_use>,
                     #vtbl_where_bounds_ctxboxed #gen_where_bounds
                 {
                     fn from((this, context): (CGlueT, CGlueCtx)) -> Self {
-                        #name::from((#crate_path::boxed::CBox::from(this), context))
+                        Self::from((#crate_path::boxed::CBox::from(this), context))
                     }
                 }
 
@@ -1769,10 +1812,31 @@ impl TraitGroup {
     }
 
     /// List of `vtbl: None, ` for all optional vtables.
-    fn none_opt_vtbl_list(&self) -> TokenStream {
+    #[cfg_attr(not(feature = "unstable"), allow(unused))]
+    fn default_opt_vtbl_list(&self) -> TokenStream {
         let mut ret = TokenStream::new();
 
-        for TraitInfo { vtbl_name, .. } in &self.optional_vtbl {
+        #[cfg(feature = "unstable")]
+        let crate_path = crate::util::crate_path();
+
+        let cont_name = &self.cont_name;
+
+        let gen_all_use = &self.generics.gen_use;
+
+        for TraitInfo {
+            vtbl_name,
+            path,
+            vtbl_typename,
+            generics: ParsedGenerics { gen_use, .. },
+            ..
+        } in &self.optional_vtbl
+        {
+            #[cfg(feature = "unstable")]
+            {
+                let vtbl_ty = quote!(&'cglue_a #path #vtbl_typename<'cglue_a, #cont_name<CGlueInst, CGlueCtx, #gen_all_use>, #gen_use>);
+                ret.extend(quote!(#vtbl_name: <#vtbl_ty as #crate_path::TryDefault<#vtbl_ty>>::try_default(),));
+            }
+            #[cfg(not(feature = "unstable"))]
             ret.extend(quote!(#vtbl_name: None,));
         }
 
