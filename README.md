@@ -1,11 +1,16 @@
 
-# CGlue
+# CGlue &emsp; [![Crates.io]][crates] [![API Docs]][docs] [![Build and test]][workflows] [![MIT licensed]][license] [![Rustc 1.45]][rust]
 
-[![Crates.io](https://img.shields.io/crates/v/cglue.svg)](https://crates.io/crates/cglue)
-[![API Docs](https://docs.rs/cglue/badge.svg)](https://docs.rs/cglue)
-[![Build and test](https://github.com/h33p/cglue/actions/workflows/build.yml/badge.svg)](https://github.com/h33p/cglue/actions/workflows/build.yml)
-[![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/h33p/cglue/blob/main/LICENSE)
-![Rustc 1.45](https://img.shields.io/badge/rustc-1.45+-lightgray.svg)
+[Crates.io]: https://img.shields.io/crates/v/cglue.svg
+[crates]: https://crates.io/crates/cglue
+[API Docs]: https://docs.rs/cglue/badge.svg
+[docs]: https://docs.rs/cglue
+[Build and test]: https://github.com/h33p/cglue/actions/workflows/build.yml/badge.svg
+[workflows]: https://github.com/h33p/cglue/actions/workflows/build.yml
+[MIT licensed]: https://img.shields.io/badge/license-MIT-blue.svg
+[license]: https://github.com/h33p/cglue/blob/main/LICENSE
+[Rustc 1.45]: https://img.shields.io/badge/rustc-1.45+-lightgray.svg
+[rust]: https://blog.rust-lang.org/2020/07/16/Rust-1.45.0.html
 
 If all code is glued together, our glue is the safest on the market.
 
@@ -26,11 +31,14 @@ If all code is glued together, our glue is the safest on the market.
     - [Setup](#setup)
     - [cglue-bindgen](#cglue-bindgen)
 - [Limitations](#limitations)
+  - [Unstable feature](#unstable-feature)
+- [Projects using CGlue](#projects-using-cglue)
 <!-- /toc -->
 
 ## Overview
 
-CGlue offers an easy way to ABI (application binary interface) safety. Just a few annotations and your trait is ready to go!
+CGlue bridges Rust traits between C and other languages. It aims to be seamless to integrate -
+just add a few annotations around your traits, and they'll be good to go!
 
 ```rust
 use cglue::*;
@@ -68,7 +76,8 @@ fn main() -> () {
 }
 ```
 
-A CGlue object is ABI-safe, meaning it can be used across FFI-boundary - C code, or dynamically loaded Rust libraries. While Rust does not guarantee your code will work with 2 different compiler versions clashing, CGlue glues it all together in a way that works.
+Rust does not guarantee your code will work with
+neither 2 different compiler versions clashing, nor [any other minor changes](https://github.com/rust-lang/compiler-team/issues/457), CGlue glues it all together in a way that works.
 
 This is done by generating wrapper vtables (virtual function tables) for the specified trait, and creating an opaque object with matching table.
 
@@ -106,6 +115,7 @@ cglue_trait_group!(InfoGroup, InfoPrinter, { InfoChanger, InfoDeleter });
 
 // Implement the group for `Info` structure, defining
 // only that `InfoChanger` is optionally implemented.
+// This is not required if `unstable` feature is being used!
 cglue_impl_group!(Info, InfoGroup, InfoChanger);
 
 let mut info = Info { value: 5 };
@@ -134,9 +144,11 @@ And there is much more! Here are some highlights:
 
 3. Ability to wrap associated trait types into new CGlue trait objects and groups.
 
-4. The above ability also works with mutable, and const reference associated type returns*.
+4. The above ability also works with mutable, and const reference associated type returns[*](#associated-type-wrapping).
 
 5. Generic traits and their groups.
+
+6. [Library reference counting](#plugin-system).
 
 ## In-depth look
 
@@ -294,6 +306,8 @@ cglue_impl_group!(GA<T = u64>, GenGroup<T>, {});
 ```
 
 #### Manually implementing groups
+
+NOTE: This is not supported if [`unstable`](#unstable-feature) feature is enabled.
 
 It is also possible to manually implement the groups by implementing `MyGroupVtableFiller`. Here is what
 the above 2 macro invocations expand to:
@@ -647,3 +661,25 @@ open up an issue report. In the future, we will aim to integrate CGlue directly 
 
 5. There probably are some corner cases when it comes to path imports. If you find any, please
    file an issue report :)
+
+### Unstable feature
+
+`cglue_impl_group` may force you into making conservative optional trait choices, because it is
+currently not possible to specialize these cases with stable Rust features. But this is not
+always desirable. You can solve this, by enabling `unstable` feature.
+
+This feature makes `cglue_impl_group` a no-op, and automatically enables the widest set of
+traits for the given object.
+
+To use it you need to either:
+
+- `nightly` Rust compiler.
+
+- Set `RUSTC_BOOTSTRAP=try_default` environment variable when building.
+
+## Projects using CGlue
+
+* [memflow](https://github.com/memflow/memflow)
+
+If you want your project to be added to the list, please open an issue report :)
+

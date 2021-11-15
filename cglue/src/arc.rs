@@ -67,6 +67,9 @@ unsafe impl<T> Opaquable for CArc<T> {
 unsafe impl<T: Sync + Send> Send for COptArc<T> {}
 unsafe impl<T: Sync + Send> Sync for COptArc<T> {}
 
+/// FFI-Safe Arc
+///
+/// This is an FFI-Safe equivalent of Option<Arc<T>>.
 #[repr(C)]
 pub struct COptArc<T: Sized + 'static> {
     instance: Option<&'static T>,
