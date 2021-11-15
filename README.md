@@ -33,6 +33,7 @@ If all code is glued together, our glue is the safest on the market.
 - [Limitations](#limitations)
   - [Unstable feature](#unstable-feature)
 - [Projects using CGlue](#projects-using-cglue)
+- [Changelog](#changelog)
 <!-- /toc -->
 
 ## Overview
@@ -682,4 +683,8 @@ To use it you need to either:
 * [memflow](https://github.com/memflow/memflow)
 
 If you want your project to be added to the list, please open an issue report :)
+
+## Changelog
+
+It is available in [CHANGELOG.md](https://github.com/h33p/cglue/blob/main/CHANGELOG.md) file.
 

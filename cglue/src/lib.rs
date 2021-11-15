@@ -33,6 +33,7 @@
 //! - [Limitations](#limitations)
 //!   - [Unstable feature](#unstable-feature)
 //! - [Projects using CGlue](#projects-using-cglue)
+//! - [Changelog](#changelog)
 //! <!-- /toc -->
 //!
 //! ## Overview
@@ -912,6 +913,10 @@
 //! * [memflow](https://github.com/memflow/memflow)
 //!
 //! If you want your project to be added to the list, please open an issue report :)
+//!
+//! ## Changelog
+//!
+//! It is available in [CHANGELOG.md](https://github.com/h33p/cglue/blob/main/CHANGELOG.md) file.
 //!
 
 #![cfg_attr(not(feature = "std"), no_std)]
