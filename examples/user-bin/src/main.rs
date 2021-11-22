@@ -21,7 +21,9 @@ fn main() -> Result<()> {
         lib = "plugin_lib".to_string();
     }
 
-    let mut obj = unsafe { load_plugin(CString::new(lib.trim()).unwrap().as_c_str().into()) };
+    let mut obj = unsafe { load_plugin(CString::new(lib.trim()).unwrap().as_c_str().into()) }
+        .verify()
+        .ok_or("Plugin ABI mismatch!")?;
 
     {
         let mut borrowed = obj.borrow_features();
@@ -74,14 +76,16 @@ fn use_kvstore(obj: &mut impl KeyValueStore) -> Result<()> {
     println!("Enter key:");
     io::stdin().read_line(&mut buf)?;
 
-    println!("Cur val: {}", obj.get_key_value(buf.trim().into()));
+    let key = buf.trim().to_string();
+
+    println!("Cur val: {}", obj.get_key_value(&key));
 
     buf.clear();
     println!("Enter value:");
     io::stdin().read_line(&mut buf)?;
 
     let new_val = buf.trim().parse::<usize>()?;
-    obj.write_key_value(buf.trim().into(), new_val);
+    obj.write_key_value(&key, new_val);
 
     Ok(())
 }

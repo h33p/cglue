@@ -8,6 +8,7 @@ use std::sync::Arc;
 /// This Arc essentially uses clone/drop from the module that created it, to not mix up global
 /// allocators.
 #[repr(C)]
+#[cfg_attr(feature = "abi_stable", derive(::abi_stable::StableAbi))]
 pub struct CArc<T: Sized + 'static> {
     instance: Option<&'static T>,
     clone_fn: unsafe extern "C" fn(Option<&'static T>) -> Option<&'static T>,
@@ -71,6 +72,7 @@ unsafe impl<T: Sync + Send> Sync for COptArc<T> {}
 ///
 /// This is an FFI-Safe equivalent of Option<Arc<T>>.
 #[repr(C)]
+#[cfg_attr(feature = "abi_stable", derive(::abi_stable::StableAbi))]
 pub struct COptArc<T: Sized + 'static> {
     instance: Option<&'static T>,
     clone_fn: Option<unsafe extern "C" fn(Option<&'static T>) -> Option<&'static T>>,

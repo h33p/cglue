@@ -41,7 +41,8 @@ impl Parse for PathTokens {
 
 // TODO: Add dynamic setting of Send / Sync
 pub fn ctx_bound() -> TokenStream {
-    quote!('static + Clone + Send + Sync)
+    let crate_path = crate::util::crate_path();
+    quote!(#crate_path::trait_group::ContextBounds)
 }
 
 pub fn cglue_c_opaque_bound() -> TokenStream {
@@ -668,6 +669,7 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
     let vtbl_ident = format_ident!("{}Vtbl", trait_name);
     let ret_tmp_ident = format_ident!("{}RetTmp", trait_name);
     let ret_tmp_ident_phantom = format_ident!("{}RetTmpPhantom", trait_name);
+    let accessor_trait_ident = format_ident!("{}OpaqueObj", trait_name);
 
     let base_box_trait_obj_ident = format_ident!("{}BaseBox", trait_name);
     let base_ctx_trait_obj_ident = format_ident!("{}BaseCtxBox", trait_name);
@@ -720,6 +722,23 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
     };
 
     let gen_declare_stripped = generics.declare_without_nonstatic_bounds();
+    let gen_lt_bounds = generics.declare_lt_for_all(&quote!('cglue_a));
+    let gen_sabi_bounds = generics.declare_sabi_for_all(&crate_path);
+
+    let gen_where_bounds_base = quote! {
+        #gen_where_bounds
+        #gen_lt_bounds
+    };
+
+    let gen_where_bounds = quote! {
+        #gen_where_bounds_base
+        #gen_sabi_bounds
+    };
+
+    #[cfg(feature = "layout_checks")]
+    let derive_layouts = quote!(#[derive(::abi_stable::StableAbi)]);
+    #[cfg(not(feature = "layout_checks"))]
+    let derive_layouts = quote!();
 
     // Function definitions in the vtable
     let mut vtbl_func_defintions = TokenStream::new();
@@ -914,6 +933,7 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
             /// an associated type. Note that these temporary values should not be accessed
             /// directly. Use the trait functions.
             #[repr(C)]
+            #derive_layouts
             pub struct #ret_tmp_ident<CGlueCtx: #ctx_bound, #gen_use>
             {
                 #ret_tmp_type_defs
@@ -940,6 +960,8 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
     } else {
         quote! {
             /// Technically unused phantom data definition structure.
+            #[repr(C)]
+            #derive_layouts
             pub struct #ret_tmp_ident_phantom<CGlueCtx: #ctx_bound, #gen_use>
             {
                 #phantom_data_definitions
@@ -960,6 +982,53 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
         }
     };
 
+    #[cfg(feature = "layout_checks")]
+    let with_layout_impl = quote! {
+        impl<'cglue_a, CGlueC: 'cglue_a + #trg_path::CGlueObjBase, #gen_declare_stripped> #trg_path::WithLayout
+            for #vtbl_ident<'cglue_a, CGlueC, #gen_use>
+        where
+            CGlueC: abi_stable::StableAbi,
+            #gen_where_bounds
+        {
+            fn get_layout(&self) -> Option<&'static abi_stable::type_layout::TypeLayout> {
+                self.layout
+            }
+        }
+    };
+    #[cfg(not(feature = "layout_checks"))]
+    let with_layout_impl = quote!();
+
+    #[cfg(feature = "layout_checks")]
+    let (layout_definition, layout_default_impl) = {
+        (
+            quote!(layout: Option<&'static ::abi_stable::type_layout::TypeLayout>,),
+            quote!(layout: Some(<<#vtbl_ident<'cglue_a, CGlueC, #gen_use> as #trg_path::CGlueBaseVtbl>::OpaqueVtbl as ::abi_stable::StableAbi>::LAYOUT),),
+        )
+    };
+    #[cfg(not(feature = "layout_checks"))]
+    let (layout_definition, layout_default_impl) = { (quote!(), quote!()) };
+
+    #[cfg(feature = "layout_checks")]
+    let (opaque_vtbl_bounds, container_vtbl_bounds) = (
+        quote!(#vtbl_ident<'cglue_a, CGlueC::OpaqueTarget, #gen_use>: #trg_path::WithLayout,),
+        quote!(#vtbl_ident<'cglue_a, <Self as #trg_path::GetContainer>::ContType, #gen_use>: #trg_path::WithLayout,),
+    );
+    #[cfg(not(feature = "layout_checks"))]
+    let (opaque_vtbl_bounds, container_vtbl_bounds) = (quote!(), quote!());
+
+    #[cfg(feature = "layout_checks")]
+    let (layout_checkable_bound, objcont_accessor_bound, accessor_layout_dec, accessor_layout_def) = (
+        quote!(::abi_stable::StableAbi),
+        quote!(<CGlueO as #trg_path::GetContainer>::ContType: ::abi_stable::StableAbi,),
+        quote!(
+            const VTBL_LAYOUT: &'static ::abi_stable::type_layout::TypeLayout;
+        ),
+        quote!(const VTBL_LAYOUT: &'static ::abi_stable::type_layout::TypeLayout = <Self::#vtbl_ident as ::abi_stable::StableAbi>::LAYOUT;),
+    );
+    #[cfg(not(feature = "layout_checks"))]
+    let (layout_checkable_bound, objcont_accessor_bound, accessor_layout_dec, accessor_layout_def) =
+        (quote!(), quote!(), quote!(), quote!());
+
     // Glue it all together
     quote! {
         #tr
@@ -967,6 +1036,7 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
         #vis use #submod_name::{
             #vtbl_ident,
             #ret_tmp_ident,
+            #accessor_trait_ident,
 
             #base_box_trait_obj_ident,
             #base_ctx_trait_obj_ident,
@@ -1000,10 +1070,12 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
             ///
             /// This virtual function table contains ABI-safe interface for the given trait.
             #[repr(C)]
-            pub struct #vtbl_ident<'cglue_a, CGlueC: #trg_path::CGlueObjBase, #gen_declare_stripped>
+            #derive_layouts
+            pub struct #vtbl_ident<'cglue_a, CGlueC: 'cglue_a + #trg_path::CGlueObjBase, #gen_declare_stripped>
             where
-                #gen_where_bounds
+                #gen_where_bounds_base
             {
+                #layout_definition
                 #vtbl_func_defintions
                 _lt_cglue_a: ::core::marker::PhantomData<&'cglue_a CGlueC>,
             }
@@ -1024,10 +1096,14 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
                 for &'cglue_a #vtbl_ident<'cglue_a, CGlueC, #gen_use>
             where #gen_where_bounds #trait_type_bounds #cglue_c_into_inner
                 CGlueC::ObjType: for<#life_declare> #trait_name<#life_use #gen_use>,
+                CGlueC: #trg_path::Opaquable,
+                CGlueC::OpaqueTarget: #trg_path::GenericTypeBounds,
+                #vtbl_ident<'cglue_a, CGlueC, #gen_use>: #trg_path::CGlueBaseVtbl,
             {
                 /// Create a static vtable for the given type.
                 fn default() -> Self {
                     &#vtbl_ident {
+                        #layout_default_impl
                         #vtbl_default_funcs
                         _lt_cglue_a: ::core::marker::PhantomData,
                     }
@@ -1036,21 +1112,34 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
 
             /* Vtable trait implementations. */
 
+            impl<'cglue_a, CGlueC: #trg_path::CGlueObjBase, #gen_declare_stripped>
+                #trg_path::CGlueVtblCont for #vtbl_ident<'cglue_a, CGlueC, #gen_use>
+            where
+                #gen_where_bounds
+            {
+                type ContType = CGlueC;
+            }
+
             unsafe impl<'cglue_a, CGlueC: #trg_path::Opaquable + #trg_path::CGlueObjBase + 'cglue_a, #gen_declare_stripped> #trg_path::CGlueBaseVtbl
                 for #vtbl_ident<'cglue_a, CGlueC, #gen_use>
             where #gen_where_bounds #cglue_c_opaque_bound
                 CGlueC::ObjType: for<#life_declare> #trait_name<#life_use #gen_use>,
+                CGlueC::OpaqueTarget: #trg_path::GenericTypeBounds,
+                #opaque_vtbl_bounds
             {
                 type OpaqueVtbl = #vtbl_ident<'cglue_a, CGlueC::OpaqueTarget, #gen_use>;
                 type Context = CGlueC::Context;
                 type RetTmp = #ret_tmp_ident<CGlueC::Context, #gen_use>;
             }
 
+            #with_layout_impl
+
             impl<'cglue_a, CGlueC #cglue_c_bounds, CGlueCtx: #ctx_bound, #gen_declare_stripped> #trg_path::CGlueVtbl<CGlueC>
                 for #vtbl_ident<'cglue_a, CGlueC, #gen_use>
             where #gen_where_bounds
                   #cglue_c_opaque_bound
                 CGlueC: #trg_path::Opaquable,
+                CGlueC::OpaqueTarget: #trg_path::GenericTypeBounds,
                 CGlueC::ObjType: for<#life_declare> #trait_name<#life_use #gen_use> {}
 
             #[doc = #base_box_trait_obj_doc]
@@ -1143,12 +1232,43 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
 
             #cfuncs
 
+            /* Define trait for simpler type accesses */
+
+            pub trait #accessor_trait_ident<'cglue_a #cglue_a_outlives, #life_declare #gen_declare>
+                : 'cglue_a + #trg_path::GetContainer + #trg_path::GetVtbl<#vtbl_ident<'cglue_a, <Self as #trg_path::GetContainer>::ContType, #gen_use>> #supertrait_bounds
+            where
+                #gen_where_bounds
+            {
+                type #vtbl_ident: #trg_path::CGlueVtblCont<ContType = <Self as #trg_path::GetContainer>::ContType> + #layout_checkable_bound;
+
+                #accessor_layout_dec
+            }
+
+            impl<'cglue_a #cglue_a_outlives, #life_declare
+                CGlueO: 'cglue_a + #trg_path::GetContainer + #trg_path::GetVtbl<#vtbl_ident<'cglue_a, <Self as #trg_path::GetContainer>::ContType, #gen_use>> #supertrait_bounds, #gen_declare>
+                #accessor_trait_ident<'cglue_a, #life_use #gen_use> for CGlueO
+            where
+                #objcont_accessor_bound
+                #gen_where_bounds
+            {
+                type #vtbl_ident = #vtbl_ident<'cglue_a, <Self as #trg_path::GetContainer>::ContType, #gen_use>;
+
+                #accessor_layout_def
+            }
+
             /* Trait implementation. */
 
-            impl<'cglue_a #cglue_a_outlives, #life_declare CGlueO: 'cglue_a + #trg_path::GetContainer + #trg_path::GetVtbl<#vtbl_ident<'cglue_a, <Self as #trg_path::GetContainer>::ContType, #gen_use>> #supertrait_bounds, #gen_declare>
+            impl<'cglue_a #cglue_a_outlives, #life_declare
+                CGlueO: 'cglue_a + #trg_path::GetContainer + #trg_path::GetVtbl<#vtbl_ident<'cglue_a, <Self as #trg_path::GetContainer>::ContType, #gen_use>> #supertrait_bounds
+                    // We essentially need only this bound, but we repeat the previous ones because
+                    // otherwise we get conflicting impl errors.
+                    // TODO: Is this a bug? Typically Rust typesystem doesn't complain in such cases.
+                    + #accessor_trait_ident<'cglue_a, #life_use #gen_use>,
+            #gen_declare>
                 #trait_impl_name<#life_use #gen_use> for CGlueO
             where
                 #gen_where_bounds
+                #container_vtbl_bounds
             {
                 #trait_type_defs
                 #trait_impl_fns

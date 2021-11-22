@@ -151,6 +151,8 @@ And there is much more! Here are some highlights:
 
 6. [Library reference counting](#plugin-system).
 
+7. Optional runtime ABI/API validation with [abi\_stable](https://crates.io/crates/abi_stable) (enable `layout_checks` feature).
+
 ## In-depth look
 
 ### Safety assumptions
@@ -159,9 +161,8 @@ This crate relies on the assumption that opaque objects will not be tampered wit
 vtable functions will not be modified. It is being ensured through encapsulation of fields
 from anywhere by using hidden submodules. However, unverifiable users (C libraries) may still
 be able to modify the tables. This library assumes they are not malicious and does not
-perform any runtime verification. Currently there is no verification of API version mismatches,
-but it is in the plans to attempt to integrate with version checking systems available in
-[abi\_stable](https://crates.io/crates/abi_stable) crate.
+perform any runtime verification. API version mismatch checking with
+[abi\_stable](https://crates.io/crates/abi_stable) is an opt-in feature.
 
 Other than 2 bits in [associated type wrapping](#associated-type-wrapping), this crate should
 be safe.
@@ -206,6 +207,9 @@ Finally, the following underlying types exist, but do not need to be interacted 
 --- | ---
 | `MyTraitVtbl<C>` | Table of all functions of the trait. Should be opaque to the user. |
 | `MyTraitRetTmp<Ctx>` | Structure for temporary return values. It should be opaque to the user. |
+
+Instead, every opaque CGlue object implements `MyTraitOpaqueObj` trait, which contains the type
+of the vtable, and/or reference to its ABI layout (with `layout_checks` feature).
 
 `cglue_trait_group!` macro for `MyGroup` will generate the following main types:
 
@@ -317,13 +321,14 @@ the above 2 macro invocations expand to:
 impl<
         'cglue_a,
         CGlueInst: ::core::ops::Deref<Target = GA<T>>,
-        CGlueCtx: 'static + Clone + Send + Sync,
+        CGlueCtx: cglue::trait_group::ContextBounds,
         T: Eq,
     > GenGroupVtableFiller<'cglue_a, CGlueInst, CGlueCtx, T> for GA<T>
 where
     Self: TA,
     &'cglue_a TAVtbl<'cglue_a, GenGroupContainer<CGlueInst, CGlueCtx, T>>:
         'cglue_a + Default,
+    T: cglue::trait_group::GenericTypeBounds,
 {
     fn fill_table(
         table: GenGroupVtables<'cglue_a, CGlueInst, CGlueCtx, T>,
@@ -334,7 +339,7 @@ where
 impl<
         'cglue_a,
         CGlueInst: ::core::ops::Deref<Target = GA<u64>>,
-        CGlueCtx: 'static + Clone + Send + Sync,
+        CGlueCtx: cglue::trait_group::ContextBounds,
     > GenGroupVtableFiller<'cglue_a, CGlueInst, CGlueCtx, u64> for GA<u64>
 {
     fn fill_table(
@@ -656,11 +661,7 @@ open up an issue report. In the future, we will aim to integrate CGlue directly 
 3. Custom generic arguments for cglue traits are not yet supported, but this is to be improved
    upon.
 
-4. There is no runtime validation of ABI differences caused by API changes. It is planned
-   for a future release, perhaps integrating with
-   [abi\_stable](https://crates.io/crates/abi_stable).
-
-5. There probably are some corner cases when it comes to path imports. If you find any, please
+4. There probably are some corner cases when it comes to path imports. If you find any, please
    file an issue report :)
 
 ### Unstable feature
@@ -677,6 +678,9 @@ To use it you need to either:
 - `nightly` Rust compiler.
 
 - Set `RUSTC_BOOTSTRAP=try_default` environment variable when building.
+
+Do note, however, that Rust's stability guarantees get invalidated by either of these 2
+options.
 
 ## Projects using CGlue
 

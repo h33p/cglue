@@ -17,6 +17,12 @@ int main() {
 
 	PluginInner obj = load_plugin(len > 0 ? name : "plugin_lib");
 
+	if (!is_layout_valid(&obj)) {
+		printf("Plugin ABI mismatch!\n");
+		plugininner_drop(obj);
+		return 1;
+	}
+
 	{
 		FeaturesGroup borrowed = borrow_features(&obj);
 

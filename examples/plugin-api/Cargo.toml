@@ -8,5 +8,6 @@ edition = "2018"
 crate-type = ["lib", "cdylib", "staticlib"]
 
 [dependencies]
-cglue = { path = "../../cglue/" }
+cglue = { path = "../../cglue/", features = ["layout_checks"] }
+abi_stable = { path = "../../../../other/abi_stable_crates/abi_stable" }
 libloading = "0.7"

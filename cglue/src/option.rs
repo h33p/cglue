@@ -7,6 +7,7 @@
 ///
 /// Typical workflow would include temporarily converting into/from COption.
 #[repr(C)]
+#[cfg_attr(feature = "abi_stable", derive(::abi_stable::StableAbi))]
 pub enum COption<T> {
     None,
     Some(T),

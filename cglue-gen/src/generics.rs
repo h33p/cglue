@@ -79,6 +79,32 @@ impl ParsedGenerics {
         ret
     }
 
+    #[cfg(feature = "layout_checks")]
+    pub fn declare_lt_for_all(&self, lt: &TokenStream) -> TokenStream {
+        let mut ts = TokenStream::new();
+
+        for p in &self.gen_use {
+            ts.extend(quote!(#p: #lt,));
+        }
+
+        ts
+    }
+
+    #[cfg(not(feature = "layout_checks"))]
+    pub fn declare_lt_for_all(&self, _: &TokenStream) -> TokenStream {
+        Default::default()
+    }
+
+    pub fn declare_sabi_for_all(&self, crate_path: &TokenStream) -> TokenStream {
+        let mut ts = TokenStream::new();
+
+        for p in &self.gen_use {
+            ts.extend(quote!(#p: #crate_path::trait_group::GenericTypeBounds,));
+        }
+
+        ts
+    }
+
     /// This function cross references input lifetimes and returns a new Self
     /// that only contains generic type information about those types.
     pub fn cross_ref<'a>(&self, input: impl IntoIterator<Item = &'a ParsedGenerics>) -> Self {

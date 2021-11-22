@@ -3,8 +3,12 @@ use super::trait_defs::*;
 use cglue_macro::*;
 
 #[derive(Clone, Copy, Debug)]
+#[repr(C)]
+#[cfg_attr(feature = "abi_stable", derive(::abi_stable::StableAbi))]
 pub struct SA {}
 #[derive(Clone, Copy, Debug)]
+#[repr(C)]
+#[cfg_attr(feature = "abi_stable", derive(::abi_stable::StableAbi))]
 pub struct SB {}
 
 impl TA for SA {

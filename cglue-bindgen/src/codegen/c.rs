@@ -31,6 +31,11 @@ pub fn parse_header(header: &str, config: &Config) -> Result<String> {
         trace!("CAP: {} {}", cap, ctx);
     }
 
+    // Check if we need to typedef `TypeLayout`
+    let type_layout_re = Regex::new(r"((typedef [\s]+)|struct) TypeLayout")?;
+    let needs_type_layout =
+        header.contains("const TypeLayout *") && !type_layout_re.is_match(&header);
+
     // PROCESSING:
 
     // Remove zsized ret tmps
@@ -143,7 +148,7 @@ pub fn parse_header(header: &str, config: &Config) -> Result<String> {
         },
     ) {
         all_wrappers += &format!(
-            r"{ty} ctx_{prefix}_clone({ty} *self) {{
+            r"static {ty} ctx_{prefix}_clone({ty} *self) {{
     {ty} ret = *self;
     {impl_clone}
     return ret;
@@ -340,7 +345,7 @@ typedef struct {} {};",
     all_wrappers += r"
 struct CollectBase {
     /* Pointer to array of data */
-    void *buf;
+    char *buf;
     /* Capacity of the buffer (in elements) */
     size_t capacity;
     /* Current size of the buffer (in elements) */
@@ -362,7 +367,7 @@ static bool cb_collect_dynamic_base(struct CollectBase *ctx, size_t elem_size, v
 
     if (!ctx->buf || ctx->size >= ctx->capacity) {
         size_t new_capacity = ctx->buf ? ctx->capacity * 2 : 64;
-        void *buf = realloc(ctx->buf, elem_size * new_capacity);
+        char *buf = (char *)realloc(ctx->buf, elem_size * new_capacity);
         if (buf) {
             ctx->buf = buf;
             ctx->capacity = new_capacity;
@@ -378,7 +383,7 @@ static bool cb_collect_dynamic_base(struct CollectBase *ctx, size_t elem_size, v
 
 struct BufferIterator {
     /* Pointer to the data buffer */
-    const void *buf;
+    const char *buf;
     /* Number of elements in the buffer */
     size_t size;
     /* Current element index */
@@ -499,6 +504,15 @@ static inline bool cb_count_{typename}(size_t *cnt, {typename} info) {{
             "$0\n{}\n// Forward declarations for vtables and their wrappers\n{}",
             helper_macros, fwd_declarations
         )
+    };
+
+    let fwd_declarations = if needs_type_layout {
+        format!(
+            "{}\ntypedef struct TypeLayout TypeLayout;\n",
+            fwd_declarations
+        )
+    } else {
+        fwd_declarations
     };
 
     // TODO: improve start detection

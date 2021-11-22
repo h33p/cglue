@@ -3,6 +3,8 @@
 // TODO: split everything up
 
 use crate::boxed::CBox;
+#[cfg(feature = "layout_checks")]
+use abi_stable::{abi_stability::check_layout_compatibility, type_layout::TypeLayout};
 #[cfg(not(feature = "rust_void"))]
 pub use core::ffi::c_void;
 use core::mem::ManuallyDrop;
@@ -18,7 +20,8 @@ pub type c_void = ();
 ///
 /// Container merely is a this pointer with some optional temporary return reference context.
 #[repr(C)]
-pub struct CGlueTraitObj<'a, T, V, C, R> {
+#[cfg_attr(feature = "abi_stable", derive(::abi_stable::StableAbi))]
+pub struct CGlueTraitObj<'a, T, V: 'a, C, R> {
     vtbl: &'a V,
     container: CGlueObjContainer<T, C, R>,
 }
@@ -37,6 +40,7 @@ pub struct CGlueTraitObj<'a, T, V, C, R> {
 /// `ret_tmp` is usually `PhantomData` representing nothing, unless the trait has functions that
 /// return references to associated types, in which case space is reserved for wrapping structures.
 #[repr(C)]
+#[cfg_attr(feature = "abi_stable", derive(::abi_stable::StableAbi))]
 pub struct CGlueObjContainer<T, C, R> {
     instance: T,
     context: C,
@@ -127,13 +131,8 @@ pub type CGlueOpaqueTraitObj<'a, T, V> = CGlueTraitObj<
     <V as CGlueBaseVtbl>::RetTmp,
 >;
 
-unsafe impl<
-        'a,
-        T: Opaquable,
-        F: CGlueBaseVtbl<Context = C, RetTmp = R>,
-        C: Clone + Send + Sync,
-        R: Default,
-    > Opaquable for CGlueTraitObj<'a, T, F, C, R>
+unsafe impl<'a, T: Opaquable, F: CGlueBaseVtbl<Context = C, RetTmp = R>, C: ContextBounds, R: Default>
+    Opaquable for CGlueTraitObj<'a, T, F, C, R>
 {
     type OpaqueTarget = CGlueTraitObj<'a, T::OpaqueTarget, F::OpaqueVtbl, C, R>;
 }
@@ -148,10 +147,60 @@ impl<T, V, C, R> GetVtbl<V> for CGlueTraitObj<'_, T, V, C, R> {
     }
 }
 
+#[repr(transparent)]
+#[cfg(feature = "layout_checks")]
+pub struct LayoutGuard<T>(T);
+
+#[cfg(feature = "layout_checks")]
+impl<T: VerifiableLayout> From<T> for LayoutGuard<T> {
+    fn from(o: T) -> Self {
+        Self(o)
+    }
+}
+
+#[cfg(feature = "layout_checks")]
+impl<T: VerifiableLayout> LayoutGuard<T> {
+    pub fn verify(self) -> Option<T> {
+        if self.0.verify_layout().is_valid_strict() {
+            Some(self.0)
+        } else {
+            None
+        }
+    }
+
+    pub fn verify_relaxed(self) -> Option<T> {
+        if self.0.verify_layout().is_valid_strict() {
+            Some(self.0)
+        } else {
+            None
+        }
+    }
+
+    pub fn is_valid(&self) -> bool {
+        self.0.verify_layout().is_valid_strict()
+    }
+
+    pub fn is_valid_relaxed(&self) -> bool {
+        self.0.verify_layout().is_valid_relaxed()
+    }
+}
+
+#[cfg(feature = "layout_checks")]
+pub trait VerifiableLayout {
+    fn verify_layout(&self) -> VerifyLayout;
+}
+
+#[cfg(feature = "layout_checks")]
+impl<T, V: WithLayout, C, R> VerifiableLayout for CGlueTraitObj<'_, T, V, C, R> {
+    fn verify_layout(&self) -> VerifyLayout {
+        self.vtbl.verify_layout()
+    }
+}
+
 // Conversions into container type itself.
 // Needed when generated code returns Self
 
-impl<'a, T: Deref<Target = F>, F, C: 'static + Clone + Send + Sync, R: Default> From<(T, C)>
+impl<'a, T: Deref<Target = F>, F, C: ContextBounds, R: Default> From<(T, C)>
     for CGlueObjContainer<T, C, R>
 {
     fn from((instance, context): (T, C)) -> Self {
@@ -175,9 +224,7 @@ impl<'a, T, R: Default> From<T> for CGlueObjContainer<CBox<'a, T>, NoContext, R>
     }
 }
 
-impl<'a, T, C: 'static + Clone + Send + Sync, R: Default> From<(T, C)>
-    for CGlueObjContainer<CBox<'a, T>, C, R>
-{
+impl<'a, T, C: ContextBounds, R: Default> From<(T, C)> for CGlueObjContainer<CBox<'a, T>, C, R> {
     fn from((this, context): (T, C)) -> Self {
         Self::from((CBox::from(this), context))
     }
@@ -188,7 +235,7 @@ impl<
         T: Deref<Target = F>,
         F,
         V: CGlueVtbl<CGlueObjContainer<T, C, R>, Context = C, RetTmp = R>,
-        C: 'static + Clone + Send + Sync,
+        C: ContextBounds,
         R: Default,
     > From<CGlueObjContainer<T, C, R>> for CGlueTraitObj<'a, T, V, V::Context, V::RetTmp>
 where
@@ -207,7 +254,7 @@ impl<
         T: Deref<Target = F>,
         F,
         V: CGlueVtbl<CGlueObjContainer<T, C, R>, Context = C, RetTmp = R>,
-        C: 'static + Clone + Send + Sync,
+        C: ContextBounds,
         R: Default,
     > From<(T, V::Context)> for CGlueTraitObj<'a, T, V, V::Context, V::RetTmp>
 where
@@ -251,7 +298,7 @@ impl<
         'a,
         T,
         V: CGlueVtbl<CGlueObjContainer<CBox<'a, T>, C, R>, Context = C, RetTmp = R>,
-        C: 'static + Clone + Send + Sync,
+        C: ContextBounds,
         R: Default,
     > From<(T, V::Context)> for CGlueTraitObj<'a, CBox<'a, T>, V, V::Context, V::RetTmp>
 where
@@ -262,6 +309,42 @@ where
     }
 }
 
+/// Describe type bounds for Context type.
+///
+/// These bounds differ depending on features enabled. For instance, enabling `layout_checks` adds
+/// a requirement for `StableAbi` trait.
+///
+/// Since `layout_checks` is enabled, `StableAbi` requirement has been imposed.
+#[cfg(feature = "layout_checks")]
+pub trait ContextBounds: 'static + Clone + Send + Sync + abi_stable::StableAbi {}
+#[cfg(feature = "layout_checks")]
+impl<T: 'static + Clone + Send + Sync + abi_stable::StableAbi> ContextBounds for T {}
+
+/// Describe type bounds for Context type.
+///
+/// These bounds differ depending on features enabled. For instance, enabling `layout_checks` adds
+/// a requirement for `StableAbi` trait.
+#[cfg(not(feature = "layout_checks"))]
+pub trait ContextBounds: 'static + Clone + Send + Sync {}
+#[cfg(not(feature = "layout_checks"))]
+impl<T: 'static + Clone + Send + Sync> ContextBounds for T {}
+
+/// Describe type bounds needed for any generic type in CGlue objects.
+///
+/// Typically there are no bounds, but `layout_checks` feature adds a requirement for `StableAbi`.
+#[cfg(feature = "layout_checks")]
+pub trait GenericTypeBounds: abi_stable::StableAbi {}
+#[cfg(feature = "layout_checks")]
+impl<T: abi_stable::StableAbi> GenericTypeBounds for T {}
+
+/// Describe type bounds needed for any generic type in CGlue objects.
+///
+/// In this case, there are no bounds, but different crate features may impose different requirements.
+#[cfg(not(feature = "layout_checks"))]
+pub trait GenericTypeBounds {}
+#[cfg(not(feature = "layout_checks"))]
+impl<T> GenericTypeBounds for T {}
+
 /// CGlue compatible object.
 ///
 /// This trait allows to retrieve the constant `this` pointer on the structure.
@@ -271,7 +354,7 @@ pub trait CGlueObjBase {
     /// Type of the container housing the object.
     type InstType: ::core::ops::Deref<Target = Self::ObjType>;
     /// Type of the context associated with the container.
-    type Context: 'static + Clone + Send + Sync;
+    type Context: ContextBounds;
 
     fn cobj_base_ref(&self) -> (&Self::ObjType, &Self::Context);
     fn cobj_base_owned(self) -> (Self::InstType, Self::Context);
@@ -281,9 +364,7 @@ pub trait CGlueObjRef<R>: CGlueObjBase {
     fn cobj_ref(&self) -> (&Self::ObjType, &R, &Self::Context);
 }
 
-impl<T: Deref<Target = F>, F, C: 'static + Clone + Send + Sync, R> CGlueObjBase
-    for CGlueObjContainer<T, C, R>
-{
+impl<T: Deref<Target = F>, F, C: ContextBounds, R> CGlueObjBase for CGlueObjContainer<T, C, R> {
     type ObjType = F;
     type InstType = T;
     type Context = C;
@@ -297,9 +378,7 @@ impl<T: Deref<Target = F>, F, C: 'static + Clone + Send + Sync, R> CGlueObjBase
     }
 }
 
-impl<T: Deref<Target = F>, F, C: 'static + Clone + Send + Sync, R> CGlueObjRef<R>
-    for CGlueObjContainer<T, C, R>
-{
+impl<T: Deref<Target = F>, F, C: ContextBounds, R> CGlueObjRef<R> for CGlueObjContainer<T, C, R> {
     fn cobj_ref(&self) -> (&F, &R, &Self::Context) {
         (self.instance.deref(), &self.ret_tmp, &self.context)
     }
@@ -312,7 +391,7 @@ pub trait CGlueObjMut<R>: CGlueObjRef<R> {
     fn cobj_mut(&mut self) -> (&mut Self::ObjType, &mut R, &Self::Context);
 }
 
-impl<T: Deref<Target = F> + DerefMut, F, C: 'static + Clone + Send + Sync, R> CGlueObjMut<R>
+impl<T: Deref<Target = F> + DerefMut, F, C: ContextBounds, R> CGlueObjMut<R>
     for CGlueObjContainer<T, C, R>
 {
     fn cobj_mut(&mut self) -> (&mut F, &mut R, &Self::Context) {
@@ -329,7 +408,7 @@ pub trait GetContainer {
     fn build_with_ccont(&self, container: Self::ContType) -> Self;
 }
 
-impl<T: Deref<Target = F>, F, V, C: 'static + Clone + Send + Sync, R> GetContainer
+impl<T: Deref<Target = F>, F, V, C: ContextBounds, R> GetContainer
     for CGlueTraitObj<'_, T, V, C, R>
 {
     type ContType = CGlueObjContainer<T, C, R>;
@@ -371,6 +450,11 @@ pub trait IntoInner {
 /// Trait for CGlue vtables.
 pub trait CGlueVtbl<T>: CGlueBaseVtbl {}
 
+/// Vtable that is aware of its container type.
+pub trait CGlueVtblCont: Sized {
+    type ContType: CGlueObjBase;
+}
+
 /// Trait for CGlue vtables.
 ///
 /// # Safety
@@ -378,13 +462,30 @@ pub trait CGlueVtbl<T>: CGlueBaseVtbl {}
 /// This trait is meant to be implemented by the code generator. If implementing manually, make
 /// sure that the `OpaqueVtbl` is the exact same type, with the only difference being `this` types.
 pub unsafe trait CGlueBaseVtbl: Sized {
-    type OpaqueVtbl: Sized;
-    type Context: Sized + Clone + Send + Sync;
+    #[cfg(feature = "layout_checks")]
+    type OpaqueVtbl: Sized + CGlueVtblCont + WithLayout;
+    #[cfg(not(feature = "layout_checks"))]
+    type OpaqueVtbl: Sized + CGlueVtblCont;
+    type Context: ContextBounds;
     type RetTmp: Sized + Default;
 
     /// Get the opaque vtable for the type.
     fn as_opaque(&self) -> &Self::OpaqueVtbl {
         unsafe { &*(self as *const Self as *const Self::OpaqueVtbl) }
+    }
+
+    #[cfg(feature = "layout_checks")]
+    fn verify_layout(&self) -> VerifyLayout {
+        self.as_opaque().verify_layout()
+    }
+}
+
+#[cfg(feature = "layout_checks")]
+pub trait WithLayout: Sized + abi_stable::StableAbi {
+    fn get_layout(&self) -> Option<&'static abi_stable::type_layout::TypeLayout>;
+
+    fn verify_layout(&self) -> VerifyLayout {
+        VerifyLayout::check::<Self>(self.get_layout())
     }
 }
 
@@ -404,4 +505,81 @@ unsafe impl Opaquable for () {
 
 unsafe impl Opaquable for c_void {
     type OpaqueTarget = c_void;
+}
+
+#[repr(u8)]
+#[cfg(feature = "layout_checks")]
+#[derive(Eq, PartialEq)]
+/// Used to compare 2 type layouts.
+pub enum VerifyLayout {
+    /// Layouts are compatible.
+    Valid,
+    /// Layouts have incompatible differences.
+    Invalid,
+    /// Unknown - at least one of the layouts was `None`.
+    Unknown,
+}
+
+#[cfg(feature = "layout_checks")]
+/// Compare 2 type layouts and return whether they match.
+#[no_mangle]
+pub extern "C" fn compare_layouts(
+    expected: Option<&'static TypeLayout>,
+    found: Option<&'static TypeLayout>,
+) -> VerifyLayout {
+    if let (Some(expected), Some(found)) = (expected, found) {
+        if check_layout_compatibility(expected, found).is_ok() {
+            VerifyLayout::Valid
+        } else {
+            VerifyLayout::Invalid
+        }
+    } else {
+        VerifyLayout::Unknown
+    }
+}
+
+#[cfg(feature = "layout_checks")]
+impl VerifyLayout {
+    /// Check whether a given layout matches with the one we expect.
+    pub fn check<T: abi_stable::StableAbi>(
+        layout: Option<&'static abi_stable::type_layout::TypeLayout>,
+    ) -> Self {
+        compare_layouts(Some(T::LAYOUT), layout)
+    }
+
+    /// Check if the layout is strictly valid.
+    pub fn is_valid_strict(&self) -> bool {
+        match self {
+            VerifyLayout::Valid => true,
+            _ => false,
+        }
+    }
+
+    /// Check if the layout is either fully valid, or unknown.
+    pub fn is_valid_relaxed(&self) -> bool {
+        match self {
+            VerifyLayout::Valid | VerifyLayout::Unknown => true,
+            _ => false,
+        }
+    }
+
+    /// Combine 2 layouts and return whether the layout is still fully valid.
+    ///
+    /// The rules are as follows:
+    ///
+    /// `Valid & Valid => Valid`
+    ///
+    /// `Valid & Unknown => Unknown`
+    ///
+    /// `Invalid & Anything => Invalid`
+    pub fn and(self, other: VerifyLayout) -> Self {
+        match self {
+            VerifyLayout::Valid => other,
+            VerifyLayout::Invalid => self,
+            _ => match other {
+                VerifyLayout::Valid => self,
+                _ => other,
+            },
+        }
+    }
 }

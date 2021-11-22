@@ -21,6 +21,11 @@ int main() {
 
 	PluginInner obj = load_plugin(len > 0 ? name : "plugin_lib");
 
+	if (!is_layout_valid(&obj)) {
+		printf("Plugin ABI mismatch!\n");
+		return 1;
+	}
+
 	{
 		printf("%p %p\n", obj.container.instance.instance, obj.container.instance.drop_fn);
 		auto borrowed = obj.borrow_features();

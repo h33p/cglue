@@ -10,7 +10,8 @@ use core::marker::PhantomData;
 /// slice. However, not all functionality is present, use the slice conversion functions.
 #[repr(C)]
 #[derive(Clone, Copy)]
-pub struct CSliceRef<'a, T> {
+#[cfg_attr(feature = "abi_stable", derive(::abi_stable::StableAbi))]
+pub struct CSliceRef<'a, T: 'a> {
     data: *const T,
     len: usize,
     _lifetime: PhantomData<&'a T>,
@@ -98,7 +99,8 @@ impl<T> std::ops::Deref for CSliceRef<'_, T> {
 /// This is meant as a safe type to pass across the FFI boundary with similar semantics as regular
 /// slice. However, not all functionality is present, use the slice conversion functions.
 #[repr(C)]
-pub struct CSliceMut<'a, T> {
+#[cfg_attr(feature = "abi_stable", derive(::abi_stable::StableAbi))]
+pub struct CSliceMut<'a, T: 'a> {
     data: *mut T,
     len: usize,
     _lifetime: PhantomData<&'a T>,

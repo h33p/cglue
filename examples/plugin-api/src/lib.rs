@@ -28,6 +28,7 @@ pub trait Plugin: for<'a> PluginInner<'a> {}
 impl<T: for<'a> PluginInner<'a>> Plugin for T {}
 
 #[repr(C)]
+#[derive(::abi_stable::StableAbi)]
 pub struct KeyValue<'a>(pub CSliceRef<'a, u8>, pub usize);
 
 pub type KeyValueCallback<'a> = OpaqueCallback<'a, KeyValue<'a>>;
@@ -61,6 +62,15 @@ cglue_trait_group!(FeaturesGroup, {
 
 /// Load a plugin from a given library.
 ///
+/// Upon return, user should validate the layout of the vtables to ensure ABI consistency.
+///
+/// For that, use [`LayoutGuard::verify`](cglue::trait_group::LayoutGuard::verify) in Rust.
+///
+/// Alternatively, manually call [`is_layout_valid`](self::is_layout_valid) function.
+///
+/// Ideally, a plugin system would perform this layout validation inside the function, but
+/// here we want to demonstrate that it is also doable from outside.
+///
 /// # Safety
 ///
 /// Input library must implement a correct `create_plugin` function. Its signature must be as
@@ -70,13 +80,24 @@ cglue_trait_group!(FeaturesGroup, {
 ///
 /// Where `T` is any type, since it's opaque.
 #[no_mangle]
-pub unsafe extern "C" fn load_plugin(name: ReprCStr<'_>) -> PluginInnerArcBox<'static> {
+pub unsafe extern "C" fn load_plugin(
+    name: ReprCStr<'_>,
+) -> LayoutGuard<PluginInnerArcBox<'static>> {
     let mut current_exe = std::env::current_exe().unwrap();
     current_exe.set_file_name(library_filename(name.as_ref()));
     let lib = Library::new(current_exe).unwrap();
-    let sym: Symbol<extern "C" fn(&COptArc<Library>) -> PluginInnerArcBox<'static>> =
+    let sym: Symbol<extern "C" fn(&COptArc<Library>) -> LayoutGuard<PluginInnerArcBox<'static>>> =
         lib.get(b"create_plugin\0").unwrap();
     let sym = sym.into_raw();
     let arc = CArc::from(lib);
     sym(&Some(arc).into())
+}
+
+/// Check if plugin's layout is compatible with the one we are expecting.
+///
+/// Returns `true`, if the layout is valid and the object should be safe to use,
+/// or `false` if the layout is invalid or unknown.
+#[no_mangle]
+pub extern "C" fn is_layout_valid(obj: &LayoutGuard<PluginInnerArcBox>) -> bool {
+    obj.is_valid()
 }

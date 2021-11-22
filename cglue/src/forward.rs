@@ -9,6 +9,7 @@ use ::core::ops::{Deref, DerefMut};
 
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "abi_stable", derive(::abi_stable::StableAbi))]
 pub struct Fwd<T>(pub T);
 
 impl<T: Deref<Target = F>, F> Deref for Fwd<T> {

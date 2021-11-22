@@ -18,7 +18,7 @@ pub trait WithSlice {
 pub trait WithOptions {
     fn wopt_1(&self, _npo_opt: Option<&usize>) {}
     fn wopt_2(&self, _opt: Option<usize>) {}
-    fn wopt_3(&mut self, _npo_option: Option<&u128>, _wrap_option: Option<u128>) {}
+    fn wopt_3(&mut self, _npo_option: Option<&u64>, _wrap_option: Option<u64>) {}
 }
 
 #[cglue_trait]
@@ -88,7 +88,7 @@ fn non_npo_option_wrapped() {
 #[test]
 fn mixed_options() {
     let vtbl = <&WithOptionsVtbl<WOCont>>::default();
-    let _: unsafe extern "C" fn(&mut WOCont, Option<&u128>, crate::option::COption<u128>) =
+    let _: unsafe extern "C" fn(&mut WOCont, Option<&u64>, crate::option::COption<u64>) =
         vtbl.wopt_3();
 }
 

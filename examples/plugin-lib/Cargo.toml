@@ -8,6 +8,6 @@ edition = "2018"
 crate-type = ["lib", "cdylib", "staticlib"]
 
 [dependencies]
-cglue = { path = "../../cglue/" }
+cglue = { path = "../../cglue/", features = ["layout_checks"] }
 plugin-api = { path = "../plugin-api" }
 libloading = "0.7"

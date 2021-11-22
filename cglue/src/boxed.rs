@@ -10,7 +10,8 @@ use std::boxed::Box;
 ///
 /// The drop function can be called from anywhere, it will free on correct allocator internally.
 #[repr(C)]
-pub struct CBox<'a, T> {
+#[cfg_attr(feature = "abi_stable", derive(::abi_stable::StableAbi))]
+pub struct CBox<'a, T: 'a> {
     instance: &'a mut T,
     drop_fn: unsafe extern "C" fn(&mut T),
 }

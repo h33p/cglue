@@ -18,7 +18,8 @@ use std::prelude::v1::*;
 
 // C style callbacks that are needed so that C code can easily use callback like functions
 #[repr(transparent)]
-pub struct OpaqueCallback<'a, T>(Callback<'a, c_void, T>);
+#[cfg_attr(feature = "abi_stable", derive(::abi_stable::StableAbi))]
+pub struct OpaqueCallback<'a, T: 'a>(Callback<'a, c_void, T>);
 
 impl<'a, T> OpaqueCallback<'a, T> {
     #[must_use = "this value is the stopping condition"]
@@ -28,7 +29,8 @@ impl<'a, T> OpaqueCallback<'a, T> {
 }
 
 #[repr(C)]
-pub struct Callback<'a, T, F> {
+#[cfg_attr(feature = "abi_stable", derive(::abi_stable::StableAbi))]
+pub struct Callback<'a, T: 'a, F> {
     context: &'a mut T,
     func: extern "C" fn(&mut T, F) -> bool,
 }

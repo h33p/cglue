@@ -55,6 +55,12 @@ pub fn parse_header(header: &str, config: &Config) -> Result<String> {
         trace!("GROUP: {} {:?}", g.name, g.vtables);
     }
 
+    // Check if we need to typedef `TypeLayout`
+    let type_layout_re =
+        Regex::new(r"((((typedef [\s]+)|struct) TypeLayout)|(using TypeLayout =))")?;
+    let needs_type_layout =
+        header.contains("const TypeLayout *") && !type_layout_re.is_match(&header);
+
     // PROCESSING:
 
     // Fix up the MaybeUninit
@@ -173,12 +179,13 @@ struct Callback \{
 };",
     );
 
-    // Add mem_drop and mem_forget methods
-    let header = Regex::new(
+    let header_regex = Regex::new(
         r"(?P<start>(/\*[^*]*\*+(?:[^/*][^*]*\*+)*/
 )?template<typename)",
-    )?
-    .replace(
+    )?;
+
+    // Add mem_drop and mem_forget methods
+    let header = header_regex.replace(
         &header,
         r"
 /** Destruct the object. */
@@ -230,6 +237,18 @@ struct StoreAll {
 
 $start",
     );
+
+    // Add TypeLayout forward decl if needed
+    let header = if needs_type_layout {
+        header_regex.replace(
+            &header,
+            r"struct TypeLayout;
+
+$start",
+        )
+    } else {
+        header
+    };
 
     // Add CBox drop methods
     let header = Regex::new(

@@ -31,6 +31,7 @@ use core::num::NonZeroI32;
 /// But preferred way to pass results efficiently would be to implement `IntError` trait on the `E`
 /// type.
 #[repr(C)]
+#[cfg_attr(feature = "abi_stable", derive(::abi_stable::StableAbi))]
 pub enum CResult<T, E> {
     Ok(T),
     Err(E),

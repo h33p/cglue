@@ -42,6 +42,7 @@ use std::prelude::v1::*;
 /// assert_eq!(sum_all((&mut iter).into()), 385);
 /// ```
 #[repr(C)]
+#[cfg_attr(feature = "abi_stable", derive(::abi_stable::StableAbi))]
 pub struct CIterator<'a, T> {
     iter: &'a mut c_void,
     func: extern "C" fn(&mut c_void, out: &mut MaybeUninit<T>) -> i32,

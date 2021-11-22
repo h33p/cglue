@@ -14,6 +14,7 @@ pub type c_char = i8;
 ///
 /// Analog to Rust's `String`, [`ReprCString`] owns the underlying data.
 #[repr(transparent)]
+#[cfg_attr(feature = "abi_stable", derive(::abi_stable::StableAbi))]
 pub struct ReprCString(*mut c_char);
 
 // The underlying pointer isn't being mutated after construction,
@@ -172,6 +173,7 @@ mod tests {
 /// Analog to Rust's `str`, [`ReprCStr`] borrows the underlying data.
 #[repr(transparent)]
 #[derive(Copy, Clone)]
+#[cfg_attr(feature = "abi_stable", derive(::abi_stable::StableAbi))]
 pub struct ReprCStr<'a>(&'a c_char);
 
 #[cfg(feature = "std")]

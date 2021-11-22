@@ -344,6 +344,15 @@ impl TraitGroupImpl {
             .copied()
             .collect();
 
+        let gen_lt_bounds = self.generics.declare_lt_for_all(&quote!('cglue_a));
+        let gen_sabi_bounds = self.generics.declare_sabi_for_all(&crate_path);
+
+        let gen_where_bounds = quote! {
+            #gen_where_bounds
+            #gen_sabi_bounds
+            #gen_lt_bounds
+        };
+
         let filler_trait = format_ident!("{}VtableFiller", group);
         let vtable_type = format_ident!("{}Vtables", group);
         let cont_name = format_ident!("{}Container", group);
@@ -554,6 +563,21 @@ impl TraitGroup {
             ..
         } = &self.generics;
 
+        let gen_lt_bounds = self.generics.declare_lt_for_all(&quote!('cglue_a));
+        let gen_sabi_bounds = self.generics.declare_sabi_for_all(&crate_path);
+
+        // Structures themselves do not need StableAbi bounds, if layout_checks is on
+        let gen_where_bounds_base = quote! {
+            #gen_where_bounds
+            #gen_lt_bounds
+        };
+
+        // If layout_checks is enabled, this will include StableAbi bounds
+        let gen_where_bounds = quote! {
+            #gen_where_bounds_base
+            #gen_sabi_bounds
+        };
+
         let mandatory_vtbl_defs = self.mandatory_vtbl_defs(self.mandatory_vtbl.iter());
         let optional_vtbl_defs = self.optional_vtbl_defs(quote!(CGlueInst), quote!(CGlueCtx));
         let optional_vtbl_defs_boxed = self.optional_vtbl_defs(
@@ -614,6 +638,17 @@ impl TraitGroup {
         let mut enable_funcs = TokenStream::new();
         let mut enable_funcs_vtbl = TokenStream::new();
 
+        #[cfg(feature = "layout_checks")]
+        let derive_layouts = quote!(#[derive(::abi_stable::StableAbi)]);
+        #[cfg(not(feature = "layout_checks"))]
+        let derive_layouts = quote!();
+
+        #[cfg(feature = "layout_checks")]
+        let mut verify_layout = quote! {
+            use #trg_path::{VerifiableLayout, WithLayout};
+            #trg_path::VerifyLayout::Valid
+        };
+
         let all_gen_use = &gen_use;
 
         // Work around needless_update lint
@@ -622,6 +657,13 @@ impl TraitGroup {
         } else {
             quote!()
         };
+
+        #[cfg(feature = "layout_checks")]
+        for TraitInfo { vtbl_name, .. } in &self.mandatory_vtbl {
+            verify_layout.extend(quote! {
+                .and(self.#vtbl_name.verify_layout())
+            });
+        }
 
         for TraitInfo {
             enable_vtbl_name,
@@ -645,6 +687,11 @@ impl TraitGroup {
                     }
                 });
             }
+
+            #[cfg(feature = "layout_checks")]
+            verify_layout.extend(quote! {
+                .and(self.#vtbl_name.map(|v| v.verify_layout()).unwrap_or(#trg_path::VerifyLayout::Valid))
+            });
         }
 
         let mut trait_funcs = TokenStream::new();
@@ -775,10 +822,11 @@ impl TraitGroup {
                 ///
                 #[doc = #opt_final_doc2]
                 #[repr(C)]
-                pub struct #opt_final_name<'cglue_a, CGlueInst, CGlueCtx: #ctx_bound, #gen_declare>
+                #derive_layouts
+                pub struct #opt_final_name<'cglue_a, CGlueInst: 'cglue_a, CGlueCtx: #ctx_bound, #gen_declare>
                 where
                     #cont_name<CGlueInst, CGlueCtx, #gen_use>: #trg_path::CGlueObjBase,
-                    #gen_where_bounds
+                    #gen_where_bounds_base
                 {
                     #mandatory_vtbl_defs
                     #opt_vtbl_defs
@@ -797,10 +845,11 @@ impl TraitGroup {
                 ///
                 #[doc = #opt_doc2]
                 #[repr(C)]
-                pub struct #opt_name<'cglue_a, CGlueInst, CGlueCtx: #ctx_bound, #gen_declare>
+                #derive_layouts
+                pub struct #opt_name<'cglue_a, CGlueInst: 'cglue_a, CGlueCtx: #ctx_bound, #gen_declare>
                 where
                     #cont_name<CGlueInst, CGlueCtx, #gen_use>: #trg_path::CGlueObjBase,
-                    #gen_where_bounds
+                    #gen_where_bounds_base
                 {
                     #mandatory_vtbl_defs
                     #opt_mixed_vtbl_defs
@@ -1037,6 +1086,23 @@ impl TraitGroup {
             #extra_filler_traits
         };
 
+        #[cfg(feature = "layout_checks")]
+        let vf_layout_impl = quote! {
+            impl<'cglue_a, CGlueInst, CGlueCtx: #ctx_bound, #gen_declare> #trg_path::VerifiableLayout
+                for #name<'cglue_a, CGlueInst, CGlueCtx, #gen_use>
+            where
+                #cont_name<CGlueInst, CGlueCtx, #gen_use>: #trg_path::CGlueObjBase,
+                CGlueInst: ::abi_stable::StableAbi,
+                #gen_where_bounds
+            {
+                fn verify_layout(&self) -> #trg_path::VerifyLayout {
+                    #verify_layout
+                }
+            }
+        };
+        #[cfg(not(feature = "layout_checks"))]
+        let vf_layout_impl = quote!();
+
         quote! {
 
             pub use #submod_name::{
@@ -1085,10 +1151,11 @@ impl TraitGroup {
                 /// `as_ref_`, and `as_mut_` functions obtain references to safe objects, but do not
                 /// perform any memory transformations either. They are the safest to use, because
                 /// there is no risk of accidentally consuming the whole object.
-                pub struct #name<'cglue_a, CGlueInst, CGlueCtx: #ctx_bound, #gen_declare>
+                #derive_layouts
+                pub struct #name<'cglue_a, CGlueInst: 'cglue_a, CGlueCtx: #ctx_bound, #gen_declare>
                 where
                     #cont_name<CGlueInst, CGlueCtx, #gen_use>: #trg_path::CGlueObjBase,
-                    #gen_where_bounds
+                    #gen_where_bounds_base
                 {
                     #mandatory_vtbl_defs
                     #optional_vtbl_defs
@@ -1098,6 +1165,7 @@ impl TraitGroup {
                 #get_container_impl
 
                 #[repr(C)]
+                #derive_layouts
                 pub struct #cont_name<CGlueInst, CGlueCtx: #ctx_bound, #gen_declare>
                 {
                     instance: CGlueInst,
@@ -1114,10 +1182,11 @@ impl TraitGroup {
                 }
 
                 #[repr(C)]
-                pub struct #vtable_type<'cglue_a, CGlueInst, CGlueCtx: #ctx_bound, #gen_declare>
+                #derive_layouts
+                pub struct #vtable_type<'cglue_a, CGlueInst: 'cglue_a, CGlueCtx: #ctx_bound, #gen_declare>
                 where
                     #cont_name<CGlueInst, CGlueCtx, #gen_use>: #trg_path::CGlueObjBase,
-                    #gen_where_bounds
+                    #gen_where_bounds_base
                 {
                     #mandatory_vtbl_defs
                     #optional_vtbl_defs
@@ -1144,6 +1213,8 @@ impl TraitGroup {
                 {
                     #enable_funcs
                 }
+
+                #vf_layout_impl
 
                 impl<'cglue_a, CGlueInst, CGlueCtx: #ctx_bound, #gen_declare> #vtable_type<'cglue_a, CGlueInst, CGlueCtx, #gen_use>
                 where
