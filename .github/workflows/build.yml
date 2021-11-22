@@ -31,7 +31,7 @@ jobs:
     strategy:
       matrix:
         os: [macos-latest, ubuntu-latest, windows-latest]
-        toolchain: ["1.45.0", "stable", "nightly-2021-11-05"]
+        toolchain: ["1.46.0", "stable", "nightly-2021-11-05"]
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
@@ -88,7 +88,7 @@ jobs:
     strategy:
       matrix:
         os: [macos-latest, ubuntu-latest, windows-latest]
-        toolchain: ["1.45.0", "stable", "nightly-2021-11-05"]
+        toolchain: ["1.46.0", "stable", "nightly-2021-11-05"]
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
@@ -145,7 +145,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        toolchain: ["1.45.0", "stable"]
+        toolchain: ["1.46.0", "stable"]
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
