@@ -20,6 +20,8 @@ Ergonomic C/C++ wrappers:
 
 - Ability to specify default container and context types, so that the wrappers become more compact.
 
+- Manual cleanup is no longer supported as bindgen has become more complex.
+
 [Somewhat tested with miri](https://github.com/h33p/cglue/blob/af6ab0dd2b2ecfa24e8f67ba9246c0079f654f6e/.github/workflows/build.yml#L121):
 
 - Stacked borrows are disabled.
@@ -34,3 +36,4 @@ Ergonomic C/C++ wrappers:
 
 - Makes `cglue_impl_group!` a no-op.
 
+[Runtime ABI/API validation with abi\_stable](https://github.com/h33p/cglue/commit/5b75b31a3dfb35967721d94df2e83f3ced8be9c2)
