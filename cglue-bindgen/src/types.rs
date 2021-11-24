@@ -20,7 +20,9 @@ impl<'a> ContainerType<'a> {
                 ContainerType {
                     ty_prefix: "Box",
                     cpp_type: "CBox<void>",
-                    drop_impl: Some("self->drop_fn(self->instance);"),
+                    drop_impl: Some(
+                        "if (self->drop_fn && self->instance) self->drop_fn(self->instance);",
+                    ),
                 },
             ),
             (
@@ -87,7 +89,9 @@ impl<'a> ContextType<'a> {
                     ty_prefix: "Arc",
                     cpp_type: "COptArc<void>",
                     clone_impl: Some("ret.instance = self->clone_fn(self->instance);"),
-                    drop_impl: Some("self->drop_fn(self->instance);"),
+                    drop_impl: Some(
+                        "if (self->drop_fn && self->instance) self->drop_fn(self->instance);",
+                    ),
                 },
             ),
         ]

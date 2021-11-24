@@ -554,13 +554,20 @@ struct {group}Container<CGlueInst, void> {{
     // Create vtable functions to group objects
     for g in groups {
         let helpers = g.create_wrappers(&vtbls_map, "container");
+
+        let mut init_vtbls = String::new();
+
+        for (_, v) in &g.vtables {
+            init_vtbls += &format!(", {}{{}}", v);
+        }
+
         header = self::groups_regex(&vtbls, Some(g.name.as_str()))?
             .replace_all(
                 &header,
                 &format!(
                     r"$definition_start
 
-    {name}() : container{{}} {{}}
+    {name}() : container{{}} {init_vtbls} {{}}
 
     ~{name}() noexcept {{
         mem_drop(std::move(container));
@@ -570,7 +577,8 @@ struct {group}Container<CGlueInst, void> {{
 {helpers}
 }};",
                     name = g.name,
-                    helpers = helpers
+                    helpers = helpers,
+                    init_vtbls = init_vtbls
                 ),
             )
             .to_string();
