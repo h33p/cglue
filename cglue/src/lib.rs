@@ -167,7 +167,7 @@
 //!
 //! 6. [Library reference counting](#plugin-system).
 //!
-//! 7. Optional runtime ABI/API validation with [abi\_stable](https://crates.io/crates/abi_stable) (enable `layout_checks` feature).
+//! 7. Optional runtime ABI/API validation with [abi\_stable](https://crates.io/crates/abi_stable) (enable `layout_checks` or `vtbl_layout_checks` feature).
 //!
 //! ## In-depth look
 //!
@@ -225,7 +225,7 @@
 //! | `MyTraitRetTmp<Ctx>` | Structure for temporary return values. It should be opaque to the user. |
 //!
 //! Instead, every opaque CGlue object implements `MyTraitOpaqueObj` trait, which contains the type
-//! of the vtable, and/or reference to its ABI layout (with `layout_checks` feature).
+//! of the vtable, and/or reference to its ABI layout (with `vtbl_layout_checks` feature).
 //!
 //! `cglue_trait_group!` macro for `MyGroup` will generate the following main types:
 //!

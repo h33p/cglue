@@ -462,10 +462,7 @@ pub trait CGlueVtblCont: Sized {
 /// This trait is meant to be implemented by the code generator. If implementing manually, make
 /// sure that the `OpaqueVtbl` is the exact same type, with the only difference being `this` types.
 pub unsafe trait CGlueBaseVtbl: Sized {
-    #[cfg(feature = "layout_checks")]
-    type OpaqueVtbl: Sized + CGlueVtblCont + WithLayout;
-    #[cfg(not(feature = "layout_checks"))]
-    type OpaqueVtbl: Sized + CGlueVtblCont;
+    type OpaqueVtbl: OpaqueVtblBounds;
     type Context: ContextBounds;
     type RetTmp: Sized + Default;
 
@@ -474,11 +471,26 @@ pub unsafe trait CGlueBaseVtbl: Sized {
         unsafe { &*(self as *const Self as *const Self::OpaqueVtbl) }
     }
 
-    #[cfg(feature = "layout_checks")]
+    #[cfg(feature = "vtbl_layout_checks")]
     fn verify_layout(&self) -> VerifyLayout {
         self.as_opaque().verify_layout()
     }
 }
+
+#[cfg(not(any(feature = "layout_checks", feature = "vtbl_layout_checks")))]
+pub trait OpaqueVtblBounds: Sized + CGlueVtblCont {}
+#[cfg(not(any(feature = "layout_checks", feature = "vtbl_layout_checks")))]
+impl<T: CGlueVtblCont> OpaqueVtblBounds for T {}
+
+#[cfg(all(feature = "layout_checks", not(feature = "vtbl_layout_checks")))]
+pub trait OpaqueVtblBounds: Sized + CGlueVtblCont + abi_stable::StableAbi {}
+#[cfg(all(feature = "layout_checks", not(feature = "vtbl_layout_checks")))]
+impl<T: CGlueVtblCont + abi_stable::StableAbi> OpaqueVtblBounds for T {}
+
+#[cfg(feature = "vtbl_layout_checks")]
+pub trait OpaqueVtblBounds: Sized + CGlueVtblCont + WithLayout {}
+#[cfg(feature = "vtbl_layout_checks")]
+impl<T: CGlueVtblCont + WithLayout> OpaqueVtblBounds for T {}
 
 #[cfg(feature = "layout_checks")]
 pub trait WithLayout: Sized + abi_stable::StableAbi {

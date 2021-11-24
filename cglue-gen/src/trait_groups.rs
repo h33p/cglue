@@ -643,7 +643,7 @@ impl TraitGroup {
         #[cfg(not(feature = "layout_checks"))]
         let derive_layouts = quote!();
 
-        #[cfg(feature = "layout_checks")]
+        #[cfg(feature = "vtbl_layout_checks")]
         let mut verify_layout = quote! {
             use #trg_path::{VerifiableLayout, WithLayout};
             #trg_path::VerifyLayout::Valid
@@ -658,7 +658,7 @@ impl TraitGroup {
             quote!()
         };
 
-        #[cfg(feature = "layout_checks")]
+        #[cfg(feature = "vtbl_layout_checks")]
         for TraitInfo { vtbl_name, .. } in &self.mandatory_vtbl {
             verify_layout.extend(quote! {
                 .and(self.#vtbl_name.verify_layout())
@@ -688,7 +688,7 @@ impl TraitGroup {
                 });
             }
 
-            #[cfg(feature = "layout_checks")]
+            #[cfg(feature = "vtbl_layout_checks")]
             verify_layout.extend(quote! {
                 .and(self.#vtbl_name.map(|v| v.verify_layout()).unwrap_or(#trg_path::VerifyLayout::Valid))
             });
@@ -1086,7 +1086,7 @@ impl TraitGroup {
             #extra_filler_traits
         };
 
-        #[cfg(feature = "layout_checks")]
+        #[cfg(feature = "vtbl_layout_checks")]
         let vf_layout_impl = quote! {
             impl<'cglue_a, CGlueInst, CGlueCtx: #ctx_bound, #gen_declare> #trg_path::VerifiableLayout
                 for #name<'cglue_a, CGlueInst, CGlueCtx, #gen_use>
@@ -1100,7 +1100,7 @@ impl TraitGroup {
                 }
             }
         };
-        #[cfg(not(feature = "layout_checks"))]
+        #[cfg(not(feature = "vtbl_layout_checks"))]
         let vf_layout_impl = quote!();
 
         quote! {

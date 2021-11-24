@@ -1,4 +1,4 @@
 pub mod forward;
-#[cfg(feature = "layout_checks")]
+#[cfg(feature = "vtbl_layout_checks")]
 pub mod layout;
 pub mod wrap_default;

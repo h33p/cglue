@@ -8,6 +8,6 @@ edition = "2018"
 crate-type = ["lib", "cdylib", "staticlib"]
 
 [dependencies]
-cglue = { path = "../../cglue/", features = ["layout_checks"] }
+cglue = { path = "../../cglue/", features = ["vtbl_layout_checks"] }
 abi_stable = { version = "0.10", git = "https://github.com/rodrimati1992/abi_stable_crates" }
 libloading = "0.7"

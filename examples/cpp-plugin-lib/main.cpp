@@ -85,7 +85,7 @@ struct PluginCPPContainer : CGlueObjContainer<T, C, PluginInnerRetTmp<C>> {
 		BorrowedType ret;
 		ret.vtbl_mainfeature = (decltype(ret.vtbl_mainfeature))&main_feature;
 		ret.vtbl_keyvaluestore = (decltype(ret.vtbl_keyvaluestore))&kvstore;
-		ret.container.instance = CBox(&self->instance.instance->store);
+		ret.container.instance = (CBox<void>)CBox<KvStore>(&self->instance.instance->store);
 		return ret;
 	}
 
