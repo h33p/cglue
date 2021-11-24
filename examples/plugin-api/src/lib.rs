@@ -2,6 +2,7 @@
 //!
 //! This crate is shared by plugins and users.
 
+use abi_stable::type_layout::TypeLayout;
 use cglue::prelude::v1::*;
 use libloading::{library_filename, Library, Symbol};
 
@@ -100,4 +101,13 @@ pub unsafe extern "C" fn load_plugin(
 #[no_mangle]
 pub extern "C" fn is_layout_valid(obj: &LayoutGuard<PluginInnerArcBox>) -> bool {
     obj.is_valid()
+}
+
+/// Get the root vtable layout
+///
+/// Returns reference to the layout that should be embedded to a `PluginInnerArcBox` vtable.
+/// Other layouts are not necessary, because the very root depends on them already.
+#[no_mangle]
+pub extern "C" fn get_root_layout() -> &'static TypeLayout {
+    <PluginInnerArcBox as PluginInnerOpaqueObj>::VTBL_LAYOUT
 }

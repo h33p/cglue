@@ -80,6 +80,61 @@ struct alignas(alignof(T)) RustMaybeUninit {
 };",
     );
 
+    // Add string conversion to CSlices
+    let header = Regex::new(
+        r"(?P<definition>template<typename T>
+struct (?P<class>CSlice(Ref|Mut)) \{
+    (?P<constness>(const )?)T \*data;
+    uintptr_t len;)
+\};"
+    )?
+.replace_all(
+        &header,
+    r"$definition
+
+    $class () = default;
+
+    template<typename Cont, class = typename std::enable_if<
+        std::is_same<decltype((*(const Cont *)nullptr).data()), T *>::value
+        && std::is_same<decltype((*(const Cont *)nullptr).size()), size_t>::value
+    >::type>
+    $class (const Cont &data) : data(data.data()), len(data.size()) {}
+
+    template<typename U = T, class = typename std::enable_if<
+        (std::is_same<T, char>::value || std::is_same<T, unsigned char>::value)
+        && std::is_same<T, U>::value
+    >::type>
+    $class (${constness}char *value) : data((${constness}T *)value), len(strlen(value)) {}
+
+    template<typename U = T, class = typename std::enable_if<
+        (std::is_same<T, char>::value || std::is_same<T, unsigned char>::value)
+        && std::is_same<T, U>::value
+    >::type>
+    $class (${constness}char *value, uintptr_t len) : data((${constness}T *)value), len(len) {}
+
+    template<typename U = T, class = typename std::enable_if<
+        (std::is_same<T, char>::value || std::is_same<T, unsigned char>::value)
+        && std::is_same<T, U>::value
+    >::type>
+    $class (${constness}std::string &value) : data((${constness}T *)value.data()), len(value.length()) {}
+
+    template<typename U = T, class = typename std::enable_if<
+        (std::is_same<T, char>::value || std::is_same<T, unsigned char>::value)
+        && std::is_same<T, U>::value
+    >::type>
+    inline operator std::string() const {
+        return std::string((char *)data, len);
+    }
+};"
+    );
+
+    // Add cstring include if it wasn't included
+    let header = if header.contains("#include <cstring>") {
+        header
+    } else {
+        Regex::new("#include <c[^>]+>")?.replace(&header, "$0\n#include <cstring>")
+    };
+
     // Bridge common stl containers to callbacks and iterators
     let header = Regex::new(
         r"(?P<definition>template<typename T>
@@ -250,7 +305,7 @@ $start",
         header
     };
 
-    // Add CBox drop methods
+    // Add CBox drop and methods
     let header = Regex::new(
         r"(?P<definition>template<typename T>
 struct CBox \{
@@ -262,6 +317,30 @@ struct CBox \{
         &header,
         r"${definition}
 
+    CBox() = default;
+    CBox(T *instance) : instance(instance), drop_fn(nullptr) {}
+    CBox(T *instance, void (*drop_fn)(T *)) : instance(instance), drop_fn(drop_fn) {}
+    template<typename U = T, class = typename std::enable_if<std::is_same<U, T>::value>::type, class = typename std::enable_if<!std::is_same<U, void>::value>::type>
+    CBox(U &&instance) : instance(new U(instance)), drop_fn(&CBox::delete_fn) {}
+
+    static void delete_fn(T *v) {
+        delete v;
+    }
+
+    inline operator CBox<void> () const {
+        CBox<void> ret;
+        ret.instance = (void*)instance;
+        ret.drop_fn = (void(*)(void *))drop_fn;
+        return ret;
+    }
+
+    static inline CBox new_box() {
+        CBox ret;
+        ret.instance = new T;
+        ret.drop_fn = &CBox::delete_fn;
+        return ret;
+    }
+
     inline void drop() && noexcept {
         if (drop_fn && instance)
             drop_fn(instance);
@@ -271,6 +350,14 @@ struct CBox \{
     inline void forget() noexcept {
         instance = nullptr;
         drop_fn = nullptr;
+    }
+
+    inline T *operator->() {
+        return instance;
+    }
+
+    inline const T *operator->() const {
+        return instance;
     }
 };",
     );

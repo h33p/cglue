@@ -352,7 +352,8 @@ struct CollectBase {
     size_t size;
 };
 
-void *memcpy(void *dest, const void *src, size_t n);
+// For memcpy
+#include <string.h>
 
 static bool cb_collect_static_base(struct CollectBase *ctx, size_t elem_size, void *info) {
 

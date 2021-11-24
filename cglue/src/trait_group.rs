@@ -509,7 +509,7 @@ unsafe impl Opaquable for c_void {
 
 #[repr(u8)]
 #[cfg(feature = "layout_checks")]
-#[derive(Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 /// Used to compare 2 type layouts.
 pub enum VerifyLayout {
     /// Layouts are compatible.
@@ -528,10 +528,12 @@ pub extern "C" fn compare_layouts(
     found: Option<&'static TypeLayout>,
 ) -> VerifyLayout {
     if let (Some(expected), Some(found)) = (expected, found) {
-        if check_layout_compatibility(expected, found).is_ok() {
-            VerifyLayout::Valid
-        } else {
-            VerifyLayout::Invalid
+        match check_layout_compatibility(expected, found).into_result() {
+            Ok(_) => VerifyLayout::Valid,
+            Err(e) => {
+                println!("{}", e);
+                VerifyLayout::Invalid
+            }
         }
     } else {
         VerifyLayout::Unknown

@@ -13,7 +13,7 @@ use std::boxed::Box;
 #[cfg_attr(feature = "abi_stable", derive(::abi_stable::StableAbi))]
 pub struct CBox<'a, T: 'a> {
     instance: &'a mut T,
-    drop_fn: unsafe extern "C" fn(&mut T),
+    drop_fn: Option<unsafe extern "C" fn(&mut T)>,
 }
 
 impl<T> super::trait_group::IntoInner for CBox<'_, T> {
@@ -45,7 +45,7 @@ impl<T> From<Box<T>> for CBox<'_, T> {
         let instance = Box::leak(this);
         Self {
             instance,
-            drop_fn: cglue_drop_box::<T>,
+            drop_fn: Some(cglue_drop_box::<T>),
         }
     }
 }
@@ -66,7 +66,9 @@ impl<T> From<(T, NoContext)> for CBox<'_, T> {
 
 impl<T> Drop for CBox<'_, T> {
     fn drop(&mut self) {
-        unsafe { (self.drop_fn)(self.instance) };
+        if let Some(drop_fn) = self.drop_fn.take() {
+            unsafe { drop_fn(self.instance) };
+        }
     }
 }
 

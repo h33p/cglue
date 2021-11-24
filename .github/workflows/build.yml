@@ -179,9 +179,24 @@ jobs:
           platform: x64
       - name: Build the plugins
         run: cargo build --release -p plugin-api -p plugin-lib -p cglue-bindgen
+      - name: Build and C++ plugin library
+        run: |
+          cd examples/cpp-plugin-bin/
+          make
       - name: Build and test C binary
         run: |
           cd examples/c-user-bin/
+          make
+          ./main.out << EOF
+          plugin_lib
+          asdf
+          23
+          asd
+          24
+          EOF
+      - name: Build and test C prefix binary
+        run: |
+          cd examples/c-user-prefixed-bin/
           make
           ./main.out << EOF
           plugin_lib
@@ -196,6 +211,28 @@ jobs:
           make
           ./main.out << EOF
           plugin_lib
+          asdf
+          23
+          asd
+          24
+          EOF
+      - name: Build and test C binary against C++ library
+        run: |
+          cd examples/c-user-bin/
+          make
+          ./main.out << EOF
+          plugin_cpp
+          asdf
+          23
+          asd
+          24
+          EOF
+      - name: Build and test C++ binary against C++ library
+        run: |
+          cd examples/cpp-user-bin/
+          make
+          ./main.out << EOF
+          plugin_cpp
           asdf
           23
           asd

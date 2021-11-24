@@ -520,6 +520,12 @@ impl Vtable {
                 (prefix.to_string(), true)
             };
 
+            let prefix = if let Some(p) = config.function_prefix.as_deref() {
+                format!("{}_{}", p, prefix)
+            } else {
+                prefix
+            };
+
             if generated_funcs.insert((prefix.clone(), f.name.clone())) {
                 ret += &f.create_wrapper(
                     cont_vtbl,
@@ -529,9 +535,7 @@ impl Vtable {
                     container_info,
                     context_info,
                 );
-            } /* else if ty_prefix.is_none() {
-                  panic!("DUPLICATE (should never happen)! {}", f.name);
-              }*/
+            }
         }
 
         ret

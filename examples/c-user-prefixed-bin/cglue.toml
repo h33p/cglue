@@ -1,0 +1,5 @@
+default_container = "Box"
+default_context = "Arc"
+
+# This is only a test if adding a function prefix would work
+function_prefix = "cglue"
