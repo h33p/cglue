@@ -20,6 +20,27 @@ pub struct CSliceRef<'a, T: 'a> {
 unsafe impl<'a, T> Send for CSliceRef<'a, T> where T: Send {}
 unsafe impl<'a, T> Sync for CSliceRef<'a, T> where T: Sync {}
 
+#[cfg(feature = "std")]
+impl<T: std::fmt::Debug> std::fmt::Debug for CSliceRef<'_, T>
+where
+    for<'a> &'a [T]: std::fmt::Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.debug_struct("CSliceRef")
+            .field("data", &self.data)
+            .field("len", &self.len)
+            .field("slice", &self.as_slice());
+        Ok(())
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::fmt::Display for CSliceRef<'_, u8> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.into_str())
+    }
+}
+
 impl<'a, T> CSliceRef<'a, T> {
     pub const fn len(&self) -> usize {
         self.len
@@ -114,6 +135,26 @@ pub struct CSliceMut<'a, T: 'a> {
 
 unsafe impl<'a, T> Send for CSliceMut<'a, T> where T: Send {}
 unsafe impl<'a, T> Sync for CSliceMut<'a, T> where T: Sync {}
+
+#[cfg(feature = "std")]
+impl<T: std::fmt::Debug> std::fmt::Debug for CSliceMut<'_, T>
+where
+    for<'a> &'a [T]: std::fmt::Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
+        f.debug_struct("CSliceMut")
+            .field("data", &self.data)
+            .field("len", &self.len)
+            .field("slice", &self.as_slice());
+        Ok(())
+    }
+}
+
+impl std::fmt::Display for CSliceMut<'_, u8> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", unsafe { core::str::from_utf8_unchecked(&*self) })
+    }
+}
 
 impl<'a, T> CSliceMut<'a, T> {
     pub const fn len(&self) -> usize {
