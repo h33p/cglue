@@ -40,6 +40,20 @@ impl<'a, T> CSliceRef<'a, T> {
     pub fn as_slice(&'a self) -> &'a [T] {
         unsafe { core::slice::from_raw_parts(self.data, self.len) }
     }
+
+    pub const fn from_slice(s: &'a [T]) -> Self {
+        Self {
+            data: s.as_ptr(),
+            len: s.len(),
+            _lifetime: PhantomData {},
+        }
+    }
+}
+
+impl<'a> CSliceRef<'a, u8> {
+    pub const fn from_str(s: &'a str) -> Self {
+        Self::from_slice(s.as_bytes())
+    }
 }
 
 impl<'a> CSliceRef<'a, u8> {
@@ -56,21 +70,13 @@ impl<'a> CSliceRef<'a, u8> {
 
 impl<'a> From<&'a str> for CSliceRef<'a, u8> {
     fn from(from: &'a str) -> Self {
-        Self {
-            data: from.as_ptr(),
-            len: from.len(),
-            _lifetime: PhantomData::default(),
-        }
+        Self::from_str(from)
     }
 }
 
 impl<'a, T> From<&'a [T]> for CSliceRef<'a, T> {
     fn from(from: &'a [T]) -> Self {
-        Self {
-            data: from.as_ptr(),
-            len: from.len(),
-            _lifetime: PhantomData::default(),
-        }
+        Self::from_slice(from)
     }
 }
 
