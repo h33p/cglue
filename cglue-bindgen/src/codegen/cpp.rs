@@ -95,10 +95,10 @@ struct (?P<class>CSlice(Ref|Mut)) \{
     $class () = default;
 
     template<typename Cont, class = typename std::enable_if<
-        std::is_same<decltype((*(const Cont *)nullptr).data()), T *>::value
-        && std::is_same<decltype((*(const Cont *)nullptr).size()), size_t>::value
+        std::is_same<decltype((*(${constness}Cont *)nullptr).data()), ${constness}T *>::value
+        && std::is_same<decltype((*(${constness}Cont *)nullptr).size()), size_t>::value
     >::type>
-    $class (const Cont &data) : data(data.data()), len(data.size()) {}
+    $class (${constness}Cont &data) : data(data.data()), len(data.size()) {}
 
     template<typename U = T, class = typename std::enable_if<
         (std::is_same<T, char>::value || std::is_same<T, unsigned char>::value)

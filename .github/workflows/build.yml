@@ -181,7 +181,7 @@ jobs:
         run: cargo build --release -p plugin-api -p plugin-lib -p cglue-bindgen
       - name: Build and C++ plugin library
         run: |
-          cd examples/cpp-plugin-bin/
+          cd examples/cpp-plugin-lib/
           make
       - name: Build and test C binary
         run: |
