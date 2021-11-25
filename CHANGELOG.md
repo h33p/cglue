@@ -10,7 +10,7 @@
 
 - Remove CtxBox, as context has been moved into the container object.
 
-[Context is now always `Clone + Send + Sync`](https://github.com/h33p/cglue/commit/bf24eaec1d518ff82356a05646ecb3af4f4b177b)
+[Context is now always `Clone + Send + Sync`](https://github.com/h33p/cglue/commit/bf24eaec1d518ff82356a05646ecb3af4f4b177b).
 
 Ergonomic C/C++ wrappers:
 
@@ -28,6 +28,10 @@ Ergonomic C/C++ wrappers:
 
 - ABI checks have been patched out, because otherwise rust evaluator does not accept type erasure.
 
+[Vtable-only functions](https://github.com/h33p/cglue/commit/f9f600fb3accb7d7f1970507c79786eade12e78a):
+
+- Provide Rust functionality in C/C++ with slightly different types.
+
 [Wrap strings and slices in return types](https://github.com/h33p/cglue/commit/c8a607e68a851321a4bc288491e879e34d541bd2).
 
 [Unstable feature to auto-impl groups](https://github.com/h33p/cglue/commit/af6ab0dd2b2ecfa24e8f67ba9246c0079f654f6e):
@@ -36,4 +40,4 @@ Ergonomic C/C++ wrappers:
 
 - Makes `cglue_impl_group!` a no-op.
 
-[Runtime ABI/API validation with abi\_stable](https://github.com/h33p/cglue/commit/5b75b31a3dfb35967721d94df2e83f3ced8be9c2)
+[Runtime ABI/API validation with abi\_stable](https://github.com/h33p/cglue/commit/5b75b31a3dfb35967721d94df2e83f3ced8be9c2).

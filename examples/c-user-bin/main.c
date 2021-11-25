@@ -1,3 +1,5 @@
+// This example shows client-side usage from C.
+
 #include <stdio.h>
 #include <string.h>
 #include "bindings.h"
@@ -18,17 +20,23 @@ int main() {
 	PluginInner obj;
 	int ret;
 
+	// Load the plugin, returns 0 on success.
+	// Otherwise, obj has undefined data.
 	if (ret = load_plugin(len > 0 ? name : "plugin_lib", &obj)) {
 		printf("Failed to load plugin (%d)!\n", ret);
 		plugininner_drop(obj);
 		return 1;
 	}
 
+	// In this block we temporarily borrow the features.
 	{
+		// Until `borrowed` is dropped, `obj` should not be touched.
 		FeaturesGroup borrowed = borrow_features(&obj);
 
+		// print_self is part of MainFeature, and always exists.
 		featuresgroup_print_self(&borrowed);
 
+		// These are optional features we check to see if they exist
 		if (borrowed.vtbl_keyvaluestore != NULL) {
 			printf("Using borrowed kvstore:\n");
 			use_kvstore(&borrowed);
@@ -41,9 +49,11 @@ int main() {
 
 		printf("Borrowed done.\n");
 
+		// Release the resources, `obj` is safe to use again.
 		featuresgroup_drop(borrowed);
 	}
 
+	// In this block we consume obj and it becomes unusable.
 	{
 		FeaturesGroup owned = into_features(obj);
 
@@ -59,6 +69,7 @@ int main() {
 			kvdump(&owned);
 		}
 
+		// We drop the last CGlue object, meaning the library should be freed.
 		featuresgroup_drop(owned);
 	}
 
@@ -88,13 +99,11 @@ void use_kvstore(FeaturesGroup *obj) {
 	printf("Enter key:\n");
 
 	fgets(key, sizeof(key), stdin);
-	int len = trim(key);
+	trim(key);
 
-	CSliceRef_u8 key_slice;
-	key_slice.data = (unsigned char *)key;
-	key_slice.len = len;
-
-	printf("Cur val: %zu\n", featuresgroup_get_key_value(obj, key_slice));
+	// STR will automatically construct a CSliceRef,
+	// but it can also be done manually for reuse.
+	printf("Cur val: %zu\n", featuresgroup_get_key_value(obj, STR(key)));
 
 	size_t new_val = 0;
 
@@ -104,7 +113,7 @@ void use_kvstore(FeaturesGroup *obj) {
 	char nl[2];
 	fgets(nl, sizeof(nl), stdin);
 
-	featuresgroup_write_key_value(obj, key_slice, new_val);
+	featuresgroup_write_key_value(obj, STR(key), new_val);
 }
 
 bool kvdump_callback(void *unused, KeyValue kv) {
@@ -114,6 +123,7 @@ bool kvdump_callback(void *unused, KeyValue kv) {
 }
 
 void kvdump(FeaturesGroup *obj) {
+	// Construct the simplest callback here that takes in the `kvdump_callback` function.
 	featuresgroup_dump_key_values(obj, CALLBACK(KeyValue, NULL, kvdump_callback));
 
 	int ints[32];
@@ -122,6 +132,11 @@ void kvdump(FeaturesGroup *obj) {
 		ints[i] = i * i;
 	}
 
+	// This macro takes the statically known array size,
+	// and construct a CIterator with the buffer.
+	// i32 is the rust type for int, thus we have to
+	// specify the type. For structure types, this is
+	// usually not needed, and we can use `BUF_ITER_ARR`.
 	BUF_ITER_ARR_SPEC(i32, int, int_iter, ints);
 
 	featuresgroup_print_ints(obj, int_iter);

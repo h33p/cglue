@@ -514,7 +514,6 @@ pub extern "C" fn compare_layouts(
     found: Option<&'static TypeLayout>,
 ) -> VerifyLayout {
     if let (Some(expected), Some(found)) = (expected, found) {
-        println!("{:?} {:?}", expected as *const _, found as *const _);
         match check_layout_compatibility(expected, found).into_result() {
             Ok(_) => VerifyLayout::Valid,
             Err(_) => VerifyLayout::Invalid,

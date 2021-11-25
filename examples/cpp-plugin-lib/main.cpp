@@ -1,16 +1,25 @@
+// This is an example of a plugin implemented in C++
+
 #include <stdio.h>
 #include <string.h>
 #include "bindings.h"
 #include <vector>
 #include <unordered_map>
 
+// Data of the main features key value store.
 struct KvStore {
 	std::unordered_map<std::string, size_t> map;
 };
 
+// This is an implementation of the `KeyValueStore + MainFeature` traits.
+//
+// We inherit from `FeaturesGroupContainer` so that implementation
+// functions can easily access the fields.
 template<typename T = CBox<KvStore>, typename C = COptArc<void>>
 struct KvStoreContainer : FeaturesGroupContainer<T, C> {
 
+	// Parent type must always be defined to the class we inherit.
+	// This parent is used to know which type the implementation is actually for.
 	using Parent = FeaturesGroupContainer<T, C>;
 
 	KvStoreContainer(T &&instance, C &&context) : Parent { instance, context } {}
@@ -35,21 +44,27 @@ struct KvStoreContainer : FeaturesGroupContainer<T, C> {
 	}
 };
 
-constexpr MainFeatureVtblImpl<KvStoreContainer<>> main_feature_vtbl;
-constexpr MainFeatureVtblImpl<KvStoreContainer<KvStore *>> main_feature_mut_vtbl;
-
-auto kvstore_vtbl = KeyValueStoreVtblImpl<KvStoreContainer<>>();
-auto kvstore_mut_vtbl = KeyValueStoreVtblImpl<KvStoreContainer<KvStore *>>();
-
+// This is the actual object that gets boxed.
+//
+// Use it like a normal class/struct.
 struct PluginCPP {
 	KvStore store;
 };
 
+// This contains implementation for `PluginInner` trait.
 template<typename T = CBox<PluginCPP>, typename C = COptArc<void>>
 struct PluginCPPContainer : CGlueObjContainer<T, C, PluginInnerRetTmp<C>> {
 
+	// Vtables inserted when borrowing or converting into features.
+	static constexpr MainFeatureVtblImpl<KvStoreContainer<>> main_feature_vtbl {};
+	static constexpr MainFeatureVtblImpl<KvStoreContainer<KvStore *>> main_feature_mut_vtbl {};
+	static constexpr KeyValueStoreVtblImpl<KvStoreContainer<>> kvstore_vtbl {};
+	static constexpr KeyValueStoreVtblImpl<KvStoreContainer<KvStore *>> kvstore_mut_vtbl {};
+
+	// The same as in KvStoreContainer, define the parent.
 	using Parent = CGlueObjContainer<T, C, PluginInnerRetTmp<C>>;
 
+	// Initialize the underlying container with instance and context objects.
 	PluginCPPContainer(T &&instance, C &&context) : Parent { instance, context } {}
 
 	using BorrowedType = FeaturesGroup<CBox<void>, C>;
@@ -58,6 +73,7 @@ struct PluginCPPContainer : CGlueObjContainer<T, C, PluginInnerRetTmp<C>> {
 
 	static BorrowedType borrow_features(Parent *self) {
 		BorrowedType ret;
+		// Need to manually opaquify the vtables (won't be needed in the future).
 		ret.vtbl_mainfeature = (decltype(ret.vtbl_mainfeature))&main_feature_vtbl;
 		ret.vtbl_keyvaluestore = (decltype(ret.vtbl_keyvaluestore))&kvstore_vtbl;
 		ret.container.instance = (CBox<void>)CBox<KvStore>(&self->instance.instance->store);
@@ -84,6 +100,7 @@ struct PluginCPPContainer : CGlueObjContainer<T, C, PluginInnerRetTmp<C>> {
 PluginInnerVtblImpl<PluginCPPContainer<>> plugin_vtbl;
 
 extern "C" {
+	// Create a new plugin ArcBox object that clones the library into itself.
 	PluginInnerBaseArcBox<PluginCPP, void> create_plugin(COptArc<void> &library) {
 		PluginInnerBaseArcBox<PluginCPP, void> ret;
 
