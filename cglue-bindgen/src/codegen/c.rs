@@ -72,12 +72,12 @@ pub fn parse_header(header: &str, config: &Config) -> Result<String> {
     // Check if we need to typedef `TypeLayout`
     let type_layout_re = Regex::new(r"((typedef [\s]+)|struct) TypeLayout")?;
     let needs_type_layout =
-        header.contains("const TypeLayout *") && !type_layout_re.is_match(&header);
+        header.contains("const TypeLayout *") && !type_layout_re.is_match(header);
 
     // PROCESSING:
 
     // Remove zsized ret tmps
-    let header = zsr_regex.replace_all(&header, "");
+    let header = zsr_regex.replace_all(header, "");
 
     let gr_regex = group_ret_tmp_regex(&zst_rets)?;
     let header = gr_regex.replace_all(&header, "");
@@ -233,7 +233,7 @@ void ctx_{prefix}_drop({ty} *self) {{
     for (t, second_half, _, _, funcs) in &obj_vtbls {
         let container_ty = format!("struct CGlueObjContainer_{}", second_half);
 
-        let vtbl = Vtable::new(t.to_string(), &funcs, &container_ty)?;
+        let vtbl = Vtable::new(t.to_string(), funcs, &container_ty)?;
 
         for f in vtbl.functions {
             vtbl_types.entry(f.name).or_default().insert(t.clone());
@@ -264,7 +264,7 @@ void ctx_{prefix}_drop({ty} *self) {{
         } = inner_map
             .get(inner.as_str())
             .copied()
-            .unwrap_or(ContainerType::from_name(inner.as_str()));
+            .unwrap_or_else(|| ContainerType::from_name(inner.as_str()));
         let ContextType {
             ty_prefix: ctx,
             drop_impl: context_wrappers,
@@ -272,7 +272,7 @@ void ctx_{prefix}_drop({ty} *self) {{
         } = context_map
             .get(context.as_str())
             .copied()
-            .unwrap_or(ContextType::from_name(context.as_str()));
+            .unwrap_or_else(|| ContextType::from_name(context.as_str()));
 
         let wrappers = vtbl.create_wrappers_c(
             ("container", "vtbl"),
@@ -317,7 +317,7 @@ void ctx_{prefix}_drop({ty} *self) {{
         } = inner_map
             .get(inner.as_str())
             .copied()
-            .unwrap_or(ContainerType::from_name(inner.as_str()));
+            .unwrap_or_else(|| ContainerType::from_name(inner.as_str()));
         let ContextType {
             ty_prefix: ctx,
             drop_impl: context_wrappers,
@@ -325,12 +325,12 @@ void ctx_{prefix}_drop({ty} *self) {{
         } = context_map
             .get(context.as_str())
             .copied()
-            .unwrap_or(ContextType::from_name(context.as_str()));
+            .unwrap_or_else(|| ContextType::from_name(context.as_str()));
 
         let wrappers = vtbl.create_wrappers_c(
             ("container", &format!("vtbl_{}", vtbl.name.to_lowercase())),
             ("", &|_| Some(&cont)),
-            (&container_ty, &inner, container_wrappers.is_some()),
+            (&container_ty, inner, container_wrappers.is_some()),
             (&context, ctx, context_wrappers.is_some()),
             (&this_ty, &[]),
             &mut generated_funcs,
@@ -338,7 +338,7 @@ void ctx_{prefix}_drop({ty} *self) {{
         );
 
         if config.default_context.as_deref() == Some(ctx)
-            && config.default_container.as_deref() == Some(&inner)
+            && config.default_container.as_deref() == Some(inner)
         {
             shortened_typedefs.push((this_ty, cont.to_string()));
         }
@@ -726,7 +726,7 @@ typedef (struct )?{ty} (?P<new_ty>.+);
         header = typedef_regex
             .replace(&header, |caps: &Captures| {
                 let new_ty = caps["new_ty"].to_string();
-                types_to_explore.push_front((root.clone(), ty.clone(), new_ty.clone()));
+                types_to_explore.push_front((root.clone(), ty.clone(), new_ty));
                 format!(
                     "{}{}{}",
                     &caps["old_typedef"], &caps["new_typedef"], &caps["inbetween"]

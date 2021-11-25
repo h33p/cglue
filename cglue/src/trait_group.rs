@@ -534,18 +534,12 @@ impl VerifyLayout {
 
     /// Check if the layout is strictly valid.
     pub fn is_valid_strict(&self) -> bool {
-        match self {
-            VerifyLayout::Valid => true,
-            _ => false,
-        }
+        matches!(self, VerifyLayout::Valid)
     }
 
     /// Check if the layout is either fully valid, or unknown.
     pub fn is_valid_relaxed(&self) -> bool {
-        match self {
-            VerifyLayout::Valid | VerifyLayout::Unknown => true,
-            _ => false,
-        }
+        matches!(self, VerifyLayout::Valid | VerifyLayout::Unknown)
     }
 
     /// Combine 2 layouts and return whether the layout is still fully valid.

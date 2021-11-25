@@ -383,7 +383,7 @@ impl<'a> Iterator for ArgsParser<'a> {
 
         let name = ret.rsplit(&['&', '*', ' '][..]).next()?;
 
-        Some((&ret[..(ret.len() - name.len())].trim(), name.trim()))
+        Some((ret[..(ret.len() - name.len())].trim(), name.trim()))
     }
 }
 
@@ -401,7 +401,7 @@ impl Vtable {
         ))?;
 
         for func in functions_str.split(';').filter(|s| !s.is_empty()) {
-            if let Some(cap) = reg.captures(&func) {
+            if let Some(cap) = reg.captures(func) {
                 let cont = &cap["cont"];
 
                 let mut arguments = vec![];
@@ -463,6 +463,7 @@ impl Vtable {
         ret
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn create_wrappers_c<'a>(
         &self,
         cont_vtbl: (&str, &str),
@@ -486,7 +487,7 @@ impl Vtable {
             })
             .iter(),
         ) {
-            let ty_prefix = ty_prefix(&f);
+            let ty_prefix = ty_prefix(f);
 
             let (prefix, cast_self) = if f.moves_self || f.return_type == this_ty {
                 let config_match = config.default_context.as_deref() == Some(context_info.1)

@@ -328,6 +328,7 @@ pub struct ParsedFunc {
 }
 
 impl ParsedFunc {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         sig: Signature,
         trait_name: Ident,
@@ -651,7 +652,7 @@ impl ParsedFunc {
             _ => (quote!(), args, c_out),
         };
 
-        let doc_text = format!(" Getter for {}.", name.to_string());
+        let doc_text = format!(" Getter for {}.", name);
 
         let gen = quote! {
             #[doc = #doc_text]

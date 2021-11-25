@@ -153,7 +153,7 @@ pub fn parse_header(header: &str, config: &Config) -> Result<String> {
     let type_layout_re =
         Regex::new(r"((((typedef [\s]+)|struct) TypeLayout)|(using TypeLayout =))")?;
     let needs_type_layout =
-        header.contains("const TypeLayout *") && !type_layout_re.is_match(&header);
+        header.contains("const TypeLayout *") && !type_layout_re.is_match(header);
 
     // PROCESSING:
 
@@ -889,7 +889,7 @@ struct [^\{\}\n]+<.*CGlueInst.*>)?",
         }
     }
 
-    Ok(header.into())
+    Ok(header)
 }
 
 fn zero_sized_ret_regex() -> Result<Regex> {

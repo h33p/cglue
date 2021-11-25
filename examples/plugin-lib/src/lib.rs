@@ -43,7 +43,7 @@ impl MainFeature for KvStore {
 
 impl KeyValueStore for KvStore {
     fn write_key_value(&mut self, name: &str, val: usize) {
-        self.map.insert(name.to_string().into(), val);
+        self.map.insert(name.to_string(), val);
     }
 
     fn get_key_value(&self, name: &str) -> usize {

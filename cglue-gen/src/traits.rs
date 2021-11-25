@@ -227,14 +227,12 @@ pub fn process_item(
                             quote!(#from_lifetime_simple)
                         };
 
-                        let cglue_f_tys = if let Some(ty_ident) = ty_ident {
-                            Some((
+                        let cglue_f_tys = ty_ident.as_ref().map(|ty_ident| {
+                            (
                                 quote!(<CGlueC::ObjType as #trait_name<#hrtb_lifetime_use #gen_use>>::#ty_ident),
                                 quote!(<CGlueC::ObjType as #trait_name<#simple_lifetime_use #gen_use>>::#ty_ident),
-                            ))
-                        } else {
-                            None
-                        };
+                            )
+                        });
 
                         let mut new_ty_hrtb = from_new_ty.clone();
                         let mut new_ty_simple = from_new_ty_simple.clone();
@@ -783,12 +781,6 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
 
     for func in funcs.iter() {
         func.ret_default_def(&mut ret_tmp_default_defs);
-    }
-
-    // If no types are wrapped, and feature is not enabled, inject a 1 byte padding.
-    if cfg!(feature = "no_empty_retwrap") && ret_tmp_type_defs.is_empty() {
-        ret_tmp_type_defs.extend(quote!(_padding: u8,));
-        ret_tmp_default_defs.extend(quote!(_padding: 0,));
     }
 
     // Define Default calls for temp storage

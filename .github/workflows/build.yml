@@ -179,7 +179,7 @@ jobs:
           platform: x64
       - name: Build the plugins
         run: cargo build --release -p plugin-api -p plugin-lib -p cglue-bindgen
-      - name: Build and C++ plugin library
+      - name: Build C++ plugin library
         run: |
           cd examples/cpp-plugin-lib/
           make

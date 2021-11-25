@@ -20,7 +20,6 @@ abi_stable = { version = "0.10", git = "https://github.com/rodrimati1992/abi_sta
 
 [features]
 default = ["std"]
-no_empty_retwrap = ["cglue-macro/no_empty_retwrap"]
 std = ["no-std-compat/std"]
 rust_void = ["cglue-macro/rust_void"]
 unstable = ["cglue-macro/unstable", "try_default"]

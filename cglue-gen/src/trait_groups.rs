@@ -63,7 +63,7 @@ impl From<Path> for TraitInfo {
 }
 
 /// Describes parse trait group, allows to generate code for it.
-#[cfg_attr(not(feature = "unstable"), allow(unused))]
+#[cfg_attr(feature = "unstable", allow(unused))]
 pub struct TraitGroup {
     name: Ident,
     cont_name: Ident,

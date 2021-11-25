@@ -155,4 +155,4 @@ unsafe fn load_plugin_impl(name: &str) -> Result<PluginInnerArcBox<'static>, Err
 /// Layout that should be embedded to a `PluginHeader`.
 /// Other layouts are not necessary, because the very root depends on them already.
 #[no_mangle]
-pub static ROOT_LAYOUT: &'static TypeLayout = PluginInnerArcBox::LAYOUT;
+pub static ROOT_LAYOUT: &TypeLayout = PluginInnerArcBox::LAYOUT;
