@@ -410,13 +410,49 @@ using ${trait}RetTmp = void;
     let header = gr_regex.replace_all(&header, "");
 
     // Add `typedef typename CGlueC::Context Context;` to each vtable
-    let header = vtbl_regex.replace_all(
-        &header,
-        r"$declaration {
+    // Also add vtable builder to each vtable
+    let header = vtbl_regex.replace_all(&header, |caps: &Captures| {
+        let decl = &caps["declaration"];
+        let funcs = &caps["functions"];
+        let tr = &caps["trait"];
+
+        let arg = if needs_type_layout {
+            "const TypeLayout *layout = nullptr"
+        } else {
+            ""
+        };
+
+        let mut impl_definitions = String::new();
+
+        if needs_type_layout {
+            impl_definitions += "layout"
+        }
+
+        for v in &vtbls_map[&tr].functions {
+            impl_definitions += ", \n        &Impl::";
+            impl_definitions += &v.name;
+        }
+
+        format!(
+            r"{decl} {{
     typedef typename CGlueC::Context Context;
-    $functions
-};",
-    );
+    {funcs}
+}};
+
+template<typename Impl>
+struct {tr}VtblImpl : {tr}Vtbl<typename Impl::Parent> {{
+constexpr {tr}VtblImpl({arg}) :
+    {tr}Vtbl<typename Impl::Parent> {{
+        {impl_definitions}
+    }} {{}}
+}};",
+            decl = decl,
+            funcs = funcs,
+            tr = tr,
+            arg = arg,
+            impl_definitions = impl_definitions
+        )
+    });
 
     // Add Context typedef to CGlueObjContainer
     // Create CGlueObjContainer type specializations

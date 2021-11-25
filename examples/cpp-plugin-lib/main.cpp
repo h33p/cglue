@@ -4,20 +4,6 @@
 #include <vector>
 #include <unordered_map>
 
-#define CGLUE_CONT_TY(cont, inst, trait, ctx) cont##Container<inst, ctx, trait##RetTmp<ctx>>
-#define GROUP_CONT_TY(cont, inst, trait, ctx) cont##Container<inst, ctx>
-#define VTBL_TY(MODE, cont, trait, inst, ctx) trait##Vtbl<MODE##_CONT_TY(cont, inst, trait, ctx)>
-
-#define VTBL_BUILDER(MODE, cont, impl_cont, trait, ...) \
-	template<typename T, typename C> \
-	VTBL_TY(MODE, cont, trait, T, C) __construct_##cont##trait () { \
-		using Cont = impl_cont##Container<T, C>; \
-		return __VA_ARGS__; \
-	}
-
-#define DEFINE_VTBL(MODE, name, cont, trait, inst, ctx) \
-	VTBL_TY(MODE, cont, trait, inst, ctx) name = __construct_##cont##trait <inst, ctx> ()
-
 struct KvStore {
 	std::unordered_map<std::string, size_t> map;
 };
@@ -49,22 +35,11 @@ struct KvStoreContainer : FeaturesGroupContainer<T, C> {
 	}
 };
 
-VTBL_BUILDER(GROUP, FeaturesGroup, KvStore, MainFeature, {
-	nullptr,
-	&Cont::print_self,
-});
+auto main_feature_vtbl = MainFeatureVtblImpl<KvStoreContainer<>>();
+auto main_feature_mut_vtbl = MainFeatureVtblImpl<KvStoreContainer<KvStore *>>();
 
-DEFINE_VTBL(GROUP, main_feature, FeaturesGroup, MainFeature, CBox<KvStore>, COptArc<void>);
-DEFINE_VTBL(GROUP, main_feature_mut, FeaturesGroup, MainFeature, KvStore *, COptArc<void>);
-
-VTBL_BUILDER(GROUP, FeaturesGroup, KvStore, KeyValueStore, {
-	nullptr,
-	&Cont::write_key_value,
-	&Cont::get_key_value,
-});
-
-DEFINE_VTBL(GROUP, kvstore, FeaturesGroup, KeyValueStore, CBox<KvStore>, COptArc<void>);
-DEFINE_VTBL(GROUP, kvstore_mut, FeaturesGroup, KeyValueStore, KvStore *, COptArc<void>);
+auto kvstore_vtbl = KeyValueStoreVtblImpl<KvStoreContainer<>>();
+auto kvstore_mut_vtbl = KeyValueStoreVtblImpl<KvStoreContainer<KvStore *>>();
 
 struct PluginCPP {
 	KvStore store;
@@ -83,43 +58,36 @@ struct PluginCPPContainer : CGlueObjContainer<T, C, PluginInnerRetTmp<C>> {
 
 	static BorrowedType borrow_features(Parent *self) {
 		BorrowedType ret;
-		ret.vtbl_mainfeature = (decltype(ret.vtbl_mainfeature))&main_feature;
-		ret.vtbl_keyvaluestore = (decltype(ret.vtbl_keyvaluestore))&kvstore;
+		ret.vtbl_mainfeature = (decltype(ret.vtbl_mainfeature))&main_feature_vtbl;
+		ret.vtbl_keyvaluestore = (decltype(ret.vtbl_keyvaluestore))&kvstore_vtbl;
 		ret.container.instance = (CBox<void>)CBox<KvStore>(&self->instance.instance->store);
 		return ret;
 	}
 
 	static OwnedType into_features(Parent self) {
 		OwnedType ret;
-		ret.vtbl_mainfeature = (decltype(ret.vtbl_mainfeature))&main_feature;
-		ret.vtbl_keyvaluestore = (decltype(ret.vtbl_keyvaluestore))&kvstore;
+		ret.vtbl_mainfeature = (decltype(ret.vtbl_mainfeature))&main_feature_vtbl;
+		ret.vtbl_keyvaluestore = (decltype(ret.vtbl_keyvaluestore))&kvstore_vtbl;
 		ret.container.instance = CBox<KvStore>(std::move(self.instance.instance->store));
 		return ret;
 	}
 
 	static OwnedTypeMut *mut_features(Parent *self) {
 		OwnedTypeMut *ret = &self->ret_tmp.assume_init().mut_features;
-		ret->vtbl_mainfeature = (decltype(ret->vtbl_mainfeature))&main_feature_mut;
-		ret->vtbl_keyvaluestore = (decltype(ret->vtbl_keyvaluestore))&kvstore_mut;
+		ret->vtbl_mainfeature = (decltype(ret->vtbl_mainfeature))&main_feature_mut_vtbl;
+		ret->vtbl_keyvaluestore = (decltype(ret->vtbl_keyvaluestore))&kvstore_mut_vtbl;
 		ret->container.instance = self->instance.instance;
 		return ret;
 	}
 };
 
-VTBL_BUILDER(CGLUE, CGlueObj, PluginCPP, PluginInner, {
-	get_root_layout(),
-	&Cont::borrow_features,
-	&Cont::into_features,
-	&Cont::mut_features,
-} );
-
-DEFINE_VTBL(CGLUE, plugin_vtbl, CGlueObj, PluginInner, CBox<PluginCPP>, COptArc<void>);
+auto plugin_vtbl = PluginInnerVtblImpl<PluginCPPContainer<>>(get_root_layout());
 
 extern "C" PluginInnerBaseArcBox<PluginCPP, void> create_plugin(COptArc<void> &library) {
 	PluginInnerBaseArcBox<PluginCPP, void> ret;
 
 	ret.vtbl = &plugin_vtbl;
-	ret.container = (PluginCPPContainer<>::Parent)PluginCPPContainer<>(CBox<PluginCPP>::new_box(), library.clone());
+	ret.container = PluginCPPContainer<>(CBox<PluginCPP>::new_box(), library.clone());
 
 	return ret;
 }
