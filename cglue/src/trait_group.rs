@@ -542,10 +542,7 @@ pub extern "C" fn compare_layouts(
     if let (Some(expected), Some(found)) = (expected, found) {
         match check_layout_compatibility(expected, found).into_result() {
             Ok(_) => VerifyLayout::Valid,
-            Err(e) => {
-                println!("{}", e);
-                VerifyLayout::Invalid
-            }
+            Err(_) => VerifyLayout::Invalid,
         }
     } else {
         VerifyLayout::Unknown
