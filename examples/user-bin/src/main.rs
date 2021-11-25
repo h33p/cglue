@@ -3,10 +3,11 @@
 //! This crate loads binary plugins using the API, and performs some operations with mandatory and
 //! optional traits.
 
-use cglue::prelude::v1::*;
+use cglue::prelude::v1::{result::from_int_result, *};
 use plugin_api::*;
 use std::ffi::CString;
 use std::io;
+use std::mem::MaybeUninit;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -21,9 +22,14 @@ fn main() -> Result<()> {
         lib = "plugin_lib".to_string();
     }
 
-    let mut obj = unsafe { load_plugin(CString::new(lib.trim()).unwrap().as_c_str().into()) }
-        .verify()
-        .ok_or("Plugin ABI mismatch!")?;
+    let mut obj = MaybeUninit::uninit();
+    let res = unsafe {
+        load_plugin(
+            CString::new(lib.trim()).unwrap().as_c_str().into(),
+            &mut obj,
+        )
+    };
+    let mut obj = unsafe { from_int_result::<_, Error>(res, obj) }?;
 
     {
         let mut borrowed = obj.borrow_features();

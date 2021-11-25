@@ -1,3 +1,95 @@
+//! # C++ code generator.
+//!
+//! This generator performs multiple things:
+//!
+//! ## Cleanup the types to work properly.
+//!
+//! Add typedefs where needed, add struct specializations for when the type param is void, etc.
+//!
+//! ## Generate trait function wrappers.
+//!
+//! For every group, and a single-trait cglue objects, all functions have been wrapped to call into
+//! the vtable. In groups, if 2 traits have the same function name, all such functions will be
+//! prefixed with each trait's name.
+//!
+//! ## Generate clone/drop functions.
+//!
+//! Copy constructor is not the way to clone objects. Use `object.clone()` function.
+//!
+//! Groups and CGlueTraitObj types have destructors defined. **Due to this, these types are not
+//! fully compatible with C ABI!** Specifically, you are not able to pass objects of this type
+//! by-value, because C++ will implicitly pass them by-reference.
+//!
+//! ## Simplify passing stl containers as iterators.
+//!
+//! Special `CPPIterator` type is available that takes in any container that has `begin` and `end`
+//! functions. It casts itself to `CIterator` implicitly when needed.
+//!
+//! With C++17 you do not need to specify the CPPIterator's type, but sadly, in older standards you
+//! may still have to.
+//!
+//! ## Add conversions between `CSlice`s, `char *`, and `std::string` types.
+//!
+//! ## Allow `Callback`s to be built with containers and lambdas.
+//!
+//! Containers must be passed by pointer, while lambdas are taken in as const references.
+//!
+//! ## Create vtable impl types.
+//!
+//! Basically, this is a quick way to build a vtable for an object, if you have a struct defined in
+//! a specific manner.
+//!
+//! Given a `MainFeature` trait, with vtable:
+//!
+//! ```ignore
+//! template<typename CGlueC>
+//! struct MainFeatureVtbl {
+//!     void (*print_self)(const CGlueC *cont);
+//! };
+//! ```
+//!
+//! The following builder struct will be created:
+//!
+//! ```ignore
+//! template<typename Impl>
+//! struct MainFeatureVtblImpl : MainFeatureVtbl<typename Impl::Parent> {
+//! constexpr MainFeatureVtblImpl() :
+//!     MainFeatureVtbl<typename Impl::Parent> {
+//!         &Impl::print_self
+//!     } {}
+//! };
+//! ```
+//!
+//! To allow building a vtable, provide an implementation something like this:
+//!
+//! ```ignore
+//! template<typename T = CBox<KvStore>, typename C = COptArc<void>>
+//! struct KvStoreContainer : CGlueObjContainer<T, C, MainFeatureRetTmp<C>> {
+//!
+//!     using Parent = CGlueObjContainer<T, C, MainFeatureRetTmp<C>>;
+//!
+//!     static void print_self(const Parent *self) {
+//!         for (const auto &e : self->instance->map) {
+//!             printf("%s: %zu\n", e.first.c_str(), e.second);
+//!         }
+//!     }
+//! };
+//! ```
+//!
+//! Where `KvStore` can be a structure that contains underlying data to print (the `map` variable).
+//!
+//! Then, you just need to define the vtable in the global state, or wherever they are needed:
+//!
+//! ```ignore
+//! constexpr MainFeatureVtblImpl<KvStoreContainer<>> main_feature_vtbl;
+//! constexpr MainFeatureVtblImpl<KvStoreContainer<KvStore *>> main_feature_mut_vtbl;
+//! ```
+//!
+//! You may still have to cast the address of the vtable to erase the type information, and it is
+//! recommended to do that at the very last step. However, this is error prone, and in the future
+//! type erasure on C++ side may be done automatically.
+//!
+
 use crate::config::*;
 use crate::types::*;
 use itertools::Itertools;
@@ -416,20 +508,13 @@ using ${trait}RetTmp = void;
         let funcs = &caps["functions"];
         let tr = &caps["trait"];
 
-        let arg = if needs_type_layout {
-            "const TypeLayout *layout = nullptr"
-        } else {
-            ""
-        };
-
         let mut impl_definitions = String::new();
 
-        if needs_type_layout {
-            impl_definitions += "layout"
-        }
-
-        for v in &vtbls_map[&tr].functions {
-            impl_definitions += ", \n        &Impl::";
+        for (i, v) in vtbls_map[&tr].functions.iter().enumerate() {
+            if i > 0 {
+                impl_definitions += ", \n        ";
+            }
+            impl_definitions += "&Impl::";
             impl_definitions += &v.name;
         }
 
@@ -441,7 +526,7 @@ using ${trait}RetTmp = void;
 
 template<typename Impl>
 struct {tr}VtblImpl : {tr}Vtbl<typename Impl::Parent> {{
-constexpr {tr}VtblImpl({arg}) :
+constexpr {tr}VtblImpl() :
     {tr}Vtbl<typename Impl::Parent> {{
         {impl_definitions}
     }} {{}}
@@ -449,7 +534,6 @@ constexpr {tr}VtblImpl({arg}) :
             decl = decl,
             funcs = funcs,
             tr = tr,
-            arg = arg,
             impl_definitions = impl_definitions
         )
     });

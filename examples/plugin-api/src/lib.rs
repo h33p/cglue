@@ -2,8 +2,10 @@
 //!
 //! This crate is shared by plugins and users.
 
-use abi_stable::type_layout::TypeLayout;
-use cglue::prelude::v1::*;
+pub use abi_stable::type_layout::TypeLayout;
+use cglue::prelude::v1::{trait_group::compare_layouts, *};
+use core::mem::MaybeUninit;
+use core::num::NonZeroI32;
 use libloading::{library_filename, Library, Symbol};
 
 #[cglue_trait]
@@ -61,53 +63,98 @@ cglue_trait_group!(FeaturesGroup, {
     Clone
 });
 
+/// Describes possible errors that can occur loading the library
+#[repr(u8)]
+#[derive(Debug, Clone, Copy)]
+pub enum Error {
+    Path = 1,
+    Loading = 2,
+    Symbol = 3,
+    Abi = 4,
+}
+
+impl IntError for Error {
+    fn into_int_err(self) -> NonZeroI32 {
+        NonZeroI32::new(self as u8 as _).unwrap()
+    }
+
+    fn from_int_err(err: NonZeroI32) -> Self {
+        match err.get() {
+            1 => Self::Path,
+            2 => Self::Loading,
+            3 => Self::Symbol,
+            4 => Self::Abi,
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+impl std::error::Error for Error {}
+
+/// Plugin header that the API looks for.
+///
+/// Plugins should define the header with name `PLUGIN_HEADER` with no mangling.
+#[repr(C)]
+pub struct PluginHeader {
+    pub layout: &'static TypeLayout,
+    pub create: extern "C" fn(&COptArc<cglue::trait_group::c_void>) -> PluginInnerArcBox<'static>,
+}
+
 /// Load a plugin from a given library.
-///
-/// Upon return, user should validate the layout of the vtables to ensure ABI consistency.
-///
-/// For that, use [`LayoutGuard::verify`](cglue::trait_group::LayoutGuard::verify) in Rust.
-///
-/// Alternatively, manually call [`is_layout_valid`](self::is_layout_valid) function.
-///
-/// Ideally, a plugin system would perform this layout validation inside the function, but
-/// here we want to demonstrate that it is also doable from outside.
 ///
 /// # Safety
 ///
-/// Input library must implement a correct `create_plugin` function. Its signature must be as
-/// follows:
+/// Input library must implement a correct `create_plugin` and `get_root_layout()` functions.
+/// Its signatures must be as follows:
 ///
-/// `extern "C" fn(&COptArc<T>) -> PluginInnerArcBox<'static>`
+/// `extern "C" fn crate_plugin(&COptArc<T>) -> PluginInnerArcBox<'static>`
+/// `extern "C" fn get_root_layout() -> Option<&'static TypeLayout>`
 ///
-/// Where `T` is any type, since it's opaque.
+/// Where `T` is any type, since it's opaque. Meanwhile, `get_root_layout` should simply
+/// [call the one in this crate](self::get_root_layout). It is used to verify
+/// version mismatches.
 #[no_mangle]
 pub unsafe extern "C" fn load_plugin(
     name: ReprCStr<'_>,
-) -> LayoutGuard<PluginInnerArcBox<'static>> {
-    let mut current_exe = std::env::current_exe().unwrap();
-    current_exe.set_file_name(library_filename(name.as_ref()));
-    let lib = Library::new(current_exe).unwrap();
-    let sym: Symbol<extern "C" fn(&COptArc<Library>) -> LayoutGuard<PluginInnerArcBox<'static>>> =
-        lib.get(b"create_plugin\0").unwrap();
-    let sym = sym.into_raw();
-    let arc = CArc::from(lib);
-    sym(&Some(arc).into())
+    ok_out: &mut MaybeUninit<PluginInnerArcBox<'static>>,
+) -> i32 {
+    load_plugin_impl(name.as_ref()).into_int_out_result(ok_out)
 }
 
-/// Check if plugin's layout is compatible with the one we are expecting.
-///
-/// Returns `true`, if the layout is valid and the object should be safe to use,
-/// or `false` if the layout is invalid or unknown.
-#[no_mangle]
-pub extern "C" fn is_layout_valid(obj: &LayoutGuard<PluginInnerArcBox>) -> bool {
-    obj.is_valid()
+unsafe fn load_plugin_impl(name: &str) -> Result<PluginInnerArcBox<'static>, Error> {
+    let mut current_exe = std::env::current_exe().map_err(|_| Error::Path)?;
+    current_exe.set_file_name(library_filename(name));
+    let lib = Library::new(current_exe).map_err(|_| Error::Loading)?;
+
+    let header: Symbol<&'static PluginHeader> = lib.get(b"PLUGIN_HEADER\0").map_err(|e| {
+        println!("{}", e);
+        Error::Symbol
+    })?;
+    let header = header.into_raw();
+
+    if !compare_layouts(get_root_layout(), Some(header.layout)).is_valid_strict() {
+        return Err(Error::Abi);
+    }
+
+    let arc = CArc::from(lib).into_opt();
+    Ok((header.create)(&arc.into_opaque()))
 }
+
+#[no_mangle]
+pub static ROOT_LAYOUT: &'static TypeLayout =
+    <PluginInnerArcBox as PluginInnerOpaqueObj>::VTBL_LAYOUT;
 
 /// Get the root vtable layout
 ///
 /// Returns reference to the layout that should be embedded to a `PluginInnerArcBox` vtable.
 /// Other layouts are not necessary, because the very root depends on them already.
 #[no_mangle]
-pub extern "C" fn get_root_layout() -> &'static TypeLayout {
-    <PluginInnerArcBox as PluginInnerOpaqueObj>::VTBL_LAYOUT
+pub extern "C" fn get_root_layout() -> Option<&'static TypeLayout> {
+    Some(ROOT_LAYOUT)
 }

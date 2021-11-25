@@ -10,6 +10,9 @@ parse_deps = true
 
 include = ["cglue", "plugin-api"]
 
+[export]
+include = ["PluginHeader"]
+
 [macro_expansion]
 bitflags = true
 

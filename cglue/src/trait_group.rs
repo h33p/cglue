@@ -190,13 +190,6 @@ pub trait VerifiableLayout {
     fn verify_layout(&self) -> VerifyLayout;
 }
 
-#[cfg(feature = "layout_checks")]
-impl<T, V: WithLayout, C, R> VerifiableLayout for CGlueTraitObj<'_, T, V, C, R> {
-    fn verify_layout(&self) -> VerifyLayout {
-        self.vtbl.verify_layout()
-    }
-}
-
 // Conversions into container type itself.
 // Needed when generated code returns Self
 
@@ -470,36 +463,17 @@ pub unsafe trait CGlueBaseVtbl: Sized {
     fn as_opaque(&self) -> &Self::OpaqueVtbl {
         unsafe { &*(self as *const Self as *const Self::OpaqueVtbl) }
     }
-
-    #[cfg(feature = "vtbl_layout_checks")]
-    fn verify_layout(&self) -> VerifyLayout {
-        self.as_opaque().verify_layout()
-    }
 }
 
-#[cfg(not(any(feature = "layout_checks", feature = "vtbl_layout_checks")))]
+#[cfg(not(feature = "layout_checks"))]
 pub trait OpaqueVtblBounds: Sized + CGlueVtblCont {}
-#[cfg(not(any(feature = "layout_checks", feature = "vtbl_layout_checks")))]
+#[cfg(not(feature = "layout_checks"))]
 impl<T: CGlueVtblCont> OpaqueVtblBounds for T {}
 
-#[cfg(all(feature = "layout_checks", not(feature = "vtbl_layout_checks")))]
-pub trait OpaqueVtblBounds: Sized + CGlueVtblCont + abi_stable::StableAbi {}
-#[cfg(all(feature = "layout_checks", not(feature = "vtbl_layout_checks")))]
-impl<T: CGlueVtblCont + abi_stable::StableAbi> OpaqueVtblBounds for T {}
-
-#[cfg(feature = "vtbl_layout_checks")]
-pub trait OpaqueVtblBounds: Sized + CGlueVtblCont + WithLayout {}
-#[cfg(feature = "vtbl_layout_checks")]
-impl<T: CGlueVtblCont + WithLayout> OpaqueVtblBounds for T {}
-
 #[cfg(feature = "layout_checks")]
-pub trait WithLayout: Sized + abi_stable::StableAbi {
-    fn get_layout(&self) -> Option<&'static abi_stable::type_layout::TypeLayout>;
-
-    fn verify_layout(&self) -> VerifyLayout {
-        VerifyLayout::check::<Self>(self.get_layout())
-    }
-}
+pub trait OpaqueVtblBounds: Sized + CGlueVtblCont + abi_stable::StableAbi {}
+#[cfg(feature = "layout_checks")]
+impl<T: CGlueVtblCont + abi_stable::StableAbi> OpaqueVtblBounds for T {}
 
 /// Describes absence of a context.
 ///
@@ -540,6 +514,7 @@ pub extern "C" fn compare_layouts(
     found: Option<&'static TypeLayout>,
 ) -> VerifyLayout {
     if let (Some(expected), Some(found)) = (expected, found) {
+        println!("{:?} {:?}", expected as *const _, found as *const _);
         match check_layout_compatibility(expected, found).into_result() {
             Ok(_) => VerifyLayout::Valid,
             Err(_) => VerifyLayout::Invalid,

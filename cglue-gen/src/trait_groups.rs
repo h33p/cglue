@@ -643,12 +643,6 @@ impl TraitGroup {
         #[cfg(not(feature = "layout_checks"))]
         let derive_layouts = quote!();
 
-        #[cfg(feature = "vtbl_layout_checks")]
-        let mut verify_layout = quote! {
-            use #trg_path::{VerifiableLayout, WithLayout};
-            #trg_path::VerifyLayout::Valid
-        };
-
         let all_gen_use = &gen_use;
 
         // Work around needless_update lint
@@ -657,13 +651,6 @@ impl TraitGroup {
         } else {
             quote!()
         };
-
-        #[cfg(feature = "vtbl_layout_checks")]
-        for TraitInfo { vtbl_name, .. } in &self.mandatory_vtbl {
-            verify_layout.extend(quote! {
-                .and(self.#vtbl_name.verify_layout())
-            });
-        }
 
         for TraitInfo {
             enable_vtbl_name,
@@ -687,11 +674,6 @@ impl TraitGroup {
                     }
                 });
             }
-
-            #[cfg(feature = "vtbl_layout_checks")]
-            verify_layout.extend(quote! {
-                .and(self.#vtbl_name.map(|v| v.verify_layout()).unwrap_or(#trg_path::VerifyLayout::Valid))
-            });
         }
 
         let mut trait_funcs = TokenStream::new();
@@ -1086,23 +1068,6 @@ impl TraitGroup {
             #extra_filler_traits
         };
 
-        #[cfg(feature = "vtbl_layout_checks")]
-        let vf_layout_impl = quote! {
-            impl<'cglue_a, CGlueInst, CGlueCtx: #ctx_bound, #gen_declare> #trg_path::VerifiableLayout
-                for #name<'cglue_a, CGlueInst, CGlueCtx, #gen_use>
-            where
-                #cont_name<CGlueInst, CGlueCtx, #gen_use>: #trg_path::CGlueObjBase,
-                CGlueInst: ::abi_stable::StableAbi,
-                #gen_where_bounds
-            {
-                fn verify_layout(&self) -> #trg_path::VerifyLayout {
-                    #verify_layout
-                }
-            }
-        };
-        #[cfg(not(feature = "vtbl_layout_checks"))]
-        let vf_layout_impl = quote!();
-
         quote! {
 
             pub use #submod_name::{
@@ -1213,8 +1178,6 @@ impl TraitGroup {
                 {
                     #enable_funcs
                 }
-
-                #vf_layout_impl
 
                 impl<'cglue_a, CGlueInst, CGlueCtx: #ctx_bound, #gen_declare> #vtable_type<'cglue_a, CGlueInst, CGlueCtx, #gen_use>
                 where

@@ -1,3 +1,41 @@
+//! # C code generator.
+//!
+//! This generator performs multiple things:
+//!
+//! ## Cleanup the types to compile properly.
+//!
+//! This cleanup is more substantial than in C++ side. Specifically, additional monomorphization
+//! happens to replace all `Context` types with context structures that we find actually used. Zero
+//! sized structures are being removed, and other missing types are defined.
+//!
+//! ## Generate trait function wrappers.
+//!
+//! Trait function wrappers are being created. If function's arguments do not matter from type to
+//! type, a generic wrapper is emitted, that accepts a `void` pointer. Otherwise, a container and
+//! context type prefix is being emitted, unless the type is specifically configured to be the
+//! default one.
+//!
+//! ## Generate clone/drop functions.
+//!
+//! ## Add shortened typedefs for default types.
+//!
+//! Basically, `PluginInnerArcBox` drops the suffix and becomes just `PluginInner`.
+//!
+//! ## Add callback and iterator wrappers for simpler usage.
+//!
+//! Callback is able to collect data into a buffer that is either statically, or dynamically
+//! allocated.
+//!
+//! Iterators can be built out of buffers easily.
+//!
+//! ## Define macros for simpler usage.
+//!
+//! `MUT_SLICE`, `REF_SLICE`, `STR` macros allow to build slices out of strings or buffers,
+//! `COLLECT_CB` and its derivatives deal with buffer callbacks, `COUNT_CB` creates a callback that
+//! simply counts elements, `BUF_ITER` and its derivatives deal with constructing iterators from
+//! buffers.
+//!
+
 use crate::config::*;
 use crate::types::*;
 use itertools::Itertools;

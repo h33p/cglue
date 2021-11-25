@@ -35,8 +35,8 @@ struct KvStoreContainer : FeaturesGroupContainer<T, C> {
 	}
 };
 
-auto main_feature_vtbl = MainFeatureVtblImpl<KvStoreContainer<>>();
-auto main_feature_mut_vtbl = MainFeatureVtblImpl<KvStoreContainer<KvStore *>>();
+constexpr MainFeatureVtblImpl<KvStoreContainer<>> main_feature_vtbl;
+constexpr MainFeatureVtblImpl<KvStoreContainer<KvStore *>> main_feature_mut_vtbl;
 
 auto kvstore_vtbl = KeyValueStoreVtblImpl<KvStoreContainer<>>();
 auto kvstore_mut_vtbl = KeyValueStoreVtblImpl<KvStoreContainer<KvStore *>>();
@@ -81,14 +81,18 @@ struct PluginCPPContainer : CGlueObjContainer<T, C, PluginInnerRetTmp<C>> {
 	}
 };
 
-auto plugin_vtbl = PluginInnerVtblImpl<PluginCPPContainer<>>(get_root_layout());
+PluginInnerVtblImpl<PluginCPPContainer<>> plugin_vtbl;
 
-extern "C" PluginInnerBaseArcBox<PluginCPP, void> create_plugin(COptArc<void> &library) {
-	PluginInnerBaseArcBox<PluginCPP, void> ret;
+extern "C" {
+	PluginInnerBaseArcBox<PluginCPP, void> create_plugin(COptArc<void> &library) {
+		PluginInnerBaseArcBox<PluginCPP, void> ret;
 
-	ret.vtbl = &plugin_vtbl;
-	ret.container = PluginCPPContainer<>(CBox<PluginCPP>::new_box(), library.clone());
+		ret.vtbl = &plugin_vtbl;
+		ret.container = PluginCPPContainer<>(CBox<PluginCPP>::new_box(), library.clone());
 
-	return ret;
+		return ret;
+	}
+
+	// Define the header and opaque cast the plugin creation function.
+	PluginHeader PLUGIN_HEADER { ROOT_LAYOUT, (decltype(PLUGIN_HEADER.create))create_plugin };
 }
-

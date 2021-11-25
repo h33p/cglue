@@ -15,10 +15,11 @@ int main() {
 	fgets(name, sizeof(name), stdin);
 	int len = trim(name);
 
-	PluginInner obj = load_plugin(len > 0 ? name : "plugin_lib");
+	PluginInner obj;
+	int ret;
 
-	if (!is_layout_valid(&obj)) {
-		printf("Plugin ABI mismatch!\n");
+	if (ret = load_plugin(len > 0 ? name : "plugin_lib", &obj)) {
+		printf("Failed to load plugin (%d)!\n", ret);
 		plugininner_drop(obj);
 		return 1;
 	}

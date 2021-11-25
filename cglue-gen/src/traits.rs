@@ -983,35 +983,9 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
     };
 
     #[cfg(feature = "layout_checks")]
-    let with_layout_impl = quote! {
-        impl<'cglue_a, CGlueC: 'cglue_a + #trg_path::CGlueObjBase, #gen_declare_stripped> #trg_path::WithLayout
-            for #vtbl_ident<'cglue_a, CGlueC, #gen_use>
-        where
-            CGlueC: abi_stable::StableAbi,
-            #gen_where_bounds
-        {
-            fn get_layout(&self) -> Option<&'static abi_stable::type_layout::TypeLayout> {
-                self.layout
-            }
-        }
-    };
-    #[cfg(not(feature = "layout_checks"))]
-    let with_layout_impl = quote!();
-
-    #[cfg(feature = "layout_checks")]
-    let (layout_definition, layout_default_impl) = {
-        (
-            quote!(layout: Option<&'static ::abi_stable::type_layout::TypeLayout>,),
-            quote!(layout: Some(<<#vtbl_ident<'cglue_a, CGlueC, #gen_use> as #trg_path::CGlueBaseVtbl>::OpaqueVtbl as ::abi_stable::StableAbi>::LAYOUT),),
-        )
-    };
-    #[cfg(not(feature = "layout_checks"))]
-    let (layout_definition, layout_default_impl) = { (quote!(), quote!()) };
-
-    #[cfg(feature = "layout_checks")]
     let (opaque_vtbl_bounds, container_vtbl_bounds) = (
-        quote!(#vtbl_ident<'cglue_a, CGlueC::OpaqueTarget, #gen_use>: #trg_path::WithLayout,),
-        quote!(#vtbl_ident<'cglue_a, <Self as #trg_path::GetContainer>::ContType, #gen_use>: #trg_path::WithLayout,),
+        quote!(#vtbl_ident<'cglue_a, CGlueC::OpaqueTarget, #gen_use>: ::abi_stable::StableAbi,),
+        quote!(#vtbl_ident<'cglue_a, <Self as #trg_path::GetContainer>::ContType, #gen_use>: ::abi_stable::StableAbi,),
     );
     #[cfg(not(feature = "layout_checks"))]
     let (opaque_vtbl_bounds, container_vtbl_bounds) = (quote!(), quote!());
@@ -1075,7 +1049,6 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
             where
                 #gen_where_bounds_base
             {
-                #layout_definition
                 #vtbl_func_defintions
                 _lt_cglue_a: ::core::marker::PhantomData<&'cglue_a CGlueC>,
             }
@@ -1103,7 +1076,6 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
                 /// Create a static vtable for the given type.
                 fn default() -> Self {
                     &#vtbl_ident {
-                        #layout_default_impl
                         #vtbl_default_funcs
                         _lt_cglue_a: ::core::marker::PhantomData,
                     }
@@ -1131,8 +1103,6 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
                 type Context = CGlueC::Context;
                 type RetTmp = #ret_tmp_ident<CGlueC::Context, #gen_use>;
             }
-
-            #with_layout_impl
 
             impl<'cglue_a, CGlueC #cglue_c_bounds, CGlueCtx: #ctx_bound, #gen_declare_stripped> #trg_path::CGlueVtbl<CGlueC>
                 for #vtbl_ident<'cglue_a, CGlueC, #gen_use>
