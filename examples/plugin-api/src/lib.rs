@@ -3,6 +3,7 @@
 //! This crate is shared by plugins and users.
 
 pub use abi_stable::type_layout::TypeLayout;
+use abi_stable::StableAbi;
 use cglue::prelude::v1::{trait_group::compare_layouts, *};
 use core::mem::MaybeUninit;
 use core::num::NonZeroI32;
@@ -130,7 +131,10 @@ pub unsafe extern "C" fn load_plugin(
 unsafe fn load_plugin_impl(name: &str) -> Result<PluginInnerArcBox<'static>, Error> {
     let mut current_exe = std::env::current_exe().map_err(|_| Error::Path)?;
     current_exe.set_file_name(library_filename(name));
-    let lib = Library::new(current_exe).map_err(|_| Error::Loading)?;
+    let lib = Library::new(current_exe).map_err(|e| {
+        println!("{}", e);
+        Error::Loading
+    })?;
 
     let header: Symbol<&'static PluginHeader> = lib.get(b"PLUGIN_HEADER\0").map_err(|e| {
         println!("{}", e);
@@ -138,7 +142,7 @@ unsafe fn load_plugin_impl(name: &str) -> Result<PluginInnerArcBox<'static>, Err
     })?;
     let header = header.into_raw();
 
-    if !compare_layouts(get_root_layout(), Some(header.layout)).is_valid_strict() {
+    if !compare_layouts(Some(ROOT_LAYOUT), Some(header.layout)).is_valid_strict() {
         return Err(Error::Abi);
     }
 
@@ -146,15 +150,9 @@ unsafe fn load_plugin_impl(name: &str) -> Result<PluginInnerArcBox<'static>, Err
     Ok((header.create)(&arc.into_opaque()))
 }
 
-#[no_mangle]
-pub static ROOT_LAYOUT: &'static TypeLayout =
-    <PluginInnerArcBox as PluginInnerOpaqueObj>::VTBL_LAYOUT;
-
-/// Get the root vtable layout
+/// Layout for the root vtable.
 ///
-/// Returns reference to the layout that should be embedded to a `PluginInnerArcBox` vtable.
+/// Layout that should be embedded to a `PluginHeader`.
 /// Other layouts are not necessary, because the very root depends on them already.
 #[no_mangle]
-pub extern "C" fn get_root_layout() -> Option<&'static TypeLayout> {
-    Some(ROOT_LAYOUT)
-}
+pub static ROOT_LAYOUT: &'static TypeLayout = PluginInnerArcBox::LAYOUT;

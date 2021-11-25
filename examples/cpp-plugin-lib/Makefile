@@ -1,5 +1,5 @@
 CC = cc
-CFLAGS = -pedantic -Wl,--no-as-needed -g -O0 -shared -fpie -fPIC -L../../target/release
+CFLAGS = -pedantic -Wl,--no-as-needed -std=c++14 -g -O0 -shared -fpie -fPIC -L../../target/release
 LIBS=-lm -ldl -lpthread -l:libplugin_api.a -lstdc++
 
 ODIR=./

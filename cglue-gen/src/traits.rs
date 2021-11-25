@@ -991,17 +991,12 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
     let (opaque_vtbl_bounds, container_vtbl_bounds) = (quote!(), quote!());
 
     #[cfg(feature = "layout_checks")]
-    let (layout_checkable_bound, objcont_accessor_bound, accessor_layout_dec, accessor_layout_def) = (
+    let (layout_checkable_bound, objcont_accessor_bound) = (
         quote!(::abi_stable::StableAbi),
         quote!(<CGlueO as #trg_path::GetContainer>::ContType: ::abi_stable::StableAbi,),
-        quote!(
-            const VTBL_LAYOUT: &'static ::abi_stable::type_layout::TypeLayout;
-        ),
-        quote!(const VTBL_LAYOUT: &'static ::abi_stable::type_layout::TypeLayout = <Self::#vtbl_ident as ::abi_stable::StableAbi>::LAYOUT;),
     );
     #[cfg(not(feature = "layout_checks"))]
-    let (layout_checkable_bound, objcont_accessor_bound, accessor_layout_dec, accessor_layout_def) =
-        (quote!(), quote!(), quote!(), quote!());
+    let (layout_checkable_bound, objcont_accessor_bound) = (quote!(), quote!());
 
     // Glue it all together
     quote! {
@@ -1210,8 +1205,6 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
                 #gen_where_bounds
             {
                 type #vtbl_ident: #trg_path::CGlueVtblCont<ContType = <Self as #trg_path::GetContainer>::ContType> + #layout_checkable_bound;
-
-                #accessor_layout_dec
             }
 
             impl<'cglue_a #cglue_a_outlives, #life_declare
@@ -1222,8 +1215,6 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
                 #gen_where_bounds
             {
                 type #vtbl_ident = #vtbl_ident<'cglue_a, <Self as #trg_path::GetContainer>::ContType, #gen_use>;
-
-                #accessor_layout_def
             }
 
             /* Trait implementation. */
