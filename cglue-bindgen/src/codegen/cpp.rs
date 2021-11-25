@@ -28,6 +28,8 @@
 //! With C++17 you do not need to specify the CPPIterator's type, but sadly, in older standards you
 //! may still have to.
 //!
+//! ## Implement `input_iterator` for `CIterator`.
+//!
 //! ## Add conversions between `CSlice`s, `char *`, and `std::string` types.
 //!
 //! ## Allow `Callback`s to be built with containers and lambdas.
@@ -229,15 +231,65 @@ struct (?P<class>CSlice(Ref|Mut)) \{
 
     // Bridge common stl containers to callbacks and iterators
     let header = Regex::new(
-        r"(?P<definition>template<typename T>
+        r"(?P<definition_start>template<typename T>
 struct CIterator \{
     void \*iter;
-    int32_t \(\*func\)\(void\*, MaybeUninit<T> \*out\);
-\};)",
+    int32_t \(\*func\)\(void\*, MaybeUninit<T> \*out\);)
+\};",
     )?
     .replace(
         &header,
-        r"$definition
+        r"$definition_start
+
+    class iterator : std::iterator<std::input_iterator_tag, T> {
+        CIterator<T> *iter;
+        RustMaybeUninit<T> data;
+        bool initialized = false;
+        bool end = false;
+
+      public:
+        explicit iterator() : end(true) {}
+
+        explicit iterator(CIterator<T> *iter) : iter(iter) {
+            end = iter->func(iter->iter, &data.assume_init());
+        }
+
+        iterator &operator++() {
+            if (!iter || end) {
+                return *this;
+            }
+
+            end = iter->func(iter->iter, &data.assume_init());
+
+            return *this;
+        }
+
+        constexpr bool operator==(const iterator &other) const {
+            return (end && other.end)
+                || (!end && !other.end && data.assume_init() == other.data.assume_init());
+        }
+
+        constexpr bool operator!=(const iterator &other) const {
+            return !(*this == other);
+        }
+
+        constexpr T &operator*() {
+            return data.assume_init();
+        }
+
+        constexpr const T &operator*() const {
+            return data.assume_init();
+        }
+    };
+
+    constexpr iterator begin() {
+        return iterator(this);
+    }
+
+    constexpr iterator end() {
+        return iterator();
+    }
+};
 
 template<typename Container>
 struct CPPIterator {

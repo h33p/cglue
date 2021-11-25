@@ -1,4 +1,7 @@
 // This is an example of a plugin implemented in C++
+//
+// It lacks certain features of the Rust library, but should be
+// detailed enough to describe every typical plugin usage.
 
 #include <stdio.h>
 #include <string.h>
@@ -42,6 +45,21 @@ struct KvStoreContainer : FeaturesGroupContainer<T, C> {
 			return it->second;
 		}
 	}
+
+	static void dump_key_values(const Parent *self, OpaqueCallback<KeyValue> callback) {
+		for (const auto &e : self->instance->map) {
+			if (!callback.func(callback.context, KeyValue { e.first, e.second })) {
+				break;
+			}
+		}
+	}
+
+	static void print_ints(const Parent *self, CIterator<int> ints) {
+		int i = 0;
+		for (int v : ints) {
+			printf("%d: %d\n", i++, v);
+		}
+	}
 };
 
 // This is the actual object that gets boxed.
@@ -60,6 +78,7 @@ struct PluginCPPContainer : CGlueObjContainer<T, C, PluginInnerRetTmp<C>> {
 	static constexpr MainFeatureVtblImpl<KvStoreContainer<KvStore *>> main_feature_mut_vtbl {};
 	static constexpr KeyValueStoreVtblImpl<KvStoreContainer<>> kvstore_vtbl {};
 	static constexpr KeyValueStoreVtblImpl<KvStoreContainer<KvStore *>> kvstore_mut_vtbl {};
+	static constexpr KeyValueDumperVtblImpl<KvStoreContainer<>> kvdumper_vtbl {};
 
 	// The same as in KvStoreContainer, define the parent.
 	using Parent = CGlueObjContainer<T, C, PluginInnerRetTmp<C>>;
@@ -76,7 +95,8 @@ struct PluginCPPContainer : CGlueObjContainer<T, C, PluginInnerRetTmp<C>> {
 		// Need to manually opaquify the vtables (won't be needed in the future).
 		ret.vtbl_mainfeature = (decltype(ret.vtbl_mainfeature))&main_feature_vtbl;
 		ret.vtbl_keyvaluestore = (decltype(ret.vtbl_keyvaluestore))&kvstore_vtbl;
-		ret.container.instance = (CBox<void>)CBox<KvStore>(&self->instance.instance->store);
+		ret.vtbl_keyvaluedumper = (decltype(ret.vtbl_keyvaluedumper))&kvdumper_vtbl;
+		ret.container.instance = CBox<KvStore>(&self->instance.instance->store);
 		return ret;
 	}
 
@@ -84,19 +104,23 @@ struct PluginCPPContainer : CGlueObjContainer<T, C, PluginInnerRetTmp<C>> {
 		OwnedType ret;
 		ret.vtbl_mainfeature = (decltype(ret.vtbl_mainfeature))&main_feature_vtbl;
 		ret.vtbl_keyvaluestore = (decltype(ret.vtbl_keyvaluestore))&kvstore_vtbl;
+		ret.vtbl_keyvaluedumper = (decltype(ret.vtbl_keyvaluedumper))&kvdumper_vtbl;
 		ret.container.instance = CBox<KvStore>(std::move(self.instance.instance->store));
 		return ret;
 	}
 
 	static OwnedTypeMut *mut_features(Parent *self) {
+		// Take the return value's address out of the ret_tmp storage.
 		OwnedTypeMut *ret = &self->ret_tmp.assume_init().mut_features;
 		ret->vtbl_mainfeature = (decltype(ret->vtbl_mainfeature))&main_feature_mut_vtbl;
 		ret->vtbl_keyvaluestore = (decltype(ret->vtbl_keyvaluestore))&kvstore_mut_vtbl;
+		// We do not need to box here - we are returning a reference (pointer).
 		ret->container.instance = self->instance.instance;
 		return ret;
 	}
 };
 
+// This is the root vtable that we put on the plugin object.
 PluginInnerVtblImpl<PluginCPPContainer<>> plugin_vtbl;
 
 extern "C" {
