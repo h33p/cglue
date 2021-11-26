@@ -17,6 +17,12 @@ pub struct CArc<T: Sized + 'static> {
     drop_fn: Option<unsafe extern "C" fn(Option<&T>)>,
 }
 
+impl<T: Sized + 'static> AsRef<Option<&'static T>> for CArc<T> {
+    fn as_ref(&self) -> &Option<&'static T> {
+        &self.instance
+    }
+}
+
 impl<T> Clone for CArc<T> {
     fn clone(&self) -> Self {
         match <Option<&CArcSome<T>>>::from(self) {
