@@ -564,7 +564,7 @@ using ${trait}RetTmp = void;
 
         for (i, v) in vtbls_map[&tr].functions.iter().enumerate() {
             if i > 0 {
-                impl_definitions += ", \n        ";
+                impl_definitions += ",\n        ";
             }
             impl_definitions += "&Impl::";
             impl_definitions += &v.name;
