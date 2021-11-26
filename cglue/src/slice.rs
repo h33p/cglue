@@ -4,6 +4,7 @@
 
 use core::convert::TryFrom;
 use core::marker::PhantomData;
+use std::prelude::v1::*;
 
 /// Wrapper around const slices.
 ///
