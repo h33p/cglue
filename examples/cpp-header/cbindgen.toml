@@ -1,0 +1,20 @@
+language = "C"
+
+tab_width = 4
+documentation_style = "doxy"
+style = "both"
+cpp_compat = true
+
+[parse]
+parse_deps = true
+
+include = ["cglue", "plugin-api"]
+
+[macro_expansion]
+bitflags = true
+
+[fn]
+sort_by = "None"
+
+[parse.expand]
+crates = ["cglue", "plugin-api"]
