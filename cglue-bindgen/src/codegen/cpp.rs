@@ -110,7 +110,6 @@ using [^\s]+ =|
 }
 
 pub fn parse_header(header: &str, config: &Config) -> Result<String> {
-
     // PREPROCESSING:
 
     // Fix up the MaybeUninit
@@ -906,7 +905,6 @@ fn strip_maybe_uninit(header: &str) -> String {
     }
 
     for v in iter {
-
         let mut cnt = 1;
         let mut done = false;
 
