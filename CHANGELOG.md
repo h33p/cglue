@@ -1,5 +1,9 @@
 # CGlue changelog
 
+## Changes in 0.2.1:
+
+Fix no\_std compilation.
+
 ## Changes in 0.2.0:
 
 [Rework code generation](https://github.com/h33p/cglue/commit/e589a0115ec343c4538804d3d8ef76ca101a112a):
