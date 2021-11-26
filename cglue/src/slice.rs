@@ -15,9 +15,11 @@ use core::marker::PhantomData;
 /// Simple conversion:
 ///
 /// ```
+/// use cglue::slice::CSliceRef;
+///
 /// let arr = [0, 5, 3, 2];
 ///
-/// let cslice = CSlice::from(&arr);
+/// let cslice = CSliceRef::from(&arr[..]);
 ///
 /// let slice = cslice.as_slice();
 ///
