@@ -1,4 +1,4 @@
-//! Describes slices as C-structs.
+//! # Slices as C-structs.
 //!
 //! These slices are then transferable across the FFI boundary safely.
 
@@ -9,6 +9,20 @@ use core::marker::PhantomData;
 ///
 /// This is meant as a safe type to pass across the FFI boundary with similar semantics as regular
 /// slice. However, not all functionality is present, use the slice conversion functions.
+///
+/// # Examples
+///
+/// Simple conversion:
+///
+/// ```
+/// let arr = [0, 5, 3, 2];
+///
+/// let cslice = CSlice::from(&arr);
+///
+/// let slice = cslice.as_slice();
+///
+/// assert_eq!(&arr, slice);
+/// ```
 #[repr(C)]
 #[derive(Clone, Copy)]
 #[cfg_attr(feature = "abi_stable", derive(::abi_stable::StableAbi))]

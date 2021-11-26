@@ -1,4 +1,6 @@
 //! Core definitions for traits, and their groups.
+//!
+//! These are essentially the internals of CGlue.
 
 // TODO: split everything up
 
@@ -145,49 +147,6 @@ impl<T, V, C, R> GetVtbl<V> for CGlueTraitObj<'_, T, V, C, R> {
     fn get_vtbl(&self) -> &V {
         self.vtbl
     }
-}
-
-#[repr(transparent)]
-#[cfg(feature = "layout_checks")]
-pub struct LayoutGuard<T>(T);
-
-#[cfg(feature = "layout_checks")]
-impl<T: VerifiableLayout> From<T> for LayoutGuard<T> {
-    fn from(o: T) -> Self {
-        Self(o)
-    }
-}
-
-#[cfg(feature = "layout_checks")]
-impl<T: VerifiableLayout> LayoutGuard<T> {
-    pub fn verify(self) -> Option<T> {
-        if self.0.verify_layout().is_valid_strict() {
-            Some(self.0)
-        } else {
-            None
-        }
-    }
-
-    pub fn verify_relaxed(self) -> Option<T> {
-        if self.0.verify_layout().is_valid_strict() {
-            Some(self.0)
-        } else {
-            None
-        }
-    }
-
-    pub fn is_valid(&self) -> bool {
-        self.0.verify_layout().is_valid_strict()
-    }
-
-    pub fn is_valid_relaxed(&self) -> bool {
-        self.0.verify_layout().is_valid_relaxed()
-    }
-}
-
-#[cfg(feature = "layout_checks")]
-pub trait VerifiableLayout {
-    fn verify_layout(&self) -> VerifyLayout;
 }
 
 // Conversions into container type itself.

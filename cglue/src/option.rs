@@ -1,4 +1,4 @@
-//! Describes a FFI safe option.
+//! # FFI safe option.
 
 /// FFI-safe Option.
 ///

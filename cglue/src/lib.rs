@@ -262,13 +262,13 @@
 //!
 //! | Name | Purpose |
 //! --- | ---
-//! | MyGroupContainer<Inst, Ctx> | Stores temporary return storage. Vtables are built for this type.
+//! | `MyGroupContainer<Inst, Ctx>` | Stores temporary return storage. Vtables are built for this type.
 //!
 //! And finally, the filler trait that is required for an object to be grouppable:
 //!
 //! | Name | Purpose |
 //! --- | ---
-//! | MyGroupVtableFiller | Trait that allows an object to specify which optional traits are available, through the use of `enable_trait` functions. |
+//! | `MyGroupVtableFiller` | Trait that allows an object to specify which optional traits are available, through the use of `enable_trait` functions. |
 //!
 //! The macro generation will also generate structures for all combinations of optional traits
 //! being used. For more convenient by-macro usage, the names of optional traits inside are sorted
@@ -952,11 +952,15 @@ pub use ::cglue_macro::{
 pub use try_default::TryDefault;
 
 pub mod ext {
-    // Built-in external traits.
+    //! # Built-in external traits.
+    //!
+    //! All of the traits implemented here are usable in trait groups and objects.
     cglue_macro::cglue_builtin_ext_traits!();
 }
 
 pub mod prelude {
+    //! # Import most commonly used types.
+
     pub mod v1 {
         pub use crate::{
             arc::CArc,
@@ -976,7 +980,7 @@ pub mod prelude {
         pub use try_default::TryDefault;
 
         #[cfg(feature = "layout_checks")]
-        pub use crate::trait_group::{LayoutGuard, VerifiableLayout, VerifyLayout};
+        pub use crate::trait_group::VerifyLayout;
     }
 }
 

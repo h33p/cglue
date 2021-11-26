@@ -1,4 +1,4 @@
-//! Describes an FFI-safe Arc.
+//! # FFI-safe Arc.
 use crate::trait_group::c_void;
 use crate::trait_group::Opaquable;
 use std::sync::Arc;
@@ -8,7 +8,7 @@ unsafe impl<T: Sync + Send> Sync for CArc<T> {}
 
 /// FFI-Safe Arc
 ///
-/// This is an FFI-Safe equivalent of Option<Arc<T>>, or Arc<T>.
+/// This is an FFI-Safe equivalent of Arc<T> and Option<Arc<T>>.
 #[repr(C)]
 #[cfg_attr(feature = "abi_stable", derive(::abi_stable::StableAbi))]
 pub struct CArc<T: Sized + 'static> {
@@ -41,6 +41,22 @@ impl<T> Drop for CArc<T> {
 }
 
 impl<T> CArc<T> {
+    /// Take arc's resources, and leave `None` in its place.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cglue::arc::CArc;
+    ///
+    /// let mut arc = CArc::from(0u64);
+    ///
+    /// assert!(arc.as_ref().is_some());
+    ///
+    /// let arc2 = arc.take();
+    ///
+    /// assert!(arc2.as_ref().is_some());
+    /// assert!(arc.as_ref().is_none());
+    /// ```
     pub fn take(&mut self) -> CArc<T> {
         Self {
             instance: self.instance.take(),

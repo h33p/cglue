@@ -1,4 +1,4 @@
-//! FFI compatible callbacks
+//! # FFI compatible callbacks
 //!
 //! The essence of them is to be simple, reliable, and flexible. Thus, every callback accepts a C
 //! function that takes 2 arguments: `context`, and `argument`.

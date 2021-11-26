@@ -1,4 +1,4 @@
-//! Forwards a trait on references
+//! # Forwards a trait on references
 //!
 //! Combined with the `#[cglue_forward]` macro forward implementation will be generated on `Fwd`
 //! type.  Whether `Fwd` implements the trait depends purely on whether the trait has

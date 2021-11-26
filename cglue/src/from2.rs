@@ -1,4 +1,4 @@
-//! From on Into
+//! # From on Into
 
 /// Wrapper trait that is implemented on `Into` types.
 ///

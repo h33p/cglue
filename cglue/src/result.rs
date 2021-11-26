@@ -1,4 +1,4 @@
-//! Describes a FFI safe result.
+//! # FFI safe result.
 //!
 //! This module contains several key parts:
 //!

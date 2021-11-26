@@ -1,4 +1,4 @@
-//! FFI compatible iterators
+//! # FFI compatible iterators
 //!
 //! It is a simple interface that allows to pass streams into functions.
 

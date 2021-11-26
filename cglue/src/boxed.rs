@@ -1,4 +1,4 @@
-//! Describes an FFI-safe wrapped box.
+//! # FFI-safe wrapped box.
 use crate::trait_group::c_void;
 use crate::trait_group::*;
 use core::ops::{Deref, DerefMut};

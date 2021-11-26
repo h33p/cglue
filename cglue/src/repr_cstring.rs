@@ -1,4 +1,4 @@
-//! Describes null-terminated transparent C-strings.
+//! # Null-terminated transparent C-strings.
 
 use std::prelude::v1::*;
 use std::slice::*;
