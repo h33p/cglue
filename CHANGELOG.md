@@ -1,6 +1,6 @@
 # CGlue changelog
 
-## Changes in 0.2.1:
+## Changes in 0.2.2:
 
 Fix no\_std compilation.
 

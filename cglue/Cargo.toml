@@ -1,6 +1,6 @@
 [package]
 name = "cglue"
-version = "0.2.1"
+version = "0.2.2"
 authors = ["Aurimas Blažulionis <0x60@pm.me>"]
 edition = "2018"
 description = "FFI safe abstractions for making plugins and C-compatible libraries"
@@ -19,7 +19,7 @@ try_default = { version = "= 1.0.0", optional = true }
 abi_stable = { version = "0.10", optional = true }
 
 [features]
-default = []
+default = ["std"]
 std = ["no-std-compat/std"]
 rust_void = ["cglue-macro/rust_void"]
 unstable = ["cglue-macro/unstable", "try_default"]
