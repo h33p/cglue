@@ -110,6 +110,14 @@ using [^\s]+ =|
 }
 
 pub fn parse_header(header: &str, config: &Config) -> Result<String> {
+
+    // PREPROCESSING:
+
+    // Fix up the MaybeUninit
+    // Basically, we strip it completely, and then define `RustMaybeUninit` for special cases.
+
+    let header = &strip_maybe_uninit(header);
+
     // COLLECTION:
 
     // Collect zsized ret tmps
@@ -157,15 +165,11 @@ pub fn parse_header(header: &str, config: &Config) -> Result<String> {
 
     // PROCESSING:
 
-    // Fix up the MaybeUninit
     let header = header.replace(
         "struct MaybeUninit;",
-        r"using MaybeUninit = T;
-
-template<typename T>
-struct alignas(alignof(T)) RustMaybeUninit {
+        r"struct alignas(alignof(T)) RustMaybeUninit {
     char pad[sizeof(T)];
-    constexpr T &assume_init() {
+    inline T &assume_init() {
         return *(T *)this;
     }
     constexpr const T &assume_init() const {
@@ -234,7 +238,7 @@ struct (?P<class>CSlice(Ref|Mut)) \{
         r"(?P<definition_start>template<typename T>
 struct CIterator \{
     void \*iter;
-    int32_t \(\*func\)\(void\*, MaybeUninit<T> \*out\);)
+    int32_t \(\*func\)\(void\*, T \*out\);)
 \};",
     )?
     .replace(
@@ -273,7 +277,7 @@ struct CIterator \{
             return !(*this == other);
         }
 
-        constexpr T &operator*() {
+        inline T &operator*() {
             return data.assume_init();
         }
 
@@ -299,7 +303,7 @@ struct CPPIterator {
     CIterator<T> iter;
     typename Container::iterator cur, end;
 
-    static int32_t next(void *data, MaybeUninit<T> *out) {
+    static int32_t next(void *data, T *out) {
         CPPIterator *i = (CPPIterator *)data;
 
         if (i->cur == i->end) {
@@ -419,7 +423,7 @@ struct DeferedForget {
 
 /** Workaround for void types in generic functions. */
 struct StoreAll {
-    constexpr auto operator[](StoreAll) const {
+    constexpr bool operator[](StoreAll) const {
         return false;
     }
 
@@ -429,7 +433,7 @@ struct StoreAll {
     }
 
     template <class T>
-    constexpr friend T && operator,(T &&t, StoreAll) {
+    friend T && operator,(T &&t, StoreAll) {
         return std::forward<T>(t);
     }
 };
@@ -601,7 +605,7 @@ constexpr {tr}VtblImpl() :
     $fields
     RustMaybeUninit<R> ret_tmp;
 
-    inline auto clone_context() noexcept {
+    inline Context clone_context() noexcept {
         return context.clone();
     }
 
@@ -622,7 +626,7 @@ struct CGlueObjContainer<T, void, R> {
     T instance;
     RustMaybeUninit<R> ret_tmp;
 
-    inline auto clone_context() noexcept {}
+    inline Context clone_context() noexcept {}
 
     inline void drop() && noexcept {
         mem_drop(std::move(instance));
@@ -639,7 +643,7 @@ struct CGlueObjContainer<T, C, void> {
     T instance;
     C context;
 
-    inline auto clone_context() noexcept {
+    inline Context clone_context() noexcept {
         return context.clone();
     }
 
@@ -659,7 +663,7 @@ struct CGlueObjContainer<T, void, void> {
     typedef void Context;
     T instance;
 
-    auto clone_context() noexcept {}
+    inline Context clone_context() noexcept {}
 
     inline void drop() && noexcept {
         mem_drop(std::move(instance));
@@ -684,7 +688,7 @@ struct CGlueObjContainer<T, void, void> {
     typedef CGlueCtx Context;
     {fields}{ret_tmps}
 
-    inline auto clone_context() noexcept {{
+    inline Context clone_context() noexcept {{
         return context.clone();
     }}
 
@@ -704,7 +708,7 @@ struct {group}Container<CGlueInst, void> {{
     typedef void Context;
     CGlueInst instance;
 
-    inline auto clone_context() noexcept {{}}
+    inline Context clone_context() noexcept {{}}
 
     inline void drop() && noexcept {{
         mem_drop(std::move(instance));
@@ -890,6 +894,40 @@ struct [^\{\}\n]+<.*CGlueInst.*>)?",
     }
 
     Ok(header)
+}
+
+fn strip_maybe_uninit(header: &str) -> String {
+    let mut out = String::new();
+
+    let mut iter = header.split("MaybeUninit<");
+
+    if let Some(v) = iter.next() {
+        out += v;
+    }
+
+    for v in iter {
+
+        let mut cnt = 1;
+        let mut done = false;
+
+        for c in v.chars() {
+            if !done {
+                if c == '<' {
+                    cnt += 1;
+                } else if c == '>' {
+                    cnt -= 1;
+                    if cnt == 0 {
+                        done = true;
+                        continue;
+                    }
+                }
+            }
+
+            out.push(c);
+        }
+    }
+
+    out
 }
 
 fn zero_sized_ret_regex() -> Result<Regex> {

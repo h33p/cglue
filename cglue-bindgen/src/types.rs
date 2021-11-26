@@ -259,8 +259,6 @@ impl Function {
             prefix = prefix,
             return_type = if wrap_in_container {
                 this_ty
-            } else if cpp_mode {
-                "auto"
             } else {
                 return_type
             },
