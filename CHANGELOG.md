@@ -2,10 +2,6 @@
 
 ## Changes in 0.2.0:
 
-[Replace CArc with COptArc, make old CArc private](https://github.com/h33p/cglue/commit/b5caf2229fe236e2697d3b5b15b58a92b59bd6d4):
-
-- COptArc was always the prefered choice, as it allowed to also represent `None` in the same amount of space.
-
 [Rework code generation](https://github.com/h33p/cglue/commit/e589a0115ec343c4538804d3d8ef76ca101a112a):
 
 - Make code generator emit C functions that take in a single object that contains both the object and the return context. This simplifies usage from C/C++.
@@ -45,3 +41,10 @@ Ergonomic C/C++ wrappers:
 - Makes `cglue_impl_group!` a no-op.
 
 [Runtime ABI/API validation with abi\_stable](https://github.com/h33p/cglue/commit/5b75b31a3dfb35967721d94df2e83f3ced8be9c2).
+
+[Remove no\_empty\_retwrap feature](https://github.com/h33p/cglue/commit/4e2703df12c1f69b1aa4e02f8328d660ef0bf17b).
+
+[Replace CArc with COptArc, make old CArc private](https://github.com/h33p/cglue/commit/b5caf2229fe236e2697d3b5b15b58a92b59bd6d4):
+
+- COptArc was always the prefered choice, as it allowed to also represent `None` in the same amount of space.
+

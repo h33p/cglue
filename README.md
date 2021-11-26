@@ -246,13 +246,13 @@ Container type (opaque to Rust users) that is placed within the group:
 
 | Name | Purpose |
 --- | ---
-| MyGroupContainer<Inst, Ctx> | Stores temporary return storage. Vtables are built for this type.
+| `MyGroupContainer<Inst, Ctx>` | Stores temporary return storage. Vtables are built for this type.
 
 And finally, the filler trait that is required for an object to be grouppable:
 
 | Name | Purpose |
 --- | ---
-| MyGroupVtableFiller | Trait that allows an object to specify which optional traits are available, through the use of `enable_trait` functions. |
+| `MyGroupVtableFiller` | Trait that allows an object to specify which optional traits are available, through the use of `enable_trait` functions. |
 
 The macro generation will also generate structures for all combinations of optional traits
 being used. For more convenient by-macro usage, the names of optional traits inside are sorted
