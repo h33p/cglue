@@ -1,5 +1,7 @@
 
-# CGlue &emsp; [![Crates.io]][crates] [![API Docs]][docs] [![Build and test]][workflows] [![MIT licensed]][license] [![Rustc 1.45]][rust]
+# CGlue
+
+[![Crates.io]][crates] [![API Docs]][docs] [![Build and test]][workflows] [![MIT licensed]][license] [![Rustc 1.45]][rust]
 
 [Crates.io]: https://img.shields.io/crates/v/cglue.svg
 [crates]: https://crates.io/crates/cglue
