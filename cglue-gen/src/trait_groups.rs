@@ -1196,7 +1196,7 @@ impl TraitGroup {
                     = #name<'cglue_a, #crate_path::boxed::CBox<'cglue_a, CGlueT>, CGlueCtx, #gen_use>;
 
                 pub type #base_name_arc_box<'cglue_a, CGlueT, CGlueArcTy, #gen_use>
-                    = #base_name_ctx_box<'cglue_a, CGlueT, #crate_path::arc::COptArc<CGlueArcTy>, #gen_use>;
+                    = #base_name_ctx_box<'cglue_a, CGlueT, #crate_path::arc::CArc<CGlueArcTy>, #gen_use>;
 
                 pub type #base_name_ref<'cglue_a, CGlueT, #gen_use>
                     = #name<'cglue_a, &'cglue_a CGlueT, #crate_path::trait_group::NoContext, #gen_use>;
@@ -1205,7 +1205,7 @@ impl TraitGroup {
                     = #name<'cglue_a, &'cglue_a CGlueT, CGlueCtx, #gen_use>;
 
                 pub type #base_name_arc_ref<'cglue_a, CGlueT, CGlueArcTy, #gen_use>
-                    = #name<'cglue_a, &'cglue_a CGlueT, #crate_path::arc::COptArc<CGlueArcTy>, #gen_use>;
+                    = #name<'cglue_a, &'cglue_a CGlueT, #crate_path::arc::CArc<CGlueArcTy>, #gen_use>;
 
                 pub type #base_name_mut<'cglue_a, CGlueT, #gen_use>
                     = #name<'cglue_a, &'cglue_a mut CGlueT, #crate_path::trait_group::NoContext, #gen_use>;
@@ -1214,7 +1214,7 @@ impl TraitGroup {
                     = #name<'cglue_a, &'cglue_a mut CGlueT, CGlueCtx, #gen_use>;
 
                 pub type #base_name_arc_mut<'cglue_a, CGlueT, CGlueArcTy, #gen_use>
-                    = #name<'cglue_a, &'cglue_a mut CGlueT, #crate_path::arc::COptArc<CGlueArcTy>, #gen_use>;
+                    = #name<'cglue_a, &'cglue_a mut CGlueT, #crate_path::arc::CArc<CGlueArcTy>, #gen_use>;
 
                 pub type #opaque_name_boxed<'cglue_a, #gen_use>
                     = #base_name_boxed<'cglue_a, #c_void, #gen_use>;

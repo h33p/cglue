@@ -39,7 +39,7 @@ If all code is glued together, our glue is the safest on the market.
 ## Overview
 
 CGlue bridges Rust traits between C and other languages. It aims to be seamless to integrate -
-just add a few annotations around your traits, and they'll be good to go!
+just add a few annotations around your traits, and they should be good to go!
 
 ```rust
 use cglue::*;
@@ -78,7 +78,8 @@ fn main() -> () {
 ```
 
 Rust does not guarantee your code will work with
-neither 2 different compiler versions clashing, nor [any other minor changes](https://github.com/rust-lang/compiler-team/issues/457), CGlue glues it all together in a way that works.
+neither [2 different compiler versions clashing](https://pastebin.com/raw/un1TbJCe), nor [any other minor changes](https://github.com/rust-lang/compiler-team/issues/457),
+CGlue glues it all together in a way that works.
 
 This is done by generating wrapper vtables (virtual function tables) for the specified trait, and creating an opaque object with matching table.
 
@@ -162,7 +163,8 @@ vtable functions will not be modified. It is being ensured through encapsulation
 from anywhere by using hidden submodules. However, unverifiable users (C libraries) may still
 be able to modify the tables. This library assumes they are not malicious and does not
 perform any runtime verification. API version mismatch checking with
-[abi\_stable](https://crates.io/crates/abi_stable) is an opt-in feature (requires rustc 1.46+).
+[abi\_stable](https://crates.io/crates/abi_stable) is an opt-in feature (requires rustc 1.46+,
+and abi_stable git, or 0.10.4 version).
 
 Other than 2 bits in [associated type wrapping](#associated-type-wrapping), this crate should
 be safe.
@@ -179,13 +181,13 @@ so that manual implementations can not introduce undefined behaviour.
 --- | --- | --- | ----
 | `MyTraitBox` | Regular owned CGlue object. | [`CBox<c_void>`](crate::boxed::CBox) | [`NoContext`](crate::trait_group::NoContext) |
 | `MyTraitCtxBox<Ctx>` | Owned CGlue object with a [context](#plugin-system). | [`CBox<c_void>`](crate::boxed::CBox) | `Ctx` |
-| `MyTraitArcBox` | Owned CGlue object with a reference counted context. | [`CBox<c_void>`](crate::boxed::CBox) | [`COptArc<c_void>`](crate::arc::COptArc) |
+| `MyTraitArcBox` | Owned CGlue object with a reference counted context. | [`CBox<c_void>`](crate::boxed::CBox) | [`CArc<c_void>`](crate::arc::CArc) |
 | `MyTraitMut` | By-mut-ref CGlue object. | `&mut c_void`. | [`NoContext`](crate::trait_group::NoContext) |
 | `MyTraitCtxMut<Ctx>` | By-mut-ref CGlue object with a context. | `&mut c_void`. | `Ctx` |
-| `MyTraitArcMut` | By-mut-ref CGlue object with a reference counted context. | `&mut c_void`. | [`COptArc<c_void>`](crate::arc::COptArc) |
+| `MyTraitArcMut` | By-mut-ref CGlue object with a reference counted context. | `&mut c_void`. | [`CArc<c_void>`](crate::arc::CArc) |
 | `MyTraitRef` | By-ref (const) CGlue object. | `&c_void`. | [`NoContext`](crate::trait_group::NoContext) |
 | `MyTraitCtxRef<Ctx>` | By-ref (const) CGlue object with a context. | `&c_void`. | `Ctx` |
-| `MyTraitArcRef` | By-ref (const) CGlue object with a reference counted context. | `&c_void`. | [`COptArc<c_void>`](crate::arc::COptArc) |
+| `MyTraitArcRef` | By-ref (const) CGlue object with a reference counted context. | `&c_void`. | [`CArc<c_void>`](crate::arc::CArc) |
 
 Only opaque types provide functionality. Non-opaque types can be used as `Into` trait bounds
 and are required to type check trait bounds.
@@ -196,7 +198,7 @@ These are the generic types needed for bounds checking:
 --- | --- | --- | ---
 | `MyTraitBaseBox<T>` | Base owned CGlue object. | [`CBox<T>`](crate::boxed::CBox) | [`NoContext`](crate::trait_group::NoContext) |
 | `MyTraitBaseCtxBox<T, Ctx>` | Base owned CGlue object with [some context](#plugin-system). | [`CBox<T>`](crate::boxed::CBox) | `Ctx` |
-| `MyTraitBaseArcBox<T, Ctx>` | Base owned CGlue object with reference counted context. | [`CBox<T>`](crate::boxed::CBox) | [`COptArc<Ctx>`](crate::arc::COptArc) |
+| `MyTraitBaseArcBox<T, Ctx>` | Base owned CGlue object with reference counted context. | [`CBox<T>`](crate::boxed::CBox) | [`CArc<Ctx>`](crate::arc::CArc) |
 | `MyTraitBaseMut<T>` | Base by-mut-ref CGlue object. | `&mut T`. | [`NoContext`](crate::trait_group::NoContext) |
 | `MyTraitBaseRef<T>` | Typedef for generic by-ref (const) CGlue object. | `&T`. | [`NoContext`](crate::trait_group::NoContext) |
 | `MyTraitBase<Inst, Ctx>` | Base (non-opaque) CGlue object. It can have any compatible instance and context | `Inst` | `Ctx` |
@@ -217,13 +219,13 @@ of the vtable.
 --- | --- | --- | ---
 | `MyGroupBox` | Owned CGlue trait group. | [`CBox<c_void>`](crate::boxed::CBox) | [`NoContext`](crate::trait_group::NoContext) |
 | `MyGroupCtxBox<Ctx>` | Owned CGlue trait group with [some context](#plugin-system). | [`CBox<c_void>`](crate::boxed::CBox) | `Ctx` |
-| `MyGroupArcBox` | Typedef for opaque owned CGlue trait group with reference counted context. | [`CBox<c_void>`](crate::boxed::CBox) | [`COptArc<c_void>`](crate::arc::COptArc) |
+| `MyGroupArcBox` | Typedef for opaque owned CGlue trait group with reference counted context. | [`CBox<c_void>`](crate::boxed::CBox) | [`CArc<c_void>`](crate::arc::CArc) |
 | `MyGroupMut` | Typedef for opaque by-mut-ref CGlue trait group. | `&mut c_void`. | [`NoContext`](crate::trait_group::NoContext) |
 | `MyGroupCtxMut<Ctx>` | Typedef for opaque by-mut-ref CGlue trait group with a custom context. | `&mut c_void`. | `Ctx` |
-| `MyGroupArcMut` | Typedef for opaque by-mut-ref CGlue trait group with a reference counted context. | `&mut c_void`. | [`COptArc<c_void>`](crate::arc::COptArc) |
+| `MyGroupArcMut` | Typedef for opaque by-mut-ref CGlue trait group with a reference counted context. | `&mut c_void`. | [`CArc<c_void>`](crate::arc::CArc) |
 | `MyGroupRef` | Typedef for opaque by-ref (const) CGlue trait group. | `&c_void`. | [`NoContext`](crate::trait_group::NoContext) |
 | `MyGroupCtxRef<Ctx>` | Typedef for opaque by-ref (const) CGlue trait group with a custom context. | `&c_void`. | `Ctx` |
-| `MyGroupArcRef` | Typedef for opaque by-ref (const) CGlue trait group with a reference counted context. | `&c_void`. | [`COptArc<c_void>`](crate::arc::COptArc) |
+| `MyGroupArcRef` | Typedef for opaque by-ref (const) CGlue trait group with a reference counted context. | `&c_void`. | [`CArc<c_void>`](crate::arc::CArc) |
 
 Base types are as follows:
 
@@ -231,13 +233,13 @@ Base types are as follows:
 --- | --- | --- | ---
 | `MyGroupBaseBox<T>` | Base owned CGlue trait group. Its container is a [`CBox<T>`](crate::boxed::CBox) |
 | `MyGroupBaseCtxBox<T, Ctx>` | Base owned CGlue trait group with [some context](#plugin-system). | [`CBox<T>`](crate::boxed::CBox) | `Ctx` |
-| `MyGroupBaseArcBox<T, Ctx>` | Base owned CGlue trait group with reference counted context. | [`CBox<T>`](crate::boxed::CBox) | [`COptArc<Ctx>`](crate::arc::COptArc) |
+| `MyGroupBaseArcBox<T, Ctx>` | Base owned CGlue trait group with reference counted context. | [`CBox<T>`](crate::boxed::CBox) | [`CArc<Ctx>`](crate::arc::CArc) |
 | `MyGroupBaseMut<T>` | Base by-mut-ref CGlue trait group. | `&mut T`. | [`NoContext`](crate::trait_group::NoContext) |
 | `MyGroupBaseCtxMut<T, Ctx>` | Base by-mut-ref CGlue trait group with a context. | `&mut T`. | `Ctx` |
-| `MyGroupBaseArcMut<T, Ctx>` | Base by-mut-ref CGlue trait group with a reference counted context. | `&mut T`. | [`COptArc<Ctx>`](crate::arc::COptArc) |
+| `MyGroupBaseArcMut<T, Ctx>` | Base by-mut-ref CGlue trait group with a reference counted context. | `&mut T`. | [`CArc<Ctx>`](crate::arc::CArc) |
 | `MyGroupBaseRef<T>` | Base by-ref (const) CGlue trait group. | `&T`. | [`NoContext`](crate::trait_group::NoContext) |
 | `MyGroupBaseCtxRef<T, Ctx>` | Base by-ref (const) CGlue trait group with a context. | `&T`. | `Ctx` |
-| `MyGroupBaseArcRef<T, Ctx>` | Base by-ref (const) CGlue trait group with a reference counted context. | `&T`. | [`COptArc<Ctx>`](crate::arc::COptArc) |
+| `MyGroupBaseArcRef<T, Ctx>` | Base by-ref (const) CGlue trait group with a reference counted context. | `&T`. | [`CArc<Ctx>`](crate::arc::CArc) |
 | `MyGroup<Inst, Ctx>` | Base definiton of the group. It needs to be manually made opaque. | `Inst` | `Ctx` |
 
 Container type (opaque to Rust users) that is placed within the group:
@@ -312,7 +314,8 @@ cglue_impl_group!(GA<T = u64>, GenGroup<T>, {});
 
 #### Manually implementing groups
 
-NOTE: This is not supported if [`unstable`](#unstable-feature) feature is enabled.
+NOTE: This is not supported if [`unstable`](#unstable-feature) feature is enabled. Instead, you
+have to do nothing!
 
 It is also possible to manually implement the groups by implementing `MyGroupVtableFiller`. Here is what
 the above 2 macro invocations expand to:
@@ -547,7 +550,7 @@ impl PluginRoot for () {}
 
 let root = ();
 // This could be a `libloading::Library` arc.
-let ref_to_count = CArc::from(()).into_opt();
+let ref_to_count = CArc::from(());
 // Merely passing a tuple is enough.
 let obj = trait_obj!((root, ref_to_count) as PluginRoot);
 // ...
@@ -579,7 +582,7 @@ impl PluginRoot for () {
 
 let root = ();
 // This could be a `libloading::Library` arc.
-let ref_to_count = CArc::from(()).into_opt();
+let ref_to_count = CArc::from(());
 let obj = trait_obj!((root, ref_to_count) as PluginRoot);
 let printer = obj.get_printer();
 // It is safe to drop obj now:
@@ -679,7 +682,7 @@ To use it you need to either:
 
 - Set `RUSTC_BOOTSTRAP=try_default` environment variable when building.
 
-Do note, however, that Rust's stability guarantees get invalidated by either of these 2
+Do note, however, that **Rust's stability guarantees get invalidated** by either of these 2
 options.
 
 ## Projects using CGlue

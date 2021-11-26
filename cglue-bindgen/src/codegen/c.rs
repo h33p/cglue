@@ -602,7 +602,7 @@ fn monomorphize_contexts(
         let name2 = caps["name2"].to_string();
 
         for context in contexts {
-            // TODO: is this always correct?? Seems to be for COptArc_c_void
+            // TODO: is this always correct?? Seems to be for CArc_c_void
             let context_ty = format!("_{}____", context);
 
             let name = name.replace("_Context_", &context_ty);

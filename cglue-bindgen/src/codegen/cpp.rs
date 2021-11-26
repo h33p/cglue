@@ -65,7 +65,7 @@
 //! To allow building a vtable, provide an implementation something like this:
 //!
 //! ```ignore
-//! template<typename T = CBox<KvStore>, typename C = COptArc<void>>
+//! template<typename T = CBox<KvStore>, typename C = CArc<void>>
 //! struct KvStoreContainer : CGlueObjContainer<T, C, MainFeatureRetTmp<C>> {
 //!
 //!     using Parent = CGlueObjContainer<T, C, MainFeatureRetTmp<C>>;
@@ -506,10 +506,10 @@ struct CBox \{
 };",
     );
 
-    // Add COptArc clone and drop methods
+    // Add CArc clone and drop methods
     let header = Regex::new(
         r"(?P<definition>template<typename T>
-struct COptArc \{
+struct CArc \{
     const T \*instance;
     const T \*\(\*clone_fn\)\(const T\*\);
     void \(\*drop_fn\)\(const T\*\);)
@@ -519,8 +519,8 @@ struct COptArc \{
         &header,
         r"${definition}
 
-    inline COptArc clone() const noexcept {
-        COptArc ret;
+    inline CArc clone() const noexcept {
+        CArc ret;
         ret.instance = clone_fn(instance);
         ret.clone_fn = clone_fn;
         ret.drop_fn = drop_fn;

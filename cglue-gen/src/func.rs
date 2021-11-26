@@ -210,30 +210,34 @@ impl TraitArg {
                                 } else {
                                     quote!(#crate_path::slice::CSliceRef<#ty>)
                                 })
+                                .map(|v| (v, false))
                             }
-                            Type::Path(p) => {
-                                if let Some("str") =
-                                    p.path.get_ident().map(|i| i.to_string()).as_deref()
-                                {
-                                    Some(if is_mut {
-                                        quote!(#crate_path::slice::CSliceMut<u8>)
-                                    } else {
-                                        quote!(#crate_path::slice::CSliceRef<u8>)
-                                    })
+                            Type::Path(p) => if let Some("str") =
+                                p.path.get_ident().map(|i| i.to_string()).as_deref()
+                            {
+                                Some(if is_mut {
+                                    quote!(#crate_path::slice::CSliceMut<u8>)
                                 } else {
-                                    None
-                                }
+                                    quote!(#crate_path::slice::CSliceRef<u8>)
+                                })
+                            } else {
+                                None
                             }
+                            .map(|v| (v, true)),
                             _ => None,
                         };
 
-                        if let Some(slty) = new_ty {
+                        if let Some((slty, into_str)) = new_ty {
                             ret = Some((
                                 quote!(),
                                 quote!(#name.into(),),
                                 quote!(#name: #slty,),
                                 quote!(#name: #slty,),
-                                quote!(#name.into(),),
+                                if into_str {
+                                    quote!(unsafe { #name.into_str() },)
+                                } else {
+                                    quote!(#name.into(),)
+                                },
                             ))
                         }
                     }
@@ -1299,31 +1303,39 @@ impl ParsedReturnType {
                                 } else {
                                     quote!(#crate_path::slice::CSliceRef<#lt, #ty>)
                                 })
+                                .map(|v| (v, false))
                             }
-                            Type::Path(p) => {
-                                if let Some("str") =
-                                    p.path.get_ident().map(|i| i.to_string()).as_deref()
-                                {
-                                    Some(if is_mut {
-                                        quote!(#crate_path::slice::CSliceMut<#lt, u8>)
-                                    } else {
-                                        quote!(#crate_path::slice::CSliceRef<#lt, u8>)
-                                    })
+                            Type::Path(p) => if let Some("str") =
+                                p.path.get_ident().map(|i| i.to_string()).as_deref()
+                            {
+                                Some(if is_mut {
+                                    quote!(#crate_path::slice::CSliceMut<#lt, u8>)
                                 } else {
-                                    None
-                                }
+                                    quote!(#crate_path::slice::CSliceRef<#lt, u8>)
+                                })
+                            } else {
+                                None
                             }
+                            .map(|v| (v, true)),
                             _ => None,
                         });
                     }
 
-                    if let Some(slty) = &new_tys[0] {
+                    if let Some((slty, into_str)) = &new_tys[0] {
                         ret.c_out = quote!(-> #slty);
                         if let Some(sltyc) = new_tys.get(1) {
+                            let sltyc = sltyc.as_ref().map(|(v, _)| v);
                             ret.c_cast_out = quote!(-> #sltyc);
                         }
                         ret.c_ret.extend(quote!(.into()));
-                        ret.impl_func_ret.extend(quote!(.into()));
+                        if *into_str {
+                            let old_ret = ret.impl_func_ret;
+                            ret.impl_func_ret = quote! {
+                                unsafe { #old_ret .into_str() }
+                            }
+                        } else {
+                            ret.impl_func_ret.extend(quote!(.into()));
+                        }
                     }
                 }
                 Type::Path(p) => {

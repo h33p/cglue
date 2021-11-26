@@ -104,7 +104,7 @@ impl std::error::Error for Error {}
 #[repr(C)]
 pub struct PluginHeader {
     pub layout: &'static TypeLayout,
-    pub create: extern "C" fn(&COptArc<cglue::trait_group::c_void>) -> PluginInnerArcBox<'static>,
+    pub create: extern "C" fn(&CArc<cglue::trait_group::c_void>) -> PluginInnerArcBox<'static>,
 }
 
 /// Load a plugin from a given library.
@@ -114,7 +114,7 @@ pub struct PluginHeader {
 /// Input library must implement a correct `create_plugin` and `get_root_layout()` functions.
 /// Its signatures must be as follows:
 ///
-/// `extern "C" fn crate_plugin(&COptArc<T>) -> PluginInnerArcBox<'static>`
+/// `extern "C" fn crate_plugin(&CArc<T>) -> PluginInnerArcBox<'static>`
 /// `extern "C" fn get_root_layout() -> Option<&'static TypeLayout>`
 ///
 /// Where `T` is any type, since it's opaque. Meanwhile, `get_root_layout` should simply
@@ -146,7 +146,7 @@ unsafe fn load_plugin_impl(name: &str) -> Result<PluginInnerArcBox<'static>, Err
         return Err(Error::Abi);
     }
 
-    let arc = CArc::from(lib).into_opt();
+    let arc = CArc::from(lib);
     Ok((header.create)(&arc.into_opaque()))
 }
 

@@ -18,7 +18,7 @@ struct KvStore {
 //
 // We inherit from `FeaturesGroupContainer` so that implementation
 // functions can easily access the fields.
-template<typename T = CBox<KvStore>, typename C = COptArc<void>>
+template<typename T = CBox<KvStore>, typename C = CArc<void>>
 struct KvStoreContainer : FeaturesGroupContainer<T, C> {
 
 	// Parent type must always be defined to the class we inherit.
@@ -77,7 +77,7 @@ static KeyValueStoreVtblImpl<KvStoreContainer<KvStore *>> kvstore_mut_vtbl;
 static KeyValueDumperVtblImpl<KvStoreContainer<>> kvdumper_vtbl;
 
 // This contains implementation for `PluginInner` trait.
-template<typename T = CBox<PluginCPP>, typename C = COptArc<void>>
+template<typename T = CBox<PluginCPP>, typename C = CArc<void>>
 struct PluginCPPContainer : CGlueObjContainer<T, C, PluginInnerRetTmp<C>> {
 
 	// The same as in KvStoreContainer, define the parent.
@@ -125,7 +125,7 @@ static PluginInnerVtblImpl<PluginCPPContainer<>> plugin_vtbl;
 
 extern "C" {
 	// Create a new plugin ArcBox object that clones the library into itself.
-	PluginInnerBaseArcBox<PluginCPP, void> create_plugin(COptArc<void> &library) {
+	PluginInnerBaseArcBox<PluginCPP, void> create_plugin(CArc<void> &library) {
 		PluginInnerBaseArcBox<PluginCPP, void> ret;
 
 		ret.vtbl = &plugin_vtbl;

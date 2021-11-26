@@ -57,7 +57,7 @@ fn use_getter_obj() {
 
     assert_eq!(Arc::strong_count(&arc), 1);
 
-    let opt_arc = COptArc::from(Some(CArc::<()>::from(arc.clone())));
+    let opt_arc = CArc::<()>::from(arc.clone());
 
     assert_eq!(Arc::strong_count(&arc), 2);
 
@@ -90,7 +90,7 @@ fn use_clone_obj() {
 
     assert_eq!(Arc::strong_count(&arc), 1);
 
-    let opt_arc = CArc::<()>::from(arc.clone()).into_opt();
+    let opt_arc = CArc::<()>::from(arc.clone());
 
     assert_eq!(Arc::strong_count(&arc), 2);
 

@@ -84,10 +84,10 @@ impl<'a> ContextType<'a> {
                 },
             ),
             (
-                "COptArc_c_void",
+                "CArc_c_void",
                 ContextType {
                     ty_prefix: "Arc",
-                    cpp_type: "COptArc<void>",
+                    cpp_type: "CArc<void>",
                     clone_impl: Some("ret.instance = self->clone_fn(self->instance);"),
                     drop_impl: Some(
                         "if (self->drop_fn && self->instance) self->drop_fn(self->instance);",

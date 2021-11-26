@@ -2,6 +2,7 @@
 //!
 //! These slices are then transferable across the FFI boundary safely.
 
+use core::convert::TryFrom;
 use core::marker::PhantomData;
 
 /// Wrapper around const slices.
@@ -20,12 +21,11 @@ pub struct CSliceRef<'a, T: 'a> {
 unsafe impl<'a, T> Send for CSliceRef<'a, T> where T: Send {}
 unsafe impl<'a, T> Sync for CSliceRef<'a, T> where T: Sync {}
 
-#[cfg(feature = "std")]
-impl<T: std::fmt::Debug> std::fmt::Debug for CSliceRef<'_, T>
+impl<T: core::fmt::Debug> core::fmt::Debug for CSliceRef<'_, T>
 where
-    for<'a> &'a [T]: std::fmt::Debug,
+    for<'a> &'a [T]: core::fmt::Debug,
 {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         f.debug_struct("CSliceRef")
             .field("data", &self.data)
             .field("len", &self.len)
@@ -34,34 +34,34 @@ where
     }
 }
 
-#[cfg(feature = "std")]
-impl std::fmt::Display for CSliceRef<'_, u8> {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}", self.into_str())
+impl core::fmt::Display for CSliceRef<'_, u8> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        write!(f, "{}", String::from_utf8_lossy(self.as_slice()))
     }
 }
 
 impl<'a, T> CSliceRef<'a, T> {
+    /// Get the length of the slice.
     pub const fn len(&self) -> usize {
         self.len
     }
 
+    /// Check if the slice is empty.
     pub const fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
+    /// Get the raw pointer to the slice.
     pub const fn as_ptr(&self) -> *const T {
         self.data
     }
 
-    pub const fn as_mut_ptr(&self) -> *mut T {
-        self.data as *mut T
-    }
-
+    /// Reinterpret as a Rust slice.
     pub fn as_slice(&'a self) -> &'a [T] {
         unsafe { core::slice::from_raw_parts(self.data, self.len) }
     }
 
+    /// Construct from a Rust slice.
     pub const fn from_slice(s: &'a [T]) -> Self {
         Self {
             data: s.as_ptr(),
@@ -72,20 +72,20 @@ impl<'a, T> CSliceRef<'a, T> {
 }
 
 impl<'a> CSliceRef<'a, u8> {
+    /// Construct from a utf-8 string.
     pub const fn from_str(s: &'a str) -> Self {
         Self::from_slice(s.as_bytes())
     }
 }
 
 impl<'a> CSliceRef<'a, u8> {
-    #[deprecated(since = "0.1.2", note = "use Into::into, or into_str instead")]
-    #[allow(clippy::wrong_self_convention)]
-    pub fn as_str(self) -> &'a str {
-        self.into()
-    }
-
-    pub fn into_str(self) -> &'a str {
-        self.into()
+    /// Convert into a utf-8 string.
+    ///
+    /// # Safety
+    ///
+    /// The slice must be a valid utf-8 string.
+    pub unsafe fn into_str(self) -> &'a str {
+        core::str::from_utf8_unchecked(core::slice::from_raw_parts(self.data, self.len))
     }
 }
 
@@ -107,13 +107,15 @@ impl<'a, T> From<CSliceRef<'a, T>> for &'a [T] {
     }
 }
 
-impl<'a> From<CSliceRef<'a, u8>> for &'a str {
-    fn from(from: CSliceRef<'a, u8>) -> Self {
-        unsafe { core::str::from_utf8_unchecked(core::slice::from_raw_parts(from.data, from.len)) }
+impl<'a> TryFrom<CSliceRef<'a, u8>> for &'a str {
+    type Error = core::str::Utf8Error;
+
+    fn try_from(from: CSliceRef<'a, u8>) -> Result<Self, Self::Error> {
+        core::str::from_utf8(unsafe { core::slice::from_raw_parts(from.data, from.len) })
     }
 }
 
-impl<T> std::ops::Deref for CSliceRef<'_, T> {
+impl<T> core::ops::Deref for CSliceRef<'_, T> {
     type Target = [T];
 
     fn deref(&self) -> &Self::Target {
@@ -136,12 +138,11 @@ pub struct CSliceMut<'a, T: 'a> {
 unsafe impl<'a, T> Send for CSliceMut<'a, T> where T: Send {}
 unsafe impl<'a, T> Sync for CSliceMut<'a, T> where T: Sync {}
 
-#[cfg(feature = "std")]
-impl<T: std::fmt::Debug> std::fmt::Debug for CSliceMut<'_, T>
+impl<T: core::fmt::Debug> core::fmt::Debug for CSliceMut<'_, T>
 where
-    for<'a> &'a [T]: std::fmt::Debug,
+    for<'a> &'a [T]: core::fmt::Debug,
 {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
         f.debug_struct("CSliceMut")
             .field("data", &self.data)
             .field("len", &self.len)
@@ -150,57 +151,61 @@ where
     }
 }
 
-impl std::fmt::Display for CSliceMut<'_, u8> {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}", unsafe { core::str::from_utf8_unchecked(&*self) })
+impl core::fmt::Display for CSliceMut<'_, u8> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        write!(f, "{}", String::from_utf8_lossy(self.as_slice()))
     }
 }
 
 impl<'a, T> CSliceMut<'a, T> {
+    /// Get the length of the slice.
     pub const fn len(&self) -> usize {
         self.len
     }
 
+    /// Check if the slice is empty.
     pub const fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
+    /// Get constant pointer to the underlying data.
     pub const fn as_ptr(&self) -> *const T {
         self.data as *const T
     }
 
+    /// Get mutable pointer to the underlying data.
     pub const fn as_mut_ptr(&self) -> *mut T {
         self.data
     }
 
+    /// Reinterpret as a const Rust slice.
     pub fn as_slice(&'a self) -> &'a [T] {
         unsafe { core::slice::from_raw_parts(self.data, self.len) }
     }
 
+    /// Reinterpret as a mutable Rust slice.
     pub fn as_slice_mut(&'a mut self) -> &'a mut [T] {
         unsafe { core::slice::from_raw_parts_mut(self.data, self.len) }
     }
 }
 
 impl<'a> CSliceMut<'a, u8> {
-    #[deprecated(since = "0.1.2", note = "use Into::into, or into_str instead")]
-    #[allow(clippy::wrong_self_convention)]
-    pub fn as_str(self) -> &'a str {
-        self.into()
+    /// Convert into utf-8 string
+    ///
+    /// # Safety
+    ///
+    /// The underlying slice must be a valid utf-8 string.
+    pub unsafe fn into_str(self) -> &'a str {
+        core::str::from_utf8_unchecked(core::slice::from_raw_parts(self.data, self.len))
     }
 
-    pub fn into_str(self) -> &'a str {
-        self.into()
-    }
-
-    #[deprecated(since = "0.1.2", note = "use Into::into, or into_mut_str instead")]
-    #[allow(clippy::wrong_self_convention)]
-    pub fn as_mut_str(self) -> &'a mut str {
-        self.into()
-    }
-
-    pub fn into_mut_str(self) -> &'a mut str {
-        self.into()
+    /// Convert into mutable utf-8 string
+    ///
+    /// # Safety
+    ///
+    /// The underlying slice must be a valid utf-8 string.
+    pub unsafe fn into_mut_str(self) -> &'a mut str {
+        core::str::from_utf8_unchecked_mut(core::slice::from_raw_parts_mut(self.data, self.len))
     }
 }
 
@@ -250,9 +255,11 @@ impl<'a: 'b, 'b, T> From<&'b mut CSliceMut<'a, T>> for CSliceMut<'a, T> {
     }
 }
 
-impl<'a> From<CSliceMut<'a, u8>> for &'a str {
-    fn from(from: CSliceMut<'a, u8>) -> Self {
-        unsafe { core::str::from_utf8_unchecked(core::slice::from_raw_parts(from.data, from.len)) }
+impl<'a> TryFrom<CSliceMut<'a, u8>> for &'a str {
+    type Error = core::str::Utf8Error;
+
+    fn try_from(from: CSliceMut<'a, u8>) -> Result<Self, Self::Error> {
+        core::str::from_utf8(unsafe { core::slice::from_raw_parts(from.data, from.len) })
     }
 }
 
@@ -262,15 +269,15 @@ impl<'a, T> From<CSliceMut<'a, T>> for &'a mut [T] {
     }
 }
 
-impl<'a> From<CSliceMut<'a, u8>> for &'a mut str {
-    fn from(from: CSliceMut<'a, u8>) -> Self {
-        unsafe {
-            core::str::from_utf8_unchecked_mut(core::slice::from_raw_parts_mut(from.data, from.len))
-        }
+impl<'a> TryFrom<CSliceMut<'a, u8>> for &'a mut str {
+    type Error = core::str::Utf8Error;
+
+    fn try_from(from: CSliceMut<'a, u8>) -> Result<Self, Self::Error> {
+        core::str::from_utf8_mut(unsafe { core::slice::from_raw_parts_mut(from.data, from.len) })
     }
 }
 
-impl<'a, T> std::ops::Deref for CSliceMut<'a, T> {
+impl<'a, T> core::ops::Deref for CSliceMut<'a, T> {
     type Target = [T];
 
     fn deref(&self) -> &Self::Target {
@@ -278,7 +285,7 @@ impl<'a, T> std::ops::Deref for CSliceMut<'a, T> {
     }
 }
 
-impl<'a, T> std::ops::DerefMut for CSliceMut<'a, T> {
+impl<'a, T> core::ops::DerefMut for CSliceMut<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { core::slice::from_raw_parts_mut(self.data, self.len) }
     }
