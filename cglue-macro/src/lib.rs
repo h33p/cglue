@@ -408,6 +408,42 @@ pub fn wrap_with_group_mut(_: TokenStream, input: TokenStream) -> TokenStream {
     input
 }
 
+/// Add custom wrapping for a trait impl and the C interface.
+///
+/// This is a pretty complex, and fine-grained operation. It allows to control almost every aspect
+/// of type wrapping. The logic of argument layout is a declaration and sequence of actions
+/// from top to bottom.
+///
+/// Example from [cglue-gen](cglue_gen::ext::core::fmt).
+///
+/// ```ignore
+/// #[custom_impl(
+///     // Types within the C interface other than self and additional wrappers.
+///     {
+///         f_out: &mut WriteMut,
+///     },
+///     // Unwrapped return type
+///     Result<(), ::core::fmt::Error>,
+///     // Conversion in trait impl to C arguments (signature names are expected).
+///     {
+///         let f_out: WriteBaseMut<::core::fmt::Formatter> = From::from(f);
+///         let f_out = &mut #crate_path::trait_group::Opaquable::into_opaque(f_out);
+///     },
+///     // This is the body of C impl minus the automatic wrapping.
+///     {
+///         write!(f_out, #fmt_str, this)
+///     },
+///     // This part is processed in the trait impl after the call returns (impl_func_ret,
+///     // nothing extra needs to happen here).
+///     {
+///     },
+/// )]
+/// ```
+#[proc_macro_attribute]
+pub fn custom_impl(_: TokenStream, input: TokenStream) -> TokenStream {
+    input
+}
+
 /// Emit a vtable entry, but do not use it in Rust.
 ///
 /// This allows to expose functionality to C/C++ users with slight changes in return types,

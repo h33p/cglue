@@ -2,7 +2,7 @@ use super::generics::{GenericType, ParsedGenerics};
 use proc_macro2::TokenStream;
 use quote::*;
 use std::collections::BTreeMap;
-use syn::{Type, *};
+use syn::{group::parse_braces, parse::*, punctuated::Punctuated, token::Comma, Type, *};
 
 const FN_PREFIX: &str = "cglue_wrapped_";
 
@@ -20,9 +20,64 @@ pub struct WrappedType {
     pub unbounded_hrtb: bool,
 }
 
-/// TraitArg stores implementations for Unstable-C-Unstable ABI transitions.
-struct TraitArg {
-    arg: FnArg,
+pub struct CustomFuncImpl {
+    pub tys: Punctuated<FnArg, Comma>,
+    pub c_ret_ty: ReturnType,
+    pub pre_call_impl: TokenStream,
+    pub c_inner_body: Option<TokenStream>,
+    pub impl_func_ret: Option<TokenStream>,
+}
+
+#[derive(Default)]
+struct CustomFuncConv {
+    pub pre_call_impl: TokenStream,
+    pub c_inner_body: Option<TokenStream>,
+    pub impl_func_ret: Option<TokenStream>,
+}
+
+impl Parse for CustomFuncImpl {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let content = parse_braces(input)?.content;
+        let tys = Punctuated::parse_terminated(&content)?;
+
+        input.parse::<Token![,]>()?;
+
+        let c_ret_ty = ReturnType::Type(Default::default(), input.parse::<Type>()?.into());
+
+        input.parse::<Token![,]>()?;
+
+        let pre_call_impl: TokenStream = parse_braces(input)?.content.parse()?;
+        input.parse::<Token![,]>()?;
+
+        let c_inner_body: TokenStream = parse_braces(input)?.content.parse()?;
+        let c_inner_body = if c_inner_body.is_empty() {
+            None
+        } else {
+            Some(quote!( { #c_inner_body } ))
+        };
+        input.parse::<Token![,]>()?;
+
+        let impl_func_ret: TokenStream = parse_braces(input)?.content.parse()?;
+        let impl_func_ret = if impl_func_ret.is_empty() {
+            None
+        } else {
+            Some(quote!( { #impl_func_ret } ))
+        };
+
+        input.parse::<Token![,]>().ok();
+
+        Ok(Self {
+            tys,
+            c_ret_ty,
+            pre_call_impl,
+            c_inner_body,
+            impl_func_ret,
+        })
+    }
+}
+
+/// TraitArgConv stores implementations for Unstable-C-Unstable ABI transitions.
+struct TraitArgConv {
     /// Called in trait impl to define arguments. Useful when need to destruct a tuple/struct.
     to_c_args: TokenStream,
     /// Arguments inside the call to the C vtable function.
@@ -133,15 +188,15 @@ fn do_wrap_type<'a>(
     }
 }
 
-impl TraitArg {
+impl TraitArgConv {
     fn new(
-        mut arg: FnArg,
+        arg: &FnArg,
         targets: &BTreeMap<Option<Ident>, WrappedType>,
         crate_path: &TokenStream,
         inject_lifetime: Option<&Lifetime>,
         inject_lifetime_cast: Option<&Lifetime>,
     ) -> Self {
-        let (to_c_args, call_c_args, c_args, c_cast_args, to_trait_arg) = match &mut arg {
+        let (to_c_args, call_c_args, c_args, c_cast_args, to_trait_arg) = match arg {
             FnArg::Receiver(r) => {
                 let lifetime = inject_lifetime.or_else(|| r.lifetime());
                 let lifetime_cast = inject_lifetime_cast.or_else(|| r.lifetime());
@@ -181,6 +236,7 @@ impl TraitArg {
                 }
             }
             FnArg::Typed(t) => {
+                let mut t = t.clone();
                 let _old = do_wrap_type(&mut *t.ty, targets);
 
                 let name = &*t.pat;
@@ -308,7 +364,6 @@ impl TraitArg {
         };
 
         Self {
-            arg,
             to_c_args,
             call_c_args,
             c_args,
@@ -324,10 +379,12 @@ pub struct ParsedFunc {
     safe: bool,
     abi: FuncAbi,
     receiver: Receiver,
-    args: Vec<TraitArg>,
+    orig_args: Vec<FnArg>,
+    args: Vec<TraitArgConv>,
     out: ParsedReturnType,
     generics: ParsedGenerics,
     sig_generics: ParsedGenerics,
+    custom_conv: CustomFuncConv,
     only_c_side: bool,
 }
 
@@ -342,11 +399,13 @@ impl ParsedFunc {
         int_result: bool,
         crate_path: &TokenStream,
         only_c_side: bool,
+        custom_impl: Option<CustomFuncImpl>,
     ) -> Option<Self> {
         let name = sig.ident;
         let safe = sig.unsafety.is_none();
         let abi = From::from(sig.abi);
-        let mut args: Vec<TraitArg> = vec![];
+        let mut args: Vec<TraitArgConv> = vec![];
+        let mut orig_args = vec![];
 
         let mut receiver = None;
 
@@ -361,7 +420,7 @@ impl ParsedFunc {
         let receiver = receiver?;
 
         let out = ParsedReturnType::new(
-            sig.output,
+            (sig.output, custom_impl.as_ref().map(|i| &i.c_ret_ty)),
             wrap_types,
             res_override,
             int_result,
@@ -370,17 +429,53 @@ impl ParsedFunc {
             (crate_path, &trait_name, generics),
         );
 
-        for input in sig.inputs.into_iter() {
-            let func = TraitArg::new(
-                input,
-                wrap_types,
-                crate_path,
-                out.lifetime.as_ref(),
-                out.lifetime_cast.as_ref(),
-            );
+        // If a custom impl is provided, use its arguments
+        let custom_conv = if let Some(CustomFuncImpl {
+            tys,
+            pre_call_impl,
+            c_inner_body,
+            impl_func_ret,
+            ..
+        }) = custom_impl
+        {
+            orig_args.extend(sig.inputs.into_iter());
+            // But first, we need to process the receiver (self) type, as it is implicit.
+            for arg in orig_args
+                .iter()
+                .filter(|a| matches!(a, FnArg::Receiver(_)))
+                .take(1)
+                .chain(tys.iter())
+            {
+                args.push(TraitArgConv::new(
+                    arg,
+                    wrap_types,
+                    crate_path,
+                    out.lifetime.as_ref(),
+                    out.lifetime_cast.as_ref(),
+                ));
+            }
 
-            args.push(func);
-        }
+            CustomFuncConv {
+                pre_call_impl,
+                c_inner_body,
+                impl_func_ret,
+            }
+        } else {
+            for input in sig.inputs.into_iter() {
+                let func = TraitArgConv::new(
+                    &input,
+                    wrap_types,
+                    crate_path,
+                    out.lifetime.as_ref(),
+                    out.lifetime_cast.as_ref(),
+                );
+
+                args.push(func);
+                orig_args.push(input);
+            }
+
+            Default::default()
+        };
 
         let generics = generics.clone();
 
@@ -392,11 +487,13 @@ impl ParsedFunc {
             safe,
             abi,
             receiver,
+            orig_args,
             args,
             out,
             generics,
             sig_generics,
             only_c_side,
+            custom_conv,
         })
     }
 
@@ -515,9 +612,7 @@ impl ParsedFunc {
     pub fn trait_args(&self) -> TokenStream {
         let mut ret = TokenStream::new();
 
-        for arg in &self.args {
-            let arg = &arg.arg;
-
+        for arg in &self.orig_args {
             let arg = match arg {
                 FnArg::Typed(pat) => {
                     if let Pat::Ident(PatIdent { ident, .. }) = &*pat.pat {
@@ -546,8 +641,8 @@ impl ParsedFunc {
     pub fn trait_passthrough_args(&self, skip: usize) -> TokenStream {
         let mut ret = TokenStream::new();
 
-        for arg in self.args.iter().skip(skip) {
-            match &arg.arg {
+        for arg in self.orig_args.iter().skip(skip) {
+            match arg {
                 FnArg::Typed(ty) => {
                     let pat = &ty.pat;
                     quote!(#pat,).to_tokens(&mut ret);
@@ -797,6 +892,12 @@ impl ParsedFunc {
             )
         };
 
+        let inner_impl = if let Some(body) = self.custom_conv.c_inner_body.as_ref() {
+            body.clone()
+        } else {
+            quote!(this.#name(#call_args))
+        };
+
         let c_where_bounds = if lifetime_cast.is_some() && *unbounded_hrtb {
             c_where_bounds_cast
         } else {
@@ -808,7 +909,7 @@ impl ParsedFunc {
         let gen = quote! {
             #safety extern "C" fn #fnname<#sig_life_declare #life_declare CGlueC: #container_bound, CGlueCtx: #ctx_bound, #gen_declare>(#args #c_ret_params) #c_out where #gen_where_bounds #c_where_bounds #cglue_c_into_inner CGlueC::ObjType: for<'cglue_b> #trname<#tmp_lifetime #gen_use>, {
                 #c_pre_call
-                let ret = this.#name(#call_args);
+                let ret = #inner_impl;
                 #c_ret
             }
         };
@@ -862,14 +963,19 @@ impl ParsedFunc {
                 quote!(self.get_vtbl().#name)
             };
 
+            let custom_precall_impl = self.custom_conv.pre_call_impl.to_token_stream();
+            let custom_ret_impl = self.custom_conv.impl_func_ret.to_token_stream();
+
             let gen = quote! {
                 #[inline(always)]
                 #safety #abi fn #name <#sig_life_declare> (#args) #out {
                     let __cglue_vfunc = #get_vfunc;
+                    #custom_precall_impl
                     #def_args
                     #c_ret_precall_def
                     let mut ret = __cglue_vfunc(#call_args #c_call_ret_args);
                     #impl_func_ret
+                    #custom_ret_impl
                 }
             };
 
@@ -1078,7 +1184,7 @@ fn wrapped_lifetime(mut ty: Type, target: Lifetime) -> Type {
 impl ParsedReturnType {
     #[allow(clippy::never_loop)]
     fn new(
-        mut ty: ReturnType,
+        (ty, c_override): (ReturnType, Option<&ReturnType>),
         targets: &BTreeMap<Option<Ident>, WrappedType>,
         res_override: Option<&Ident>,
         int_result: bool,
@@ -1086,10 +1192,12 @@ impl ParsedReturnType {
         (func_name, receiver): (&Ident, &Receiver),
         (crate_path, trait_name, trait_generics): (&TokenStream, &Ident, &ParsedGenerics),
     ) -> Self {
+        let mut c_ty = c_override.unwrap_or(&ty).clone();
+
         let mut ret = Self {
-            ty: ty.clone(),
             c_out: ty.to_token_stream(),
             c_cast_out: ty.to_token_stream(),
+            ty,
             c_where_bounds: quote!(),
             c_where_bounds_cast: quote!(),
             c_ret_params: quote!(),
@@ -1108,7 +1216,7 @@ impl ParsedReturnType {
             use_wrap: false,
         };
 
-        if let ReturnType::Type(_, ty) = &mut ty {
+        if let ReturnType::Type(_, ty) = &mut c_ty {
             let mut ty_cast = None;
 
             if let Some(wrapped) = ret_wrap_type(&mut *ty, targets) {

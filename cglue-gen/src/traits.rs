@@ -2,7 +2,7 @@ use proc_macro2::TokenStream;
 
 use std::collections::BTreeMap;
 
-use super::func::{ParsedFunc, WrappedType};
+use super::func::{CustomFuncImpl, ParsedFunc, WrappedType};
 use super::generics::{GenericType, ParsedGenerics};
 
 use quote::*;
@@ -553,6 +553,13 @@ pub fn parse_trait(
                     continue;
                 }
 
+                let custom_impl = m
+                    .attrs
+                    .iter()
+                    .filter(|a| a.path.to_token_stream().to_string() == "custom_impl")
+                    .map(|a| a.parse_args::<CustomFuncImpl>().unwrap())
+                    .next();
+
                 let only_c_side = m
                     .attrs
                     .iter()
@@ -639,6 +646,7 @@ pub fn parse_trait(
                         .is_some(),
                     crate_path,
                     only_c_side,
+                    custom_impl,
                 ));
             }
             _ => {}
