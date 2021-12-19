@@ -1,5 +1,21 @@
 # CGlue changelog
 
+## Changes in 0.2.3:
+
+[Make formatting traits FFI-safe](https://github.com/h33p/cglue/commit/dd86a2145bceb48075f560f69c10686e71634756):
+
+- All standard fmt traits are exposed.
+
+- Only Debug and Display are in the prefix.
+
+- Not full formatting functionality is preserved across FFI boundary.
+
+[Add extra customization to C function impls](https://github.com/h33p/cglue/blob/dd86a2145bceb48075f560f69c10686e71634756/cglue-gen/src/ext/core/fmt.rs#L21).
+
+### Changes cglue-bindgen 0.2.2:
+
+[Make C++ generator to be C++11 friendly](https://github.com/h33p/cglue/commit/6457ad9e0ffb945822f76d8ad08c60743841dd7b).
+
 ## Changes in 0.2.2:
 
 Fix no\_std compilation.
