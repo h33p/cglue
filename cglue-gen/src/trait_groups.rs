@@ -1070,33 +1070,39 @@ impl TraitGroup {
 
         quote! {
 
-            pub use #submod_name::{
-                #name,
-                #vtable_type,
-                #filler_trait_imports
-                #base_name_ref,
-                #base_name_ctx_ref,
-                #base_name_arc_ref,
-                #base_name_mut,
-                #base_name_ctx_mut,
-                #base_name_arc_mut,
-                #base_name_boxed,
-                #base_name_arc_box,
-                #base_name_ctx_box,
-                #opaque_name_ref,
-                #opaque_name_ctx_ref,
-                #opaque_name_arc_ref,
-                #opaque_name_mut,
-                #opaque_name_ctx_mut,
-                #opaque_name_arc_mut,
-                #opaque_name_boxed,
-                #opaque_name_arc_box,
-                #opaque_name_ctx_box,
-                #cont_name,
-                #opt_struct_imports
-            };
+            #[doc(hidden)]
+            pub use #submod_name::*;
 
-            mod #submod_name {
+            pub mod #submod_name {
+                use super::*;
+
+                pub use cglue_internal::{
+                    #name,
+                    #vtable_type,
+                    #filler_trait_imports
+                    #base_name_ref,
+                    #base_name_ctx_ref,
+                    #base_name_arc_ref,
+                    #base_name_mut,
+                    #base_name_ctx_mut,
+                    #base_name_arc_mut,
+                    #base_name_boxed,
+                    #base_name_arc_box,
+                    #base_name_ctx_box,
+                    #opaque_name_ref,
+                    #opaque_name_ctx_ref,
+                    #opaque_name_arc_ref,
+                    #opaque_name_mut,
+                    #opaque_name_ctx_mut,
+                    #opaque_name_arc_mut,
+                    #opaque_name_boxed,
+                    #opaque_name_arc_box,
+                    #opaque_name_ctx_box,
+                    #cont_name,
+                    #opt_struct_imports
+                };
+
+                mod cglue_internal {
                 use super::*;
 
                 #[repr(C)]
@@ -1407,6 +1413,7 @@ impl TraitGroup {
                 #mandatory_internal_trait_impls
 
                 #opt_structs
+            }
             }
         }
     }

@@ -1002,34 +1002,41 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
     quote! {
         #tr
 
-        #vis use #submod_name::{
-            #vtbl_ident,
-            #ret_tmp_ident,
-            #accessor_trait_ident,
+        #[doc(hidden)]
+        #vis use #submod_name::*;
 
-            #base_box_trait_obj_ident,
-            #base_ctx_trait_obj_ident,
-            #base_arc_trait_obj_ident,
-            #base_mut_trait_obj_ident,
-            #base_ctx_mut_trait_obj_ident,
-            #base_arc_mut_trait_obj_ident,
-            #base_ref_trait_obj_ident,
-            #base_ctx_ref_trait_obj_ident,
-            #base_arc_ref_trait_obj_ident,
-            #base_trait_obj_ident,
+        pub mod #submod_name {
+            use super::*;
+            use super::#trait_impl_name;
 
-            #opaque_box_trait_obj_ident,
-            #opaque_ctx_trait_obj_ident,
-            #opaque_arc_trait_obj_ident,
-            #opaque_mut_trait_obj_ident,
-            #opaque_ctx_mut_trait_obj_ident,
-            #opaque_arc_mut_trait_obj_ident,
-            #opaque_ref_trait_obj_ident,
-            #opaque_ctx_ref_trait_obj_ident,
-            #opaque_arc_ref_trait_obj_ident,
-        };
+            #vis use cglue_internal::{
+                #vtbl_ident,
+                #ret_tmp_ident,
+                #accessor_trait_ident,
 
-        mod #submod_name {
+                #base_box_trait_obj_ident,
+                #base_ctx_trait_obj_ident,
+                #base_arc_trait_obj_ident,
+                #base_mut_trait_obj_ident,
+                #base_ctx_mut_trait_obj_ident,
+                #base_arc_mut_trait_obj_ident,
+                #base_ref_trait_obj_ident,
+                #base_ctx_ref_trait_obj_ident,
+                #base_arc_ref_trait_obj_ident,
+                #base_trait_obj_ident,
+
+                #opaque_box_trait_obj_ident,
+                #opaque_ctx_trait_obj_ident,
+                #opaque_arc_trait_obj_ident,
+                #opaque_mut_trait_obj_ident,
+                #opaque_ctx_mut_trait_obj_ident,
+                #opaque_arc_mut_trait_obj_ident,
+                #opaque_ref_trait_obj_ident,
+                #opaque_ctx_ref_trait_obj_ident,
+                #opaque_arc_ref_trait_obj_ident,
+            };
+
+            mod cglue_internal {
             use super::*;
             use super::#trait_impl_name;
 
@@ -1236,6 +1243,7 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
             }
 
             #internal_trait_impl
+            }
         }
     }
 }
