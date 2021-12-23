@@ -475,6 +475,12 @@ pub extern "C" fn compare_layouts(
     if let (Some(expected), Some(found)) = (expected, found) {
         match check_layout_compatibility(expected, found).into_result() {
             Ok(_) => VerifyLayout::Valid,
+            #[cfg(feature = "log")]
+            Err(e) => {
+                log::trace!("{}", e);
+                VerifyLayout::Invalid
+            }
+            #[cfg(not(feature = "log"))]
             Err(_) => VerifyLayout::Invalid,
         }
     } else {

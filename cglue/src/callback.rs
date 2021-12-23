@@ -135,3 +135,25 @@ pub trait FromExtend<T>: Extend<T> + Sized {
 }
 
 impl<C: Extend<T>, T> FromExtend<T> for C {}
+
+pub trait Callbackable<T> {
+    fn call(&mut self, data: T) -> bool;
+}
+
+impl<T> Callbackable<T> for &mut OpaqueCallback<'_, T> {
+    fn call(&mut self, data: T) -> bool {
+        (*self).call(data)
+    }
+}
+
+impl<T> Callbackable<T> for OpaqueCallback<'_, T> {
+    fn call(&mut self, data: T) -> bool {
+        (self.0.func)(self.0.context, data)
+    }
+}
+
+impl<T, F: FnMut(T) -> bool> Callbackable<T> for F {
+    fn call(&mut self, data: T) -> bool {
+        (*self)(data)
+    }
+}
