@@ -942,6 +942,7 @@ pub mod repr_cstring;
 pub mod result;
 pub mod slice;
 pub mod trait_group;
+pub mod vec;
 
 pub use ::cglue_macro::{
     as_mut, as_ref, cast, cglue_forward, cglue_forward_ext, cglue_impl_group, cglue_trait,
@@ -966,7 +967,7 @@ pub mod prelude {
     pub mod v1 {
         pub use crate::{
             arc::CArc,
-            boxed::CBox,
+            boxed::{CBox, CSliceBox},
             callback::{Callback, Callbackable, FeedCallback, FromExtend, OpaqueCallback},
             forward::{Forward, ForwardMut, Fwd},
             iter::CIterator,
@@ -975,6 +976,7 @@ pub mod prelude {
             result::{CResult, IntError, IntResult},
             slice::{CSliceMut, CSliceRef},
             trait_group::Opaquable,
+            vec::CVec,
             *,
         };
 

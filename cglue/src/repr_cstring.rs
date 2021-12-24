@@ -1,6 +1,7 @@
 //! # Null-terminated transparent C-strings.
 
 use std::prelude::v1::*;
+use std::ptr::NonNull;
 use std::slice::*;
 use std::str::from_utf8_unchecked;
 
@@ -15,7 +16,7 @@ pub type c_char = i8;
 /// Analog to Rust's `String`, [`ReprCString`] owns the underlying data.
 #[repr(transparent)]
 #[cfg_attr(feature = "abi_stable", derive(::abi_stable::StableAbi))]
-pub struct ReprCString(*mut c_char);
+pub struct ReprCString(NonNull<c_char>);
 
 // The underlying pointer isn't being mutated after construction,
 // hence it is safe to assume access to the raw pointer is both Send + Sync
@@ -37,7 +38,7 @@ unsafe fn string_size(mut ptr: *const c_char) -> usize {
 impl From<&[u8]> for ReprCString {
     fn from(from: &[u8]) -> Self {
         let b = Box::new(from.to_vec().into_boxed_slice());
-        Self(Box::leak(b).as_mut_ptr() as *mut _)
+        Self(NonNull::new(Box::leak(b).as_mut_ptr() as *mut _).unwrap())
     }
 }
 
@@ -49,7 +50,7 @@ impl From<&str> for ReprCString {
             .chain(Some(0))
             .collect::<Vec<_>>()
             .into_boxed_slice();
-        Self(Box::leak(b).as_mut_ptr() as *mut _)
+        Self(NonNull::new(Box::leak(b).as_mut_ptr() as *mut _).unwrap())
     }
 }
 
@@ -67,7 +68,12 @@ impl<'a> std::borrow::Borrow<ReprCStr<'a>> for ReprCString {
 
 impl AsRef<str> for ReprCString {
     fn as_ref(&self) -> &str {
-        unsafe { from_utf8_unchecked(from_raw_parts(self.0 as *const _, string_size(self.0) - 1)) }
+        unsafe {
+            from_utf8_unchecked(from_raw_parts(
+                self.0.as_ptr() as *const _,
+                string_size(self.0.as_ptr()) - 1,
+            ))
+        }
     }
 }
 
@@ -81,7 +87,12 @@ impl std::ops::Deref for ReprCString {
 
 impl Drop for ReprCString {
     fn drop(&mut self) {
-        let _ = unsafe { Box::from_raw(from_raw_parts_mut(self.0 as *mut _, string_size(self.0))) };
+        let _ = unsafe {
+            Box::from_raw(from_raw_parts_mut(
+                self.0.as_ptr() as *mut _,
+                string_size(self.0.as_ptr()),
+            ))
+        };
     }
 }
 

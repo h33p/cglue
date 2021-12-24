@@ -1,4 +1,5 @@
 //! # FFI-safe wrapped box.
+use crate::slice::CSliceMut;
 use crate::trait_group::c_void;
 use crate::trait_group::*;
 use core::ops::{Deref, DerefMut};
@@ -57,6 +58,7 @@ impl<T> From<T> for CBox<'_, T> {
     }
 }
 
+// TODO: Remove? Is this even needed?
 impl<T> From<(T, NoContext)> for CBox<'_, T> {
     fn from((this, _): (T, NoContext)) -> Self {
         let b = Box::new(this);
@@ -78,4 +80,59 @@ unsafe impl<'a, T> Opaquable for CBox<'a, T> {
 
 unsafe extern "C" fn cglue_drop_box<T>(this: &mut T) {
     let _ = Box::from_raw(this);
+}
+
+/// FFI-safe (unsized) boxed slice
+///
+/// This box has a static self reference, alongside a custom drop function.
+///
+/// The drop function can be called from anywhere, it will free on correct allocator internally.
+#[repr(C)]
+#[cfg_attr(feature = "abi_stable", derive(::abi_stable::StableAbi))]
+pub struct CSliceBox<'a, T: 'a> {
+    instance: CSliceMut<'a, T>,
+    drop_fn: Option<unsafe extern "C" fn(&mut CSliceMut<'a, T>)>,
+}
+
+impl<T> Deref for CSliceBox<'_, T> {
+    type Target = [T];
+
+    fn deref(&self) -> &Self::Target {
+        &self.instance
+    }
+}
+
+impl<T> DerefMut for CSliceBox<'_, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.instance
+    }
+}
+
+impl<T> From<Box<[T]>> for CSliceBox<'_, T> {
+    fn from(this: Box<[T]>) -> Self {
+        let instance = Box::leak(this).into();
+        Self {
+            instance,
+            drop_fn: Some(cglue_drop_slice_box::<T>),
+        }
+    }
+}
+
+impl<T> Drop for CSliceBox<'_, T> {
+    fn drop(&mut self) {
+        if let Some(drop_fn) = self.drop_fn.take() {
+            unsafe { drop_fn(&mut self.instance) };
+        }
+    }
+}
+
+unsafe impl<'a, T> Opaquable for CSliceBox<'a, T> {
+    type OpaqueTarget = CSliceBox<'a, c_void>;
+}
+
+unsafe extern "C" fn cglue_drop_slice_box<'a, T>(this: &mut CSliceMut<'a, T>) {
+    // SAFETY: we extend the lifetime of the reference but free the underlying data immediately and
+    // not use the reference again.
+    let extended_instance = (this as *mut CSliceMut<_>).as_mut().unwrap();
+    let _ = Box::from_raw(extended_instance.as_slice_mut());
 }
