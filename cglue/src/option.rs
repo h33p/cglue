@@ -66,11 +66,11 @@ impl<T> COption<T> {
 }
 
 #[cfg(feature = "serde")]
-use serde::{de, ser, Deserialize, Serialize};
-#[cfg(feature = "serde")]
 use core::fmt;
 #[cfg(feature = "serde")]
 use core::marker::PhantomData;
+#[cfg(feature = "serde")]
+use serde::{de, ser, Deserialize, Serialize};
 
 #[cfg(feature = "serde")]
 struct COptionVisitor<T> {
