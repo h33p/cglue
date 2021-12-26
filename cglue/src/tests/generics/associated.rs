@@ -2,8 +2,8 @@ use super::super::simple::structs::*;
 use super::super::simple::trait_defs::*;
 use super::groups::*;
 use super::param::*;
+use crate::trait_group::c_void;
 use cglue_macro::*;
-use core::ffi::c_void;
 
 #[cglue_trait]
 pub trait AssociatedReturn {

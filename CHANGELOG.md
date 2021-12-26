@@ -1,5 +1,21 @@
 # CGlue changelog
 
+## Changes in 0.2.4:
+
+[Make cglue generated exports easier to import](https://github.com/h33p/cglue/commit/788fbce9c584e699a56bd5a16d405d52e2119714):
+
+- `cglue_##trait_or_groupname` module is exposed as public that contains all types that are being re-exported to parent module.
+
+- In the future, these types may not be re-exported anymore, and code generator may rely on `cglue_##trait_or_groupname` to exist in scope for cleaner code generation.
+
+[Add boxed slice, CVec, and add more serde support](https://github.com/h33p/cglue/commit/fd549808f6f3bb0477bd394831d4e8dd599c757c).
+
+[Compatible with official abi\_stable](https://github.com/h33p/cglue/commit/7d9147df560412a49ab767928a2c6fcbc72bff2b):
+
+- Users should now use `cglue::trait_group::c_void` as the `c_void` type.
+
+- Technically breaks semver, but it is not possible to do anything with `c_void` anyways.
+
 ## Changes in 0.2.3:
 
 [Make formatting traits FFI-safe](https://github.com/h33p/cglue/commit/dd86a2145bceb48075f560f69c10686e71634756):
