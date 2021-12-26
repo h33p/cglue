@@ -7,14 +7,9 @@ use syn::token::Colon2;
 use syn::token::Comma;
 use syn::*;
 
-#[cfg(feature = "rust_void")]
 pub fn void_type() -> TokenStream {
-    quote!(())
-}
-
-#[cfg(not(feature = "rust_void"))]
-pub fn void_type() -> TokenStream {
-    quote!(::core::ffi::c_void)
+    let crate_path = crate_path();
+    quote!(#crate_path::trait_group::c_void)
 }
 
 pub fn crate_path() -> TokenStream {

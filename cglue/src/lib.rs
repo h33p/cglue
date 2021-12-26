@@ -181,8 +181,7 @@
 //! from anywhere by using hidden submodules. However, unverifiable users (C libraries) may still
 //! be able to modify the tables. This library assumes they are not malicious and does not
 //! perform any runtime verification. API version mismatch checking with
-//! [abi\_stable](https://crates.io/crates/abi_stable) is an opt-in feature (requires rustc 1.46+,
-//! and abi_stable git, or 0.10.4 version).
+//! [abi\_stable](https://crates.io/crates/abi_stable) is an opt-in feature (requires rustc 1.46+).
 //!
 //! Other than 2 bits in [associated type wrapping](#associated-type-wrapping), this crate should
 //! be safe.

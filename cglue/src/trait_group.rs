@@ -7,13 +7,18 @@
 use crate::boxed::CBox;
 #[cfg(feature = "layout_checks")]
 use abi_stable::{abi_stability::check_layout_compatibility, type_layout::TypeLayout};
-#[cfg(not(feature = "rust_void"))]
-pub use core::ffi::c_void;
 use core::mem::ManuallyDrop;
 use core::ops::{Deref, DerefMut};
 #[cfg(feature = "rust_void")]
 #[allow(non_camel_case_types)]
 pub type c_void = ();
+#[cfg(not(feature = "rust_void"))]
+#[allow(non_camel_case_types)]
+#[repr(transparent)]
+#[derive(Debug)]
+#[cfg_attr(feature = "abi_stable", derive(::abi_stable::StableAbi))]
+#[cfg_attr(feature = "abi_stable", sabi(unsafe_opaque_fields))]
+pub struct c_void(core::ffi::c_void);
 
 /// Simple CGlue trait object.
 ///

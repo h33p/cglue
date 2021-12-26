@@ -2,7 +2,7 @@
 //!
 //! It is a simple interface that allows to pass streams into functions.
 
-use core::ffi::c_void;
+use crate::trait_group::c_void;
 use core::mem::MaybeUninit;
 use std::prelude::v1::*;
 

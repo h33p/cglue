@@ -13,7 +13,7 @@
 //! pointer. It allows the code not to care about what's behind the context, it just knows that it
 //! needs to pass it over to the callback.
 
-use core::ffi::c_void;
+use crate::trait_group::c_void;
 use std::prelude::v1::*;
 
 // C style callbacks that are needed so that C code can easily use callback like functions
@@ -45,7 +45,7 @@ impl<'a, T, F> Callback<'a, T, F> {
     pub fn into_opaque(self) -> Callback<'a, c_void, F> {
         unsafe {
             Callback {
-                context: &mut *(self.context as *mut T as *mut std::ffi::c_void),
+                context: &mut *(self.context as *mut T as *mut c_void),
                 func: std::mem::transmute(self.func),
             }
         }
