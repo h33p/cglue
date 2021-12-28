@@ -1,5 +1,9 @@
 # CGlue changelog
 
+## Changes in 0.2.5:
+
+[fix no\_std build](https://github.com/h33p/cglue/commit/6f99749708f3a38825ec107b9a64c38870010d40).
+
 ## Changes in 0.2.4:
 
 [Make cglue generated exports easier to import](https://github.com/h33p/cglue/commit/788fbce9c584e699a56bd5a16d405d52e2119714):
