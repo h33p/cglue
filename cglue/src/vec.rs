@@ -1,4 +1,5 @@
 use core::mem::ManuallyDrop;
+use std::prelude::v1::*;
 
 #[repr(C)]
 #[cfg_attr(feature = "abi_stable", derive(::abi_stable::StableAbi))]
