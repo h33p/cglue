@@ -71,6 +71,22 @@ impl<'a, T> core::ops::DerefMut for CVec<T> {
 }
 
 impl<T> CVec<T> {
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    pub fn capacity(&self) -> usize {
+        self.capacity
+    }
+
+    pub fn as_ptr(&self) -> *const T {
+        self.data
+    }
+
+    pub fn as_mut_ptr(&mut self) -> *mut T {
+        self.data
+    }
+
     pub fn push(&mut self, value: T) {
         self.reserve(1);
         unsafe { core::ptr::write(self.data.add(self.len), value) };
