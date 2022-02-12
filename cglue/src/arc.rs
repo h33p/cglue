@@ -70,9 +70,9 @@ impl<T> From<Option<CArcSome<T>>> for CArc<T> {
     fn from(opt: Option<CArcSome<T>>) -> Self {
         match opt {
             Some(mut arc) => Self {
-                instance: arc.instance.take(),
+                instance: Some(arc.instance),
                 clone_fn: Some(arc.clone_fn),
-                drop_fn: Some(arc.drop_fn),
+                drop_fn: arc.drop_fn.take(),
             },
             None => Self {
                 instance: None,
@@ -129,15 +129,14 @@ impl<T> From<&CArc<T>> for Option<&CArcSome<T>> {
 }
 
 impl<T> From<CArc<T>> for Option<CArcSome<T>> {
-    fn from(mut copt: CArc<T>) -> Self {
-        let ai = copt.instance.take();
+    fn from(copt: CArc<T>) -> Self {
         match copt {
             CArc {
-                instance: _,
+                instance: Some(instance),
                 clone_fn: Some(clone_fn),
-                drop_fn: Some(drop_fn),
+                drop_fn,
             } => Some(CArcSome {
-                instance: ai,
+                instance,
                 clone_fn,
                 drop_fn,
             }),
@@ -183,14 +182,17 @@ const _: [(); std::mem::size_of::<CArcSome<u128>>()] = [(); std::mem::size_of::<
 
 /// FFI-Safe Arc
 ///
+/// This is a variant where the underlying instance is always `Some(&T)`, meaning there is no need
+/// for any `None` checks.
+///
 /// This Arc essentially uses clone/drop from the module that created it, to not mix up global
 /// allocators.
 #[repr(C)]
 #[cfg_attr(feature = "abi_stable", derive(::abi_stable::StableAbi))]
-struct CArcSome<T: Sized + 'static> {
-    instance: Option<&'static T>,
+pub struct CArcSome<T: Sized + 'static> {
+    instance: &'static T,
     clone_fn: unsafe extern "C" fn(Option<&'static T>) -> Option<&'static T>,
-    drop_fn: unsafe extern "C" fn(Option<&T>),
+    drop_fn: Option<unsafe extern "C" fn(Option<&T>)>,
 }
 
 unsafe impl<T: Sync + Send> Send for CArcSome<T> {}
@@ -199,7 +201,7 @@ unsafe impl<T: Sync + Send> Sync for CArcSome<T> {}
 impl<T> Clone for CArcSome<T> {
     fn clone(&self) -> Self {
         Self {
-            instance: unsafe { (self.clone_fn)(self.instance) },
+            instance: unsafe { (self.clone_fn)(Some(self.instance)).unwrap() },
             ..*self
         }
     }
@@ -207,13 +209,23 @@ impl<T> Clone for CArcSome<T> {
 
 impl<T> Drop for CArcSome<T> {
     fn drop(&mut self) {
-        unsafe { (self.drop_fn)(self.instance) }
+        if let Some(drop_fn) = self.drop_fn {
+            unsafe { drop_fn(Some(self.instance)) }
+        }
     }
 }
 
 impl<T> AsRef<T> for CArcSome<T> {
     fn as_ref(&self) -> &T {
-        self.instance.unwrap()
+        self.instance
+    }
+}
+
+impl<T> core::ops::Deref for CArcSome<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.instance
     }
 }
 
