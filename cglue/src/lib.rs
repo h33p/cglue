@@ -965,7 +965,7 @@ pub mod prelude {
 
     pub mod v1 {
         pub use crate::{
-            arc::CArc,
+            arc::{CArc, CArcSome},
             boxed::{CBox, CSliceBox},
             callback::{Callback, Callbackable, FeedCallback, FromExtend, OpaqueCallback},
             forward::{Forward, ForwardMut, Fwd},
