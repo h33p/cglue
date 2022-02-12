@@ -64,6 +64,25 @@ impl<T> CArc<T> {
             drop_fn: self.drop_fn.take(),
         }
     }
+
+    /// Converts `CArc<T>` into `Option<CArcSome<T>>`
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cglue::arc::{CArc, CArcSome};
+    ///
+    /// let mut arc = CArc::from(0u64);
+    ///
+    /// assert!(arc.as_ref().is_some());
+    ///
+    /// let arc2 = arc.transpose();
+    ///
+    /// assert!(arc2.is_some());
+    /// ```
+    pub fn transpose(self) -> Option<CArcSome<T>> {
+        self.into()
+    }
 }
 
 impl<T> From<Option<CArcSome<T>>> for CArc<T> {
@@ -197,6 +216,22 @@ pub struct CArcSome<T: Sized + 'static> {
 
 unsafe impl<T: Sync + Send> Send for CArcSome<T> {}
 unsafe impl<T: Sync + Send> Sync for CArcSome<T> {}
+
+impl<T> From<T> for CArcSome<T> {
+    fn from(obj: T) -> Self {
+        Self::from(Arc::new(obj))
+    }
+}
+
+impl<T> From<Arc<T>> for CArcSome<T> {
+    fn from(arc: Arc<T>) -> Self {
+        Self {
+            instance: unsafe { Arc::into_raw(arc).as_ref().unwrap() },
+            clone_fn: c_clone,
+            drop_fn: Some(c_drop),
+        }
+    }
+}
 
 impl<T> Clone for CArcSome<T> {
     fn clone(&self) -> Self {
