@@ -50,6 +50,9 @@ fn test_group_2() {
     let group = group_obj!(b as TestGroup);
     assert!(check!(group impl TB));
 
+    let tup = (&group, ());
+    assert!(check!(tup.0 impl TB));
+
     let tb = as_ref!(group impl TB).unwrap();
 
     tb.tb_1(1);

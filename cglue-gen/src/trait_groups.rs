@@ -431,11 +431,8 @@ impl Parse for TraitCastGroup {
     fn parse(input: ParseStream) -> Result<Self> {
         let name;
 
-        if let Ok(ExprReference {
-            mutability, expr, ..
-        }) = input.parse::<ExprReference>()
-        {
-            name = quote!(&#mutability #expr);
+        if let Ok(expr) = input.parse::<Expr>() {
+            name = quote!(#expr);
         } else {
             name = input.parse::<Ident>()?.into_token_stream();
         }
