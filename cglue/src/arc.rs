@@ -234,6 +234,18 @@ impl<T> CArcSome<T> {
     pub fn transpose(self) -> CArc<T> {
         Some(self).into()
     }
+
+    /// Converts `CArcSome<T>` into `Arc<T>`
+    ///
+    /// # SAFETY:
+    ///
+    /// This function is only safe when the underlying arc was created in the same binary/library.
+    /// If a third-party arc is used, the behavior is undefined.
+    pub unsafe fn into_arc(self) -> Arc<T> {
+        let ptr = self.instance as *const _;
+        std::mem::forget(self);
+        Arc::from_raw(ptr)
+    }
 }
 
 impl<T> From<T> for CArcSome<T> {
