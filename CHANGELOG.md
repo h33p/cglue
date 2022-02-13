@@ -1,6 +1,6 @@
 # CGlue changelog
 
-## Changes in 0.2.6:
+## Changes in 0.2.7:
 
 [Add more helpers to CVec](https://github.com/h33p/cglue/commit/5658698ba2c343f746d4cba14a774f02ed642e78)
 
