@@ -1,5 +1,15 @@
 # CGlue changelog
 
+## Changes in 0.2.6:
+
+[Add more helpers to CVec](https://github.com/h33p/cglue/commit/5658698ba2c343f746d4cba14a774f02ed642e78)
+
+[Parse different expressions in the cast macros](https://github.com/h33p/cglue/commit/ef9f650d6c4e309f51ae996c9672473942809621)
+
+[Expose CArcSome](https://github.com/h33p/cglue/commit/849ca7c11901c732541e4d0641cb35501ed125d6):
+
+- This is equivalent to `Arc`, and is essentially a pre-null-checked version of `CArc`.
+
 ## Changes in 0.2.5:
 
 [fix no\_std build](https://github.com/h33p/cglue/commit/6f99749708f3a38825ec107b9a64c38870010d40).
