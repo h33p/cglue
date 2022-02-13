@@ -217,6 +217,25 @@ pub struct CArcSome<T: Sized + 'static> {
 unsafe impl<T: Sync + Send> Send for CArcSome<T> {}
 unsafe impl<T: Sync + Send> Sync for CArcSome<T> {}
 
+impl<T> CArcSome<T> {
+    /// Converts `CArcSome<T>` into `CArc<T>`
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cglue::arc::{CArc, CArcSome};
+    ///
+    /// let mut arc = CArcSome::from(0u64);
+    ///
+    /// let arc2 = arc.transpose();
+    ///
+    /// assert!(arc2.as_ref().is_some());
+    /// ```
+    pub fn transpose(self) -> CArc<T> {
+        Some(self).into()
+    }
+}
+
 impl<T> From<T> for CArcSome<T> {
     fn from(obj: T) -> Self {
         Self::from(Arc::new(obj))
