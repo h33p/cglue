@@ -34,6 +34,7 @@ impl<T> Clone for CArc<T> {
 
 impl<T> Drop for CArc<T> {
     fn drop(&mut self) {
+        println!("DROP");
         if let Some(arc) = <Option<&mut CArcSome<T>>>::from(self) {
             unsafe { std::ptr::drop_in_place(arc) };
         }
@@ -148,12 +149,13 @@ impl<T> From<&CArc<T>> for Option<&CArcSome<T>> {
 }
 
 impl<T> From<CArc<T>> for Option<CArcSome<T>> {
-    fn from(copt: CArc<T>) -> Self {
-        match copt {
+    fn from(mut copt: CArc<T>) -> Self {
+        let instance = copt.instance.take()?;
+        match copt.take() {
             CArc {
-                instance: Some(instance),
                 clone_fn: Some(clone_fn),
                 drop_fn,
+                ..
             } => Some(CArcSome {
                 instance,
                 clone_fn,
@@ -275,6 +277,7 @@ impl<T> Clone for CArcSome<T> {
 
 impl<T> Drop for CArcSome<T> {
     fn drop(&mut self) {
+        println!("DROP SOME");
         if let Some(drop_fn) = self.drop_fn {
             unsafe { drop_fn(Some(self.instance)) }
         }
