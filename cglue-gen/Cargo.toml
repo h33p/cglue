@@ -15,7 +15,7 @@ readme = "../README.md"
 syn = { version = "1", features = ["full", "extra-traits"] }
 proc-macro2 = "1"
 quote = "1"
-proc-macro-crate = "1"
+proc-macro-crate = "=1.1.0"
 itertools = "0.10"
 lazy_static = "1"
 
