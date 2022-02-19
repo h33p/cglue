@@ -1,5 +1,11 @@
 # CGlue changelog
 
+## Changes in 0.2.8:
+
+[Allow to provide custom implemenetations for generics functions](https://github.com/h33p/cglue/commit/d9b5a765f4c5a8c63f4a4755bb50e85b4d2ca928)
+
+Re-export `custom_impl` macro.
+
 ## Changes in 0.2.7:
 
 [Add more helpers to CVec](https://github.com/h33p/cglue/commit/5658698ba2c343f746d4cba14a774f02ed642e78)
