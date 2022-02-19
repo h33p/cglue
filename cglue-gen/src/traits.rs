@@ -616,9 +616,9 @@ pub fn parse_trait(
 
                 let mut iter = m.sig.generics.params.iter();
 
-                if iter.any(|p| !matches!(p, GenericParam::Lifetime(_))) {
+                if custom_impl.is_none() && iter.any(|p| !matches!(p, GenericParam::Lifetime(_))) {
                     if m.default.is_none() {
-                        panic!("Generic function `{}` detected without a default implementation! This is not supported.", m.sig.ident);
+                        panic!("Generic function `{}` detected with neither a default nor custom implementation! This is not supported.", m.sig.ident);
                     }
                     continue;
                 }

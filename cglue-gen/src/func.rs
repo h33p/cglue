@@ -953,6 +953,7 @@ impl ParsedFunc {
 
             let ParsedGenerics {
                 life_declare: sig_life_declare,
+                gen_declare: sig_gen_declare,
                 ..
             } = &self.sig_generics;
 
@@ -968,7 +969,7 @@ impl ParsedFunc {
 
             let gen = quote! {
                 #[inline(always)]
-                #safety #abi fn #name <#sig_life_declare> (#args) #out {
+                #safety #abi fn #name <#sig_life_declare #sig_gen_declare> (#args) #out {
                     let __cglue_vfunc = #get_vfunc;
                     #custom_precall_impl
                     #def_args

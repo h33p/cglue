@@ -414,6 +414,9 @@ pub fn wrap_with_group_mut(_: TokenStream, input: TokenStream) -> TokenStream {
 /// of type wrapping. The logic of argument layout is a declaration and sequence of actions
 /// from top to bottom.
 ///
+/// In addition, this is the only way to allow using generic parameters within functions - C
+/// implementation must have them converted to concrete types beforehand.
+///
 /// Example from [cglue-gen](cglue_gen::ext::core::fmt).
 ///
 /// ```ignore
