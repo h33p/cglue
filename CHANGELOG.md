@@ -1,6 +1,10 @@
 # CGlue changelog
 
-## Changes in 0.2.9:
+## Changes in 0.2.10:
+
+[Rename Tup to CTup](https://github.com/h33p/cglue/commit/0c4eeabc9196a7796216a57d40b684f2e68f4d58)
+
+## Changes in 0.2.9 (yanked):
 
 [Add C tuples](https://github.com/h33p/cglue/commit/41a4c7d2ad3991bd17d2572a52809586f57724a1)
 
