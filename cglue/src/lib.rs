@@ -976,6 +976,7 @@ pub mod prelude {
             result::{CResult, IntError, IntResult},
             slice::{CSliceMut, CSliceRef},
             trait_group::Opaquable,
+            tuple::*,
             vec::CVec,
             *,
         };

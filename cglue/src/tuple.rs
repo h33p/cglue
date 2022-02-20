@@ -41,26 +41,26 @@ make_tuple!(
     attrs[
         /// FFI-safe 1 element tuple.
     ]
-    Tup1[A]
+    CTup1[A]
 );
 
 make_tuple!(
     attrs[
         /// FFI-safe 2 element tuple.
     ]
-    Tup2[A, B]
+    CTup2[A, B]
 );
 
 make_tuple!(
     attrs[
         /// FFI-safe 3 element tuple.
     ]
-    Tup3[A, B, C]
+    CTup3[A, B, C]
 );
 
 make_tuple!(
     attrs[
         /// FFI-safe 4 element tuple.
     ]
-    Tup4[A, B, C, D]
+    CTup4[A, B, C, D]
 );
