@@ -941,6 +941,7 @@ pub mod repr_cstring;
 pub mod result;
 pub mod slice;
 pub mod trait_group;
+pub mod tuple;
 pub mod vec;
 
 pub use ::cglue_macro::{
