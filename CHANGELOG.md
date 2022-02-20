@@ -1,5 +1,9 @@
 # CGlue changelog
 
+## Changes in 0.2.9:
+
+[Add C tuples](https://github.com/h33p/cglue/commit/41a4c7d2ad3991bd17d2572a52809586f57724a1)
+
 ## Changes in 0.2.8:
 
 [Allow to provide custom implemenetations for generics functions](https://github.com/h33p/cglue/commit/d9b5a765f4c5a8c63f4a4755bb50e85b4d2ca928)
