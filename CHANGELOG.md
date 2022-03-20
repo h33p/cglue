@@ -1,5 +1,9 @@
 # CGlue changelog
 
+## Changes in 0.2.11:
+
+[Fix a safety bug with slices](https://github.com/h33p/cglue/commit/cbb25367cf7867f07b0a2c7718f894de437f22eb)
+
 ## Changes in 0.2.10:
 
 [Rename Tup to CTup](https://github.com/h33p/cglue/commit/0c4eeabc9196a7796216a57d40b684f2e68f4d58)
