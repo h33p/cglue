@@ -252,7 +252,7 @@ impl<'a, T> From<CSliceMut<'a, T>> for &'a [T] {
     }
 }
 
-impl<'a: 'b, 'b, T> From<&'b CSliceMut<'a, T>> for CSliceMut<'a, T> {
+impl<'a: 'b, 'b, T> From<&'b CSliceMut<'a, T>> for CSliceRef<'a, T> {
     fn from(from: &'b CSliceMut<'a, T>) -> Self {
         Self {
             data: from.data,
