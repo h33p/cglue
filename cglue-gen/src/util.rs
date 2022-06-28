@@ -46,13 +46,17 @@ pub fn crate_path_fixed() -> Option<FoundCrate> {
     Some(ret)
 }
 
+pub fn parse_brace_content(input: ParseStream) -> Result<syn::parse::ParseBuffer> {
+    let content;
+    syn::braced!(content in input);
+    Ok(content)
+}
+
 /// Parse an input stream that is either a single Ident, or a list of Idents surrounded by braces.
 pub fn parse_maybe_braced<T: Parse>(input: ParseStream) -> Result<Vec<T>> {
     let mut ret = vec![];
 
-    if let Ok(braces) = syn::group::parse_braces(input) {
-        let content = braces.content;
-
+    if let Ok(content) = parse_brace_content(input) {
         while !content.is_empty() {
             let val = content.parse()?;
 

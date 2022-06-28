@@ -81,7 +81,7 @@ impl Parse for TraitGroup {
         let generics = input.parse()?;
 
         // TODO: parse associated type defs here
-        group::parse_braces(input).ok();
+        parse_brace_content(input).ok();
 
         input.parse::<Token![,]>()?;
         let mandatory_traits = parse_maybe_braced::<Path>(input)?;
@@ -248,7 +248,7 @@ impl Parse for TraitGroupImpl {
             Ok(ParsedGenerics {
                 gen_where_bounds, ..
             }) => {
-                group::parse_braces(input).ok();
+                parse_brace_content(input).ok();
                 ParsedGenerics {
                     gen_where_bounds,
                     ..generics

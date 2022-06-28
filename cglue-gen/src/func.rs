@@ -1,8 +1,9 @@
 use super::generics::{GenericType, ParsedGenerics};
+use super::util::parse_brace_content;
 use proc_macro2::TokenStream;
 use quote::*;
 use std::collections::BTreeMap;
-use syn::{group::parse_braces, parse::*, punctuated::Punctuated, token::Comma, Type, *};
+use syn::{parse::*, punctuated::Punctuated, token::Comma, Type, *};
 
 const FN_PREFIX: &str = "cglue_wrapped_";
 
@@ -37,7 +38,7 @@ struct CustomFuncConv {
 
 impl Parse for CustomFuncImpl {
     fn parse(input: ParseStream) -> Result<Self> {
-        let content = parse_braces(input)?.content;
+        let content = parse_brace_content(input)?;
         let tys = Punctuated::parse_terminated(&content)?;
 
         input.parse::<Token![,]>()?;
@@ -46,10 +47,10 @@ impl Parse for CustomFuncImpl {
 
         input.parse::<Token![,]>()?;
 
-        let pre_call_impl: TokenStream = parse_braces(input)?.content.parse()?;
+        let pre_call_impl: TokenStream = parse_brace_content(input)?.parse()?;
         input.parse::<Token![,]>()?;
 
-        let c_inner_body: TokenStream = parse_braces(input)?.content.parse()?;
+        let c_inner_body: TokenStream = parse_brace_content(input)?.parse()?;
         let c_inner_body = if c_inner_body.is_empty() {
             None
         } else {
@@ -57,7 +58,7 @@ impl Parse for CustomFuncImpl {
         };
         input.parse::<Token![,]>()?;
 
-        let impl_func_ret: TokenStream = parse_braces(input)?.content.parse()?;
+        let impl_func_ret: TokenStream = parse_brace_content(input)?.parse()?;
         let impl_func_ret = if impl_func_ret.is_empty() {
             None
         } else {
