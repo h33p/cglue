@@ -12,7 +12,7 @@ categories = [ "api-bindings", "accessibility", "parsing" ]
 readme = "../README.md"
 
 [dependencies]
-syn = { version = "1", features = ["full", "extra-traits"] }
+syn = { version = "=1.0.97", features = ["full", "extra-traits"] }
 proc-macro2 = "1"
 quote = "1"
 proc-macro-crate = "=1.1.0"
