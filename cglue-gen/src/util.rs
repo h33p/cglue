@@ -1,6 +1,7 @@
 use proc_macro2::TokenStream;
 use proc_macro_crate::{crate_name, FoundCrate};
 use quote::{format_ident, quote};
+use syn::__private::parse_braces;
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::token::Colon2;
@@ -50,7 +51,7 @@ pub fn crate_path_fixed() -> Option<FoundCrate> {
 pub fn parse_maybe_braced<T: Parse>(input: ParseStream) -> Result<Vec<T>> {
     let mut ret = vec![];
 
-    if let Ok(braces) = syn::group::parse_braces(input) {
+    if let Ok(braces) = parse_braces(input) {
         let content = braces.content;
 
         while !content.is_empty() {

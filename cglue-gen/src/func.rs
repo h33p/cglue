@@ -2,7 +2,7 @@ use super::generics::{GenericType, ParsedGenerics};
 use proc_macro2::TokenStream;
 use quote::*;
 use std::collections::BTreeMap;
-use syn::{group::parse_braces, parse::*, punctuated::Punctuated, token::Comma, Type, *};
+use syn::{__private::parse_braces, parse::*, punctuated::Punctuated, token::Comma, Type, *};
 
 const FN_PREFIX: &str = "cglue_wrapped_";
 
