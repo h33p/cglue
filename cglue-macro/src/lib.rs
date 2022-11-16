@@ -4,7 +4,7 @@ extern crate proc_macro;
 
 use cglue_gen::ext::{ext_abs_remap, prelude_remap_with_ident};
 use cglue_gen::forward::gen_forward;
-use cglue_gen::generics::{GenericCastType, GenericType};
+use cglue_gen::generics::GenericCastType;
 use cglue_gen::trait_groups::*;
 use proc_macro::TokenStream;
 use quote::ToTokens;

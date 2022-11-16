@@ -272,13 +272,10 @@ impl ParsedGenerics {
         recurse_type_to_path(ty, |path| {
             let mut generics = None;
             for part in path.segments.pairs_mut() {
-                match part {
-                    punctuated::Pair::End(p) => {
-                        if let PathArguments::AngleBracketed(arg) = &mut p.arguments {
-                            generics = Some(arg);
-                        }
+                if let punctuated::Pair::End(p) = part {
+                    if let PathArguments::AngleBracketed(arg) = &mut p.arguments {
+                        generics = Some(arg);
                     }
-                    _ => {}
                 }
             }
 
@@ -296,17 +293,17 @@ impl ParsedGenerics {
     pub fn extract_lifetimes(&mut self, ty: &Type) {
         fn extract_nonpath_lifetimes(ty: &Type, out: &mut HashSet<Lifetime>) {
             match ty {
-                Type::Array(TypeArray { elem, .. }) => extract_nonpath_lifetimes(&*elem, out),
-                Type::Group(TypeGroup { elem, .. }) => extract_nonpath_lifetimes(&*elem, out),
-                Type::Paren(TypeParen { elem, .. }) => extract_nonpath_lifetimes(&*elem, out),
-                Type::Ptr(TypePtr { elem, .. }) => extract_nonpath_lifetimes(&*elem, out),
+                Type::Array(TypeArray { elem, .. }) => extract_nonpath_lifetimes(elem, out),
+                Type::Group(TypeGroup { elem, .. }) => extract_nonpath_lifetimes(elem, out),
+                Type::Paren(TypeParen { elem, .. }) => extract_nonpath_lifetimes(elem, out),
+                Type::Ptr(TypePtr { elem, .. }) => extract_nonpath_lifetimes(elem, out),
                 Type::Reference(TypeReference { elem, lifetime, .. }) => {
                     if let Some(lifetime) = lifetime {
                         out.insert(lifetime.clone());
                     }
-                    extract_nonpath_lifetimes(&*elem, out)
+                    extract_nonpath_lifetimes(elem, out)
                 }
-                Type::Slice(TypeSlice { elem, .. }) => extract_nonpath_lifetimes(&*elem, out),
+                Type::Slice(TypeSlice { elem, .. }) => extract_nonpath_lifetimes(elem, out),
                 _ => (),
             }
         }
@@ -568,7 +565,7 @@ impl Parse for GenericCastType {
         let cast: ExprCast = input.parse()?;
 
         let ident = cast.expr;
-        let target = GenericType::from_type(&*cast.ty, true);
+        let target = GenericType::from_type(&cast.ty, true);
 
         Ok(Self { ident, target })
     }

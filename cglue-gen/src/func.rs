@@ -180,8 +180,8 @@ fn do_wrap_type<'a>(
     targets: &'a BTreeMap<Option<AssocType>, WrappedType>,
 ) -> Option<(Type, Option<AssocType>, &'a WrappedType)> {
     match ty {
-        Type::Reference(r) => do_wrap_type(&mut *r.elem, targets),
-        Type::Slice(s) => do_wrap_type(&mut *s.elem, targets),
+        Type::Reference(r) => do_wrap_type(&mut r.elem, targets),
+        Type::Slice(s) => do_wrap_type(&mut s.elem, targets),
         Type::Path(p) => {
             let mut iter = p.path.segments.iter();
             match (&p.qself, p.path.leading_colon, iter.next(), iter.next()) {
@@ -247,12 +247,8 @@ fn do_wrap_type<'a>(
 
             None
         }
-        Type::Ptr(ptr) => do_wrap_type(&mut *ptr.elem, targets),
-        Type::Tuple(tup) => tup
-            .elems
-            .iter_mut()
-            .filter_map(|e| do_wrap_type(e, targets))
-            .next(),
+        Type::Ptr(ptr) => do_wrap_type(&mut ptr.elem, targets),
+        Type::Tuple(tup) => tup.elems.iter_mut().find_map(|e| do_wrap_type(e, targets)),
         // TODO: Other types
         _ => None,
     }
@@ -308,7 +304,7 @@ impl TraitArgConv {
             }
             FnArg::Typed(t) => {
                 let mut t = t.clone();
-                let _old = do_wrap_type(&mut *t.ty, targets);
+                let _old = do_wrap_type(&mut t.ty, targets);
 
                 let name = &*t.pat;
 
@@ -589,7 +585,7 @@ impl ParsedFunc {
             self.out
                 .injected_ret_tmp_static
                 .as_ref()
-                .or_else(|| self.out.injected_ret_tmp.as_ref()),
+                .or(self.out.injected_ret_tmp.as_ref()),
         ) {
             let gen = if self.receiver.mutability.is_some() {
                 quote!(#name: ::core::mem::MaybeUninit<#ty>,)

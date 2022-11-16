@@ -124,7 +124,7 @@ fn main() -> Result<()> {
     let mut cmd = if use_nightly {
         let mut cmd = Command::new("rustup");
 
-        cmd.args(&["run", "nightly", "cbindgen"]);
+        cmd.args(["run", "nightly", "cbindgen"]);
 
         cmd
     } else {

@@ -157,7 +157,7 @@ impl<T, V, C, R> GetVtbl<V> for CGlueTraitObj<'_, T, V, C, R> {
 // Conversions into container type itself.
 // Needed when generated code returns Self
 
-impl<'a, T: Deref<Target = F>, F, C: ContextBounds, R: Default> From<(T, C)>
+impl<T: Deref<Target = F>, F, C: ContextBounds, R: Default> From<(T, C)>
     for CGlueObjContainer<T, C, R>
 {
     fn from((instance, context): (T, C)) -> Self {
@@ -169,7 +169,7 @@ impl<'a, T: Deref<Target = F>, F, C: ContextBounds, R: Default> From<(T, C)>
     }
 }
 
-impl<'a, T: Deref<Target = F>, F, R: Default> From<T> for CGlueObjContainer<T, NoContext, R> {
+impl<T: Deref<Target = F>, F, R: Default> From<T> for CGlueObjContainer<T, NoContext, R> {
     fn from(this: T) -> Self {
         Self::from((this, Default::default()))
     }

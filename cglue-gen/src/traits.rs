@@ -640,7 +640,7 @@ pub fn parse_trait(
                     })
                     .next();
 
-                let int_result = int_result_new.as_ref().or_else(|| int_result.as_ref());
+                let int_result = int_result_new.as_ref().or(int_result.as_ref());
 
                 funcs.extend(ParsedFunc::new(
                     m.sig.clone(),

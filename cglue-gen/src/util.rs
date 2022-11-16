@@ -130,13 +130,10 @@ pub fn extract_generics(ty: &mut Type) -> GenericsOut {
     recurse_type_to_path(ty, |path| {
         let mut generics = None;
         for part in path.segments.pairs() {
-            match part {
-                punctuated::Pair::End(p) => {
-                    if let PathArguments::AngleBracketed(arg) = &p.arguments {
-                        generics = Some(arg.args.clone());
-                    }
+            if let punctuated::Pair::End(p) = part {
+                if let PathArguments::AngleBracketed(arg) = &p.arguments {
+                    generics = Some(arg.args.clone());
                 }
-                _ => {}
             }
         }
         generics
@@ -209,7 +206,7 @@ pub fn remap_type_lifetimes(ty: &mut Type, map: &BTreeMap<Lifetime, Lifetime>) {
         }
         Type::Path(TypePath { path, qself, .. }) => {
             if let Some(s) = qself.as_mut() {
-                remap_type_lifetimes(&mut *s.ty, map);
+                remap_type_lifetimes(&mut s.ty, map);
             }
             for seg in path.segments.iter_mut() {
                 match &mut seg.arguments {

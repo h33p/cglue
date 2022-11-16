@@ -56,7 +56,7 @@ impl<T: core::fmt::Debug> core::fmt::Debug for CVec<T> {
     }
 }
 
-impl<'a, T> core::ops::Deref for CVec<T> {
+impl<T> core::ops::Deref for CVec<T> {
     type Target = [T];
 
     fn deref(&self) -> &Self::Target {
@@ -64,7 +64,7 @@ impl<'a, T> core::ops::Deref for CVec<T> {
     }
 }
 
-impl<'a, T> core::ops::DerefMut for CVec<T> {
+impl<T> core::ops::DerefMut for CVec<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { core::slice::from_raw_parts_mut(self.data, self.len) }
     }
@@ -73,6 +73,10 @@ impl<'a, T> core::ops::DerefMut for CVec<T> {
 impl<T> CVec<T> {
     pub fn len(&self) -> usize {
         self.len
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
     }
 
     pub fn capacity(&self) -> usize {

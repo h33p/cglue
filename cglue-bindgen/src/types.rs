@@ -455,7 +455,7 @@ impl Vtable {
                 ("", "", false),
             );
 
-            ret += &regex.replace_all(&wrapper.replace("\n", "\n    "), "$1$2");
+            ret += &regex.replace_all(&wrapper.replace('\n', "\n    "), "$1$2");
         }
 
         ret

@@ -238,7 +238,7 @@ impl<T> CArcSome<T> {
 
     /// Converts `CArcSome<T>` into `Arc<T>`
     ///
-    /// # SAFETY:
+    /// # Safety
     ///
     /// This function is only safe when the underlying arc was created in the same binary/library.
     /// If a third-party arc is used, the behavior is undefined.

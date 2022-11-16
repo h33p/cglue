@@ -106,7 +106,7 @@ pub trait FeedCallback<T> {
     }
 }
 
-impl<'a, I: std::iter::IntoIterator<Item = T>, T> FeedCallback<T> for I {
+impl<I: std::iter::IntoIterator<Item = T>, T> FeedCallback<T> for I {
     fn feed_into_mut(self, callback: &mut OpaqueCallback<T>) -> usize {
         let mut cnt = 0;
         for v in self {
@@ -120,6 +120,7 @@ impl<'a, I: std::iter::IntoIterator<Item = T>, T> FeedCallback<T> for I {
 }
 
 pub trait FromExtend<T>: Extend<T> + Sized {
+    #[allow(clippy::wrong_self_convention)]
     fn from_extend(&mut self) -> OpaqueCallback<T> {
         extern "C" fn callback<C: Extend<T>, T>(v: &mut C, context: T) -> bool {
             v.extend(Some(context));

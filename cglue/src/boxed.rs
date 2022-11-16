@@ -130,7 +130,7 @@ unsafe impl<'a, T> Opaquable for CSliceBox<'a, T> {
     type OpaqueTarget = CSliceBox<'a, c_void>;
 }
 
-unsafe extern "C" fn cglue_drop_slice_box<'a, T>(this: &mut CSliceMut<'a, T>) {
+unsafe extern "C" fn cglue_drop_slice_box<T>(this: &mut CSliceMut<'_, T>) {
     // SAFETY: we extend the lifetime of the reference but free the underlying data immediately and
     // not use the reference again.
     let extended_instance = (this as *mut CSliceMut<_>).as_mut().unwrap();
