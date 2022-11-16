@@ -802,7 +802,7 @@ impl ParsedFunc {
             _ => (quote!(), args, c_out),
         };
 
-        let sig_life_declare = merge_lifetime_declarations(sig_life_declare, &parse_quote!(#hrtb));
+        let sig_life_declare = merge_lifetime_declarations(&sig_life_declare, &parse_quote!(#hrtb));
 
         let gen = quote! {
             #name: for<#sig_life_declare> extern "C" fn(#args #c_ret_params) #c_out,
@@ -843,7 +843,7 @@ impl ParsedFunc {
             _ => (quote!(), args, c_out),
         };
 
-        let sig_life_declare = merge_lifetime_declarations(sig_life_declare, &parse_quote!(#hrtb));
+        let sig_life_declare = merge_lifetime_declarations(&sig_life_declare, &parse_quote!(#hrtb));
 
         let doc_text = format!(" Getter for {}.", name);
 
@@ -954,7 +954,7 @@ impl ParsedFunc {
             parse_quote!(#lifetime,)
         };
 
-        let sig_life_declare = merge_lifetime_declarations(sig_life_declare, &life_declare);
+        let sig_life_declare = merge_lifetime_declarations(&sig_life_declare, &life_declare);
 
         let mut container_bound = quote!();
 

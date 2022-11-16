@@ -255,13 +255,13 @@ pub fn remap_type_lifetimes(ty: &mut Type, map: &BTreeMap<Lifetime, Lifetime>) {
 }
 
 pub fn merge_lifetime_declarations(
-    a: Punctuated<LifetimeDef, Comma>,
+    a: &Punctuated<LifetimeDef, Comma>,
     b: &Punctuated<LifetimeDef, Comma>,
 ) -> Punctuated<LifetimeDef, Comma> {
     let mut life_declare = Punctuated::new();
     let mut life_declared = HashSet::<&Ident>::new();
 
-    for val in std::iter::IntoIterator::into_iter([&a, b]) {
+    for val in &[a, b] {
         for life in val.pairs() {
             let (val, punct) = life.into_tuple();
             if life_declared.contains(&val.lifetime.ident) {
