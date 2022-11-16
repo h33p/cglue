@@ -15,11 +15,16 @@ cglue_impl_group!(SB, super::trait_groups::TestGroup, { TB });
 fn test_group() {
     let mut a = SA {};
 
-    // Slight regression in 0.2, can not use const ref, because
+    // Slight regression in 0.2, can not use TestGroupRef, because
     // (optional) TC requires mutable refs for the impl to work.
-    // Can be fixed through unstable features.
-    #[cfg(feature = "unstable")]
-    let _ = group_obj!(&a as TestGroup);
+    // Can be fixed through unstable features or forcing boxing
+    // and a ref group impl.
+    //
+    // Having both requres explicitly specifying inner type like done here.
+    fn into_test<'a, T: Into<TestGroupBaseBox<'a, T>> + 'a>(t: T) -> TestGroupBox<'a> {
+        group_obj!(t as TestGroup)
+    }
+    let _ = into_test(&a);
 
     let _ = group_obj!(&mut a as TestGroup);
 
