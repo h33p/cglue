@@ -102,6 +102,7 @@ dependencies = [
  "cglue-macro",
  "log",
  "no-std-compat",
+ "rustc_version 0.4.0",
  "serde",
  "try_default",
 ]
@@ -119,7 +120,7 @@ dependencies = [
 
 [[package]]
 name = "cglue-gen"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "itertools",
  "lazy_static",

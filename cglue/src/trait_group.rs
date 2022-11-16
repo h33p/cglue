@@ -205,6 +205,21 @@ where
         }
     }
 }
+impl<
+        'a,
+        T: Deref<Target = F>,
+        F,
+        V: CGlueVtbl<CGlueObjContainer<T, C, R>, Context = C, RetTmp = R>,
+        C: ContextBounds,
+        R: Default,
+    > CGlueTraitObj<'a, T, V, V::Context, V::RetTmp>
+where
+    &'a V: Default,
+{
+    pub fn from_thingies(d: (T, V::Context)) -> Self {
+        Self::from(d)
+    }
+}
 
 impl<
         'a,

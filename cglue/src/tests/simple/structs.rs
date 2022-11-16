@@ -17,6 +17,12 @@ impl TA for SA {
     }
 }
 
+impl<'a> TA for &'a SA {
+    extern "C" fn ta_1(&self) -> usize {
+        (**self).ta_1()
+    }
+}
+
 impl AsRef<SA> for SA {
     fn as_ref(&self) -> &SA {
         self
@@ -46,12 +52,12 @@ impl TC for SA {
 
 #[test]
 fn call_a() {
-    let a = SA {};
-    let mut b = SB {};
+    let mut a = SA {};
+    let b = SB {};
     let c = SB {};
 
-    let obja = trait_obj!(&a as TA);
-    let objb = trait_obj!(&mut b as TA);
+    let obja = trait_obj!(&mut a as TA);
+    let objb = trait_obj!(&b as TA);
     let objc = trait_obj!(c as TA);
 
     assert_eq!(obja.ta_1() + objb.ta_1() + objc.ta_1(), 17);

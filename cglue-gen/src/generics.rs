@@ -1,3 +1,4 @@
+use crate::util::recurse_type_to_path;
 use proc_macro2::TokenStream;
 use quote::*;
 use std::collections::{HashMap, HashSet};
@@ -262,6 +263,73 @@ impl ParsedGenerics {
         }
 
         stream
+    }
+
+    /// Replace generic arguments on the type with ones stored within Self.
+    ///
+    /// The same generic args are replaced as the ones extracted from `util::recurse_type_to_path`.
+    pub fn replace_on_type(&self, ty: &mut Type) {
+        recurse_type_to_path(ty, |path| {
+            let mut generics = None;
+            for part in path.segments.pairs_mut() {
+                match part {
+                    punctuated::Pair::End(p) => {
+                        if let PathArguments::AngleBracketed(arg) = &mut p.arguments {
+                            generics = Some(arg);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            let life_use = &self.life_use;
+            let gen_use = &self.gen_use;
+
+            if let Some(generics) = generics {
+                *generics = syn::parse2(quote!(<#life_use #gen_use>)).unwrap();
+            }
+
+            Some(())
+        });
+    }
+
+    pub fn extract_lifetimes(&mut self, ty: &Type) {
+        fn extract_nonpath_lifetimes(ty: &Type, out: &mut HashSet<Lifetime>) {
+            match ty {
+                Type::Array(TypeArray { elem, .. }) => extract_nonpath_lifetimes(&*elem, out),
+                Type::Group(TypeGroup { elem, .. }) => extract_nonpath_lifetimes(&*elem, out),
+                Type::Paren(TypeParen { elem, .. }) => extract_nonpath_lifetimes(&*elem, out),
+                Type::Ptr(TypePtr { elem, .. }) => extract_nonpath_lifetimes(&*elem, out),
+                Type::Reference(TypeReference { elem, lifetime, .. }) => {
+                    if let Some(lifetime) = lifetime {
+                        out.insert(lifetime.clone());
+                    }
+                    extract_nonpath_lifetimes(&*elem, out)
+                }
+                Type::Slice(TypeSlice { elem, .. }) => extract_nonpath_lifetimes(&*elem, out),
+                _ => (),
+            }
+        }
+
+        let mut lifetimes = HashSet::new();
+        extract_nonpath_lifetimes(ty, &mut lifetimes);
+
+        let existing_lifetimes = self
+            .life_declare
+            .iter()
+            .map(|l| &l.lifetime)
+            .collect::<HashSet<&Lifetime>>();
+
+        for lt in existing_lifetimes {
+            lifetimes.remove(lt);
+        }
+
+        for lt in lifetimes {
+            self.life_use.push_value(lt.clone());
+            self.life_use.push_punct(Default::default());
+            self.life_declare.push_value(LifetimeDef::new(lt));
+            self.life_declare.push_punct(Default::default());
+        }
     }
 }
 

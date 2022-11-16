@@ -217,8 +217,7 @@ impl Parse for TraitGroup {
 /// Describes trait group to be implemented on a type.
 #[cfg(not(feature = "unstable"))]
 pub struct TraitGroupImpl {
-    ty_path: Path,
-    ty: Ident,
+    ty: Type,
     ty_generics: ParsedGenerics,
     generics: ParsedGenerics,
     group_path: Path,
@@ -230,9 +229,11 @@ pub struct TraitGroupImpl {
 #[cfg(not(feature = "unstable"))]
 impl Parse for TraitGroupImpl {
     fn parse(input: ParseStream) -> Result<Self> {
-        let path = input.parse()?;
+        let mut ty: Type = input.parse()?;
 
-        let (ty_path, ty, ty_gens) = split_path_ident(&path)?;
+        // Parse generic arguments from the type.
+        // Here we assume the last instance of AngleBracketed are generic arguments.
+        let ty_gens = extract_generics(&mut ty);
 
         let mut ty_generics = ParsedGenerics::from(ty_gens.as_ref());
 
@@ -293,8 +294,10 @@ impl Parse for TraitGroupImpl {
             None
         };
 
+        ty_generics.replace_on_type(&mut ty);
+        ty_generics.extract_lifetimes(&ty);
+
         Ok(Self {
-            ty_path,
             ty,
             ty_generics,
             generics,
@@ -322,14 +325,7 @@ impl TraitGroupImpl {
 
         let ctx_bound = super::traits::ctx_bound();
 
-        let ty_path = &self.ty_path;
         let ty = &self.ty;
-
-        let ParsedGenerics {
-            life_use: ty_life_use,
-            gen_use: ty_gen_use,
-            ..
-        } = &self.ty_generics;
 
         let group = &self.group;
         let group_path = &self.group_path;
@@ -338,6 +334,7 @@ impl TraitGroupImpl {
         let ParsedGenerics {
             gen_declare,
             gen_where_bounds,
+            life_declare,
             ..
         } = [&self.ty_generics, &self.generics]
             .iter()
@@ -357,8 +354,6 @@ impl TraitGroupImpl {
         let vtable_type = format_ident!("{}Vtables", group);
         let cont_name = format_ident!("{}Container", group);
 
-        let full_ty = quote!(#ty_path #ty <#ty_life_use #ty_gen_use>);
-
         let implemented_tables = TraitGroup::enable_opt_vtbls(self.implemented_vtbl.iter());
         let vtbl_where_bounds = TraitGroup::vtbl_where_bounds(
             self.implemented_vtbl.iter(),
@@ -370,8 +365,8 @@ impl TraitGroupImpl {
         );
 
         let gen = quote! {
-            impl<'cglue_a, CGlueInst: ::core::ops::Deref<Target = #full_ty>, CGlueCtx: #ctx_bound, #gen_declare>
-                #group_path #filler_trait<'cglue_a, CGlueInst, CGlueCtx, #gen_use> for #full_ty
+            impl<'cglue_a, #life_declare CGlueInst: ::core::ops::Deref<Target = #ty>, CGlueCtx: #ctx_bound, #gen_declare>
+                #group_path #filler_trait<'cglue_a, CGlueInst, CGlueCtx, #gen_use> for #ty
             where #gen_where_bounds #vtbl_where_bounds {
                 fn fill_table(table: #group_path #vtable_type<'cglue_a, CGlueInst, CGlueCtx, #gen_use>) -> #group_path #vtable_type<'cglue_a, CGlueInst, CGlueCtx, #gen_use> {
                     table #implemented_tables
@@ -382,7 +377,7 @@ impl TraitGroupImpl {
         if let Some(fwd_vtbl) = &self.fwd_implemented_vtbl {
             let fwd_filler_trait = format_ident!("{}FwdVtableFiller", group);
 
-            let fwd_ty = quote!(#crate_path::forward::Fwd<&'cglue_a mut #full_ty>);
+            let fwd_ty = quote!(#crate_path::forward::Fwd<&'cglue_a mut #ty>);
 
             let implemented_tables = TraitGroup::enable_opt_vtbls(fwd_vtbl.iter());
             let vtbl_where_bounds = TraitGroup::vtbl_where_bounds(
@@ -398,7 +393,7 @@ impl TraitGroupImpl {
                 #gen
 
                 impl<'cglue_a, CGlueInst: ::core::ops::Deref<Target = #fwd_ty>, CGlueCtx: #ctx_bound, #gen_declare>
-                    #group_path #fwd_filler_trait<'cglue_a, CGlueInst, CGlueCtx, #gen_use> for #full_ty
+                    #group_path #fwd_filler_trait<'cglue_a, CGlueInst, CGlueCtx, #gen_use> for #ty
                 where
                     #cont_name<CGlueInst, CGlueCtx, #gen_use>: #crate_path::trait_group::CGlueObjBase,
                     #gen_where_bounds #vtbl_where_bounds

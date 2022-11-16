@@ -7,6 +7,8 @@ cglue_trait_group!(TestGroup, TA, { TB, TC });
 
 cglue_impl_group!(SA, TestGroup, { TC });
 
+cglue_impl_group!(&'a SA, TestGroup, {});
+
 cglue_impl_group!(SB, super::trait_groups::TestGroup, { TB });
 
 #[test]

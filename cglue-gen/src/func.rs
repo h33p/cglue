@@ -2,6 +2,7 @@ use super::generics::{GenericType, ParsedGenerics};
 use super::util::parse_brace_content;
 use proc_macro2::TokenStream;
 use quote::*;
+use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use syn::{parse::*, punctuated::Punctuated, token::Comma, Type, *};
 
@@ -19,6 +20,67 @@ pub struct WrappedType {
     pub impl_return_conv: Option<TokenStream>,
     pub inject_ret_tmp: bool,
     pub unbounded_hrtb: bool,
+}
+
+#[derive(Eq, PartialEq, Clone)]
+pub struct AssocType {
+    pub ident: Ident,
+    pub generics: Generics,
+}
+
+impl AssocType {
+    /// Remap the associated type for use within HRTB bounds.
+    ///
+    /// Currently the only supported configuration is a single generic lifetime.
+    ///
+    /// # Panics
+    ///
+    /// If generic types are not supported for remapping.
+    pub fn remap_for_hrtb(&self) -> Self {
+        let mut params = self.generics.params.iter();
+        match (params.next(), params.next()) {
+            (Some(GenericParam::Lifetime(_)), None) => Self {
+                ident: self.ident.clone(),
+                generics: syn::parse2(quote!(<'cglue_b>)).unwrap(),
+            },
+            (None, _) => self.clone(),
+            _ => panic!("Unsupported generic parameter configuration!"),
+        }
+    }
+}
+
+impl ToTokens for AssocType {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        self.ident.to_tokens(tokens);
+        self.generics.to_tokens(tokens);
+    }
+}
+
+impl PartialOrd for AssocType {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for AssocType {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.ident.cmp(&other.ident)
+    }
+}
+
+impl From<Ident> for AssocType {
+    fn from(ident: Ident) -> Self {
+        Self {
+            ident,
+            generics: Default::default(),
+        }
+    }
+}
+
+impl AssocType {
+    pub fn new(ident: Ident, generics: Generics) -> Self {
+        Self { ident, generics }
+    }
 }
 
 pub struct CustomFuncImpl {
@@ -93,8 +155,8 @@ struct TraitArgConv {
 
 fn ret_wrap_type<'a>(
     ty: &mut Type,
-    targets: &'a BTreeMap<Option<Ident>, WrappedType>,
-) -> Option<(Type, Option<Ident>, &'a WrappedType)> {
+    targets: &'a BTreeMap<Option<AssocType>, WrappedType>,
+) -> Option<(Type, Option<AssocType>, &'a WrappedType)> {
     if let Some(wrapped) = targets.get(&None) {
         let WrappedType { ty: new_ty, .. } = wrapped;
 
@@ -111,8 +173,8 @@ fn ret_wrap_type<'a>(
 
 fn do_wrap_type<'a>(
     ty: &mut Type,
-    targets: &'a BTreeMap<Option<Ident>, WrappedType>,
-) -> Option<(Type, Option<Ident>, &'a WrappedType)> {
+    targets: &'a BTreeMap<Option<AssocType>, WrappedType>,
+) -> Option<(Type, Option<AssocType>, &'a WrappedType)> {
     match ty {
         Type::Reference(r) => do_wrap_type(&mut *r.elem, targets),
         Type::Slice(s) => do_wrap_type(&mut *s.elem, targets),
@@ -121,12 +183,14 @@ fn do_wrap_type<'a>(
             match (&p.qself, p.path.leading_colon, iter.next(), iter.next()) {
                 (None, None, Some(p1), Some(p2)) => {
                     if p1.ident == "Self" {
-                        if let Some(wrapped) = targets.get(&Some(p2.ident.clone())) {
+                        if let Some(wrapped) = targets.get(&Some(p2.ident.clone().into())) {
                             let WrappedType { ty: new_ty, .. } = wrapped;
 
                             std::mem::drop(iter);
 
                             let ident = p2.ident.clone();
+                            let generics: Generics = syn::parse2(p2.arguments.to_token_stream())
+                                .expect("Failed to parse generics");
 
                             let ret = std::mem::replace(
                                 ty,
@@ -134,20 +198,21 @@ fn do_wrap_type<'a>(
                                     .expect("Failed to parse wrap_type"),
                             );
 
-                            return Some((ret, Some(ident), wrapped));
+                            return Some((ret, Some(AssocType::new(ident, generics)), wrapped));
                         }
                     }
                 }
                 (None, None, Some(p1), None) => {
                     if p1.ident == "Self" {
                         let self_return_wrap = targets
-                            .get(&Some(p1.ident.clone()))
+                            .get(&Some(p1.ident.clone().into()))
                             .expect("No self-wrap rule specified");
                         let WrappedType { ty: new_ty, .. } = self_return_wrap;
 
                         std::mem::drop(iter);
 
                         let ident = p1.ident.clone();
+                        // Self has no type parameters, right?
 
                         let ret = std::mem::replace(
                             ty,
@@ -155,7 +220,7 @@ fn do_wrap_type<'a>(
                                 .expect("Failed to parse self-type wrap"),
                         );
 
-                        return Some((ret, Some(ident), self_return_wrap));
+                        return Some((ret, Some(ident.into()), self_return_wrap));
                     }
                 }
                 _ => {}
@@ -192,7 +257,7 @@ fn do_wrap_type<'a>(
 impl TraitArgConv {
     fn new(
         arg: &FnArg,
-        targets: &BTreeMap<Option<Ident>, WrappedType>,
+        targets: &BTreeMap<Option<AssocType>, WrappedType>,
         crate_path: &TokenStream,
         inject_lifetime: Option<&Lifetime>,
         inject_lifetime_cast: Option<&Lifetime>,
@@ -395,7 +460,7 @@ impl ParsedFunc {
         sig: Signature,
         trait_name: Ident,
         generics: &ParsedGenerics,
-        wrap_types: &BTreeMap<Option<Ident>, WrappedType>,
+        wrap_types: &BTreeMap<Option<AssocType>, WrappedType>,
         res_override: Option<&Ident>,
         int_result: bool,
         crate_path: &TokenStream,
@@ -1187,7 +1252,7 @@ impl ParsedReturnType {
     #[allow(clippy::never_loop)]
     fn new(
         (ty, c_override): (ReturnType, Option<&ReturnType>),
-        targets: &BTreeMap<Option<Ident>, WrappedType>,
+        targets: &BTreeMap<Option<AssocType>, WrappedType>,
         res_override: Option<&Ident>,
         int_result: bool,
         unsafety: &TokenStream,
@@ -1353,7 +1418,7 @@ impl ParsedReturnType {
                     .cloned()
                     .unwrap_or_else(|| quote!(ret));
 
-                let return_self = trait_ty.map(|i| i == "Self") == Some(true);
+                let return_self = trait_ty.map(|i| i.ident == "Self") == Some(true);
 
                 ret.c_out = quote!(-> #ty);
                 ret.c_cast_out = quote!(-> #ty_cast);

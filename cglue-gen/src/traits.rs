@@ -2,7 +2,7 @@ use proc_macro2::TokenStream;
 
 use std::collections::BTreeMap;
 
-use super::func::{CustomFuncImpl, ParsedFunc, WrappedType};
+use super::func::{AssocType, CustomFuncImpl, ParsedFunc, WrappedType};
 use super::generics::{GenericType, ParsedGenerics};
 
 use quote::*;
@@ -51,15 +51,16 @@ pub fn cglue_c_opaque_bound() -> TokenStream {
 }
 
 pub fn process_item(
-    (ty_ident, ty_bounds, ty_attrs): (
-        &Option<Ident>,
+    (ty_def, ty_bounds, ty_where_clause, ty_attrs): (
+        &Option<AssocType>,
         &Punctuated<TypeParamBound, Add>,
+        Option<&WhereClause>,
         &[Attribute],
     ),
     trait_name: &Ident,
     generics: &ParsedGenerics,
     trait_type_defs: &mut TokenStream,
-    types: &mut BTreeMap<Option<Ident>, WrappedType>,
+    types: &mut BTreeMap<Option<AssocType>, WrappedType>,
     crate_path: &TokenStream,
 ) {
     let c_void = crate::util::void_type();
@@ -113,12 +114,12 @@ pub fn process_item(
                     .parse_args::<GenericType>()
                     .expect("Invalid type in wrap_with.");
 
-                if let Some(ty_ident) = ty_ident {
-                    trait_type_defs.extend(quote!(type #ty_ident = #new_ty;));
+                if let Some(ty_def) = ty_def {
+                    trait_type_defs.extend(quote!(type #ty_def = #new_ty #ty_where_clause;));
                 }
 
                 types.insert(
-                    ty_ident.clone(),
+                    ty_def.clone(),
                     WrappedType {
                         ty: new_ty.clone(),
                         ty_ret_tmp: Some(new_ty),
@@ -140,7 +141,7 @@ pub fn process_item(
                     .expect("A valid closure must be supplied accepting the wrapped type!");
 
                 types
-                    .get_mut(ty_ident)
+                    .get_mut(ty_def)
                     .expect("Type must be first wrapped with #[wrap_with(T)] atribute.")
                     .return_conv = Some(closure);
             }
@@ -160,7 +161,7 @@ pub fn process_item(
                     new_ty.target = format_ident!("{}Base", target.to_string()).to_token_stream();
                 }
 
-                // These variables model a `CGlueF::#ty_ident: Into<SomeGroup>` bound.
+                // These variables model a `CGlueF::#ty_def: Into<SomeGroup>` bound.
                 let mut from_new_ty = new_ty.clone();
                 let mut from_new_ty_ref = TokenStream::new();
                 let mut from_new_ty_simple = new_ty.clone();
@@ -227,10 +228,11 @@ pub fn process_item(
                             quote!(#from_lifetime_simple)
                         };
 
-                        let cglue_f_tys = ty_ident.as_ref().map(|ty_ident| {
+                        let cglue_f_tys = ty_def.as_ref().map(|ty_def| {
+                            let ty_def = ty_def.remap_for_hrtb();
                             (
-                                quote!(<CGlueC::ObjType as #trait_name<#hrtb_lifetime_use #gen_use>>::#ty_ident),
-                                quote!(<CGlueC::ObjType as #trait_name<#simple_lifetime_use #gen_use>>::#ty_ident),
+                                quote!(<CGlueC::ObjType as #trait_name<#hrtb_lifetime_use #gen_use>>::#ty_def),
+                                quote!(<CGlueC::ObjType as #trait_name<#simple_lifetime_use #gen_use>>::#ty_def),
                             )
                         });
 
@@ -257,10 +259,9 @@ pub fn process_item(
                             new_ty_static.push_types_start(
                                 quote!(#crate_path::boxed::CBox<'static, #c_void>, CGlueCtx,),
                             );
-                            if let Some((cglue_f_ty_ident, cglue_f_ty_simple_ident)) = &cglue_f_tys
-                            {
+                            if let Some((cglue_f_ty_def, cglue_f_ty_simple_ident)) = &cglue_f_tys {
                                 from_new_ty.push_types_start(
-                                    quote!(#crate_path::boxed::CBox<#from_lifetime, #cglue_f_ty_ident>, CGlueC::Context, ),
+                                    quote!(#crate_path::boxed::CBox<#from_lifetime, #cglue_f_ty_def>, CGlueC::Context, ),
                                 );
                                 from_new_ty_simple.push_types_start(
                                     quote!(#crate_path::boxed::CBox<#from_lifetime_simple, #cglue_f_ty_simple_ident>, CGlueC::Context,),
@@ -281,11 +282,11 @@ pub fn process_item(
                             );
                             new_ty_static.push_types_start(quote!(&'static #c_void, CGlueCtx,));
                             from_new_ty.push_types_start(
-                                quote!(&#from_lifetime <CGlueC::ObjType as #trait_name<#hrtb_lifetime_use #gen_use>>::#ty_ident, #no_context,),
+                                quote!(&#from_lifetime <CGlueC::ObjType as #trait_name<#hrtb_lifetime_use #gen_use>>::#ty_def, #no_context,),
                             );
                             from_new_ty_ref.extend(quote!(&#from_lifetime));
                             from_new_ty_simple.push_types_start(
-                                quote!(&#from_lifetime_simple <CGlueC::ObjType as #trait_name<#hrtb_lifetime_use #gen_use>>::#ty_ident, #no_context,),
+                                quote!(&#from_lifetime_simple <CGlueC::ObjType as #trait_name<#hrtb_lifetime_use #gen_use>>::#ty_def, #no_context,),
                             );
                             from_new_ty_simple_ref.extend(quote!(&#from_lifetime_simple));
                         } else if x == "wrap_with_group_mut" || x == "wrap_with_obj_mut" {
@@ -304,10 +305,9 @@ pub fn process_item(
                                 quote!(&#from_lifetime_simple mut #c_void, CGlueC::Context,),
                             );
                             new_ty_static.push_types_start(quote!(&'static mut #c_void, CGlueCtx,));
-                            if let Some((cglue_f_ty_ident, cglue_f_ty_simple_ident)) = &cglue_f_tys
-                            {
+                            if let Some((cglue_f_ty_def, cglue_f_ty_simple_ident)) = &cglue_f_tys {
                                 from_new_ty.push_types_start(
-                                    quote!(&#from_lifetime mut #cglue_f_ty_ident, #no_context,),
+                                    quote!(&#from_lifetime mut #cglue_f_ty_def, #no_context,),
                                 );
                                 from_new_ty_ref.extend(quote!(&#from_lifetime mut));
                                 from_new_ty_simple.push_types_start(
@@ -319,10 +319,10 @@ pub fn process_item(
                             unreachable!()
                         }
 
-                        if let Some((cglue_f_ty_ident, cglue_f_ty_simple_ident)) = cglue_f_tys {
+                        if let Some((cglue_f_ty_def, cglue_f_ty_simple_ident)) = cglue_f_tys {
                             let (ty_ref, ty_ref_simple) = {
                                 (
-                                    quote!((#from_new_ty_ref #cglue_f_ty_ident, CGlueC::Context)),
+                                    quote!((#from_new_ty_ref #cglue_f_ty_def, CGlueC::Context)),
                                     quote!((#from_new_ty_simple_ref #cglue_f_ty_simple_ident, CGlueC::Context)),
                                 )
                             };
@@ -347,8 +347,9 @@ pub fn process_item(
                         }
                     };
 
-                    if let Some(ty_ident) = ty_ident {
-                        trait_type_defs.extend(quote!(type #ty_ident = #new_ty_trait_impl;));
+                    if let Some(ty_def) = ty_def {
+                        trait_type_defs
+                            .extend(quote!(type #ty_def = #new_ty_trait_impl #ty_where_clause;));
                     }
 
                     (type_bounds, type_bounds_simple)
@@ -450,7 +451,7 @@ pub fn process_item(
                 //let lifetime_type_bound = lifetime_bound.clone();
 
                 types.insert(
-                    ty_ident.clone(),
+                    ty_def.clone(),
                     WrappedType {
                         ty: new_ty,
                         ty_ret_tmp: Some(new_ty_ret_tmp),
@@ -477,14 +478,15 @@ pub fn parse_trait(
     also_parse_vtbl_only: bool,
     mut process_item: impl FnMut(
         (
-            &Option<Ident>,
+            &Option<AssocType>,
             &Punctuated<TypeParamBound, Add>,
+            Option<&WhereClause>,
             &[Attribute],
         ),
         &Ident,
         &ParsedGenerics,
         &mut TokenStream,
-        &mut BTreeMap<Option<Ident>, WrappedType>,
+        &mut BTreeMap<Option<AssocType>, WrappedType>,
         &TokenStream,
     ),
 ) -> (Vec<ParsedFunc>, ParsedGenerics, TokenStream) {
@@ -497,7 +499,7 @@ pub fn parse_trait(
     let trait_name = &tr.ident;
 
     types.insert(
-        Some(format_ident!("Self")),
+        Some(AssocType::from(format_ident!("Self"))),
         WrappedType {
             ty: parse2(quote!(CGlueC)).unwrap(),
             // TODO: should we forward ty in here??
@@ -535,7 +537,12 @@ pub fn parse_trait(
         match item {
             // We assume types are defined before methods here...
             TraitItem::Type(ty) => process_item(
-                (&Some(ty.ident.clone()), &ty.bounds, &ty.attrs),
+                (
+                    &Some(AssocType::new(ty.ident.clone(), ty.generics.clone())),
+                    &ty.bounds,
+                    ty.generics.where_clause.as_ref(),
+                    &ty.attrs,
+                ),
                 &tr.ident,
                 &generics,
                 &mut trait_type_defs,
@@ -601,7 +608,7 @@ pub fn parse_trait(
 
                         let attr_slice = std::slice::from_ref(&attr);
                         process_item(
-                            (&None, &punctuated, attr_slice),
+                            (&None, &punctuated, None, attr_slice),
                             &tr.ident,
                             &generics,
                             &mut trait_type_defs,

@@ -106,6 +106,45 @@ pub fn split_path_ident(in_path: &Path) -> Result<(Path, Ident, GenericsOut)> {
     Ok((path, ident, generics))
 }
 
+/// Extract heuristically generic arguments from the type.
+///
+/// This function looks for AngleBracketed path arguments and saves the last one.
+pub fn extract_generics(ty: &mut Type) -> GenericsOut {
+    recurse_type_to_path(ty, |path| {
+        let mut generics = None;
+        for part in path.segments.pairs() {
+            match part {
+                punctuated::Pair::End(p) => {
+                    if let PathArguments::AngleBracketed(arg) = &p.arguments {
+                        generics = Some(arg.args.clone());
+                    }
+                }
+                _ => {}
+            }
+        }
+        generics
+    })
+}
+
+/// Recurse down to TypePath and call closure.
+pub fn recurse_type_to_path<T>(
+    ty: &mut Type,
+    func: impl FnOnce(&mut Path) -> Option<T>,
+) -> Option<T> {
+    match ty {
+        Type::Path(TypePath { path, .. }) => func(path),
+        Type::Array(TypeArray { elem, .. }) => recurse_type_to_path(&mut *elem, func),
+        Type::Group(TypeGroup { elem, .. }) => recurse_type_to_path(&mut *elem, func),
+        Type::Paren(TypeParen { elem, .. }) => recurse_type_to_path(&mut *elem, func),
+        Type::Ptr(TypePtr { elem, .. }) => recurse_type_to_path(&mut *elem, func),
+        Type::Reference(TypeReference { elem, .. }) => recurse_type_to_path(&mut *elem, func),
+        Type::Slice(TypeSlice { elem, .. }) => recurse_type_to_path(&mut *elem, func),
+        _ => None,
+        //Type::Tuple(TypeTuple),
+        //Type::Verbatim(TokenStream),
+    }
+}
+
 /// Checks whether the type could be null pointer optimizable.
 ///
 /// Note that this is not a foolproof solution, and might have both false positives and negatives.

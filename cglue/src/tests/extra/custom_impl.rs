@@ -37,7 +37,7 @@ pub trait CustomImpl {
         bool,
         // Conversion in trait impl to C arguments (signature names are expected).
         {
-            This shouldn't even be used in compilation!
+            This should not even be used in compilation!
         },
         // This is the body of C impl minus the automatic wrapping.
         {
