@@ -28,6 +28,7 @@
 //!   - [External traits](#external-traits)
 //!   - [Type wrapping](#type-wrapping)
 //!   - [Associated type wrapping](#associated-type-wrapping)
+//!   - [Generic associated types](#generic-associated-types)
 //!   - [Plugin system](#plugin-system)
 //!   - [Working with cbindgen](#working-with-cbindgen)
 //!     - [Setup](#setup)
