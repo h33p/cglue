@@ -10,13 +10,13 @@ pub trait GroupGatReturn {
     where
         Self: 'abc;
 
-    fn ggr_1(&mut self) -> Self::ReturnType<'_>;
+    fn ggr_1<'a>(&'a mut self, val: &'a u32) -> Self::ReturnType<'a>;
 }
 
 impl GroupGatReturn for SA {
     type ReturnType<'a> = &'a SA;
 
-    fn ggr_1(&mut self) -> &SA {
+    fn ggr_1(&mut self, val: &u32) -> &SA {
         self
     }
 }
@@ -26,6 +26,6 @@ fn use_gat_return() {
     use crate::prelude::v1::*;
     let sa = SA {};
     let mut obj = trait_obj!(sa as GroupGatReturn);
-    let ta = obj.ggr_1();
+    let ta = obj.ggr_1(&0);
     assert_eq!(ta.ta_1(), 5);
 }

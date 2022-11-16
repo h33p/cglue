@@ -724,7 +724,7 @@
 //!
 //! 1. Due to no GAT, `CGlueObjRef/Mut<'_>` is being promoted to `CGlueObjRef/Mut<'static>`. This
 //!    should be okay, given it is not possible to clone non-CBox objects, and these objects are
-//!    returned by-reference, not value.
+//!    returned by-reference, not value (see GATs section for how to avoid this).
 //!
 //! 2. Trait bounds are only checked for one lifetime (lifetime of the vtable), and the C function
 //!    is being cast into a HRTB one unsafely. This is because it is not possible to specify the
@@ -741,6 +741,66 @@
 //! note that if there is a trait that returns a combination of these types, it is not possible to
 //! use wrapping, because the underlying object types differ. If possible, split up the type to
 //! multiple associated types.
+//!
+//! ### Generic associated types
+//!
+//! CGlue has limited support for GATs! More specifically, single lifetime GATs are supported,
+//! which allows one to implement a form of `LendingIterator`:
+//!
+//! ```
+//! # #[cfg(gats_on_stable)]
+//! # mod gats {
+//! use cglue::*;
+//! # // Previous definitions
+//! # #[cglue_trait]
+//! # pub trait InfoPrinter {
+//! #     fn print_info(&self);
+//! # }
+//! # struct Info {
+//! #     value: usize
+//! # }
+//! # impl InfoPrinter for Info {
+//! #     fn print_info(&self) {
+//! #         println!("Info struct: {}", self.value);
+//! #     }
+//! # }
+//! #[cglue_trait]
+//! pub trait LendingPrinter {
+//!     #[wrap_with_obj(InfoPrinter)]
+//!     type Printer<'a>: InfoPrinter + 'a where Self: 'a;
+//!
+//!     fn borrow_printer<'a>(&'a mut self) -> Self::Printer<'a>;
+//! }
+//!
+//! impl<'a> InfoPrinter for &'a mut Info {
+//!     fn print_info(&self) {
+//!         (**self).print_info();
+//!     }
+//! }
+//!
+//! struct InfoStore {
+//!     info: Info,
+//! }
+//!
+//! impl LendingPrinter for InfoStore {
+//!     type Printer<'a> = &'a mut Info;
+//!
+//!     fn borrow_printer(&mut self) -> Self::Printer<'_> {
+//!         &mut self.info
+//!     }
+//! }
+//!
+//! # fn main() {
+//! let builder = InfoStore { info: Info { value: 50 } };
+//!
+//! let mut obj = trait_obj!(builder as LendingPrinter);
+//!
+//! let info_printer = obj.borrow_printer();
+//!
+//! info_printer.print_info();
+//! # }
+//! # }
+//! ```
 //!
 //! ### Plugin system
 //!

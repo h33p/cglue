@@ -48,3 +48,17 @@ extern "C" fn cglue_do_thing<'a, T: Trait>(&'a mut T) -> CBoxRef<'a, T::SubObj>
 This will apply the exact same bound for all lifetimes `'a`, which makes the function types uniform and compatible to be with vtable creation.
 
 This is very important, because all instances of a function must resolve to the same underlying function, otherwise we'd have non-deterministic number of cfunc instantiations with slightly different characteristics. This becomes extremely important in GATs.
+
+### Lifetime changes when wrapping
+
+Within cfuncs lifetimes in associated type definitions (`type Type<'a>: 'a`) take precedence over lifetimes defined by trait functions. This is to make types the source of truth.
+
+During codegen, we may encounter a function as follows:
+
+```rust
+fn do_something<'b>(&'b mut self) -> Self::Type<'b> {
+    // ...
+}
+```
+
+Since `Self::Type` was defined with lifetime `'a`, the implementation will match `'a` to `'b` and replace `'b` with `'a` within cfuncs.

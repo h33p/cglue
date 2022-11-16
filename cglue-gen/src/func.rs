@@ -1,5 +1,6 @@
 use super::generics::{GenericType, ParsedGenerics};
 use super::util::parse_brace_content;
+use crate::util::{merge_lifetime_declarations, remap_lifetime_defs, remap_type_lifetimes};
 use proc_macro2::TokenStream;
 use quote::*;
 use std::cmp::Ordering;
@@ -157,6 +158,9 @@ fn ret_wrap_type<'a>(
     ty: &mut Type,
     targets: &'a BTreeMap<Option<AssocType>, WrappedType>,
 ) -> Option<(Type, Option<AssocType>, &'a WrappedType)> {
+    // None means handle only the C side - the function will not be called on Rust side.
+    // This is useful for providing functionality for C users that can be done faster in Rust.
+    // TODO: perhaps switch targets to an enum to indicate C side or not.
     if let Some(wrapped) = targets.get(&None) {
         let WrappedType { ty: new_ty, .. } = wrapped;
 
@@ -261,6 +265,7 @@ impl TraitArgConv {
         crate_path: &TokenStream,
         inject_lifetime: Option<&Lifetime>,
         inject_lifetime_cast: Option<&Lifetime>,
+        lifetime_map: &BTreeMap<Lifetime, Lifetime>,
     ) -> Self {
         let (to_c_args, call_c_args, c_args, c_cast_args, to_trait_arg) = match arg {
             FnArg::Receiver(r) => {
@@ -317,20 +322,31 @@ impl TraitArgConv {
 
                 let mut ret = None;
 
+                // Map all lifetimes
+                let mut ty = ty.clone();
+                remap_type_lifetimes(&mut ty, lifetime_map);
+
                 // TODO: deal with nested conversion
                 //if let (Some(old), Type::Path(p)) = {
                 //}
 
-                match ty {
+                match &ty {
                     Type::Reference(r) => {
                         let is_mut = r.mutability.is_some();
+
+                        let lt = r
+                            .lifetime
+                            .as_ref()
+                            .map(|lt| lifetime_map.get(lt).unwrap_or(lt))
+                            .map(|v| quote!(#v,));
+
                         let new_ty = match &*r.elem {
                             Type::Slice(s) => {
                                 let ty = &*s.elem;
                                 Some(if is_mut {
-                                    quote!(#crate_path::slice::CSliceMut<#ty>)
+                                    quote!(#crate_path::slice::CSliceMut<#lt #ty>)
                                 } else {
-                                    quote!(#crate_path::slice::CSliceRef<#ty>)
+                                    quote!(#crate_path::slice::CSliceRef<#lt #ty>)
                                 })
                                 .map(|v| (v, false))
                             }
@@ -338,9 +354,9 @@ impl TraitArgConv {
                                 p.path.get_ident().map(|i| i.to_string()).as_deref()
                             {
                                 Some(if is_mut {
-                                    quote!(#crate_path::slice::CSliceMut<u8>)
+                                    quote!(#crate_path::slice::CSliceMut<#lt u8>)
                                 } else {
-                                    quote!(#crate_path::slice::CSliceRef<u8>)
+                                    quote!(#crate_path::slice::CSliceRef<#lt u8>)
                                 })
                             } else {
                                 None
@@ -518,6 +534,7 @@ impl ParsedFunc {
                     crate_path,
                     out.lifetime.as_ref(),
                     out.lifetime_cast.as_ref(),
+                    &out.lifetime_map,
                 ));
             }
 
@@ -534,6 +551,7 @@ impl ParsedFunc {
                     crate_path,
                     out.lifetime.as_ref(),
                     out.lifetime_cast.as_ref(),
+                    &out.lifetime_map,
                 );
 
                 args.push(func);
@@ -763,6 +781,7 @@ impl ParsedFunc {
             lifetime,
             lifetime_cast,
             unbounded_hrtb,
+            lifetime_map,
             ..
         } = &self.out;
 
@@ -770,6 +789,8 @@ impl ParsedFunc {
             life_declare: sig_life_declare,
             ..
         } = &self.sig_generics;
+
+        let sig_life_declare = remap_lifetime_defs(sig_life_declare, lifetime_map);
 
         let (hrtb, args, c_out) = match (
             lifetime.as_ref().filter(|lt| lt.ident != "cglue_a"),
@@ -781,8 +802,10 @@ impl ParsedFunc {
             _ => (quote!(), args, c_out),
         };
 
+        let sig_life_declare = merge_lifetime_declarations(sig_life_declare, &parse_quote!(#hrtb));
+
         let gen = quote! {
-            #name: for<#sig_life_declare #hrtb> extern "C" fn(#args #c_ret_params) #c_out,
+            #name: for<#sig_life_declare> extern "C" fn(#args #c_ret_params) #c_out,
         };
 
         stream.extend(gen);
@@ -799,6 +822,7 @@ impl ParsedFunc {
             lifetime,
             lifetime_cast,
             unbounded_hrtb,
+            lifetime_map,
             ..
         } = &self.out;
 
@@ -806,6 +830,8 @@ impl ParsedFunc {
             life_declare: sig_life_declare,
             ..
         } = &self.sig_generics;
+
+        let sig_life_declare = remap_lifetime_defs(sig_life_declare, lifetime_map);
 
         let (hrtb, args, c_out) = match (
             lifetime.as_ref().filter(|lt| lt.ident != "cglue_a"),
@@ -817,6 +843,8 @@ impl ParsedFunc {
             _ => (quote!(), args, c_out),
         };
 
+        let sig_life_declare = merge_lifetime_declarations(sig_life_declare, &parse_quote!(#hrtb));
+
         let doc_text = format!(" Getter for {}.", name);
 
         let gen = quote! {
@@ -824,7 +852,7 @@ impl ParsedFunc {
             ///
             /// Note that this function is wrapped into unsafe, because if already were is an
             /// opaque one, it would allow to invoke undefined behaviour.
-            pub fn #name(&self) -> for<#sig_life_declare #hrtb> unsafe extern "C" fn(#args #c_ret_params) #c_out {
+            pub fn #name(&self) -> for<#sig_life_declare> unsafe extern "C" fn(#args #c_ret_params) #c_out {
                 unsafe { ::core::mem::transmute(self.#name) }
             }
         };
@@ -887,6 +915,7 @@ impl ParsedFunc {
             lifetime,
             lifetime_cast,
             unbounded_hrtb,
+            lifetime_map,
             ..
         } = &self.out;
         let call_args = self.to_trait_call_args();
@@ -909,6 +938,8 @@ impl ParsedFunc {
             ..
         } = &self.sig_generics;
 
+        let sig_life_declare = remap_lifetime_defs(sig_life_declare, lifetime_map);
+
         let tmp_lifetime = if *use_hrtb && !life_use.is_empty() {
             quote!('cglue_b, )
         } else {
@@ -917,11 +948,13 @@ impl ParsedFunc {
 
         // Inject 'cglue_a if there are no lifetimes declared by the trait,
         // and temp lifetime is needed
-        let life_declare = if lifetime.is_some() && life_declare.is_empty() {
-            quote!(#lifetime, )
+        let life_declare = if lifetime.is_none() || !life_declare.is_empty() {
+            life_declare.clone()
         } else {
-            life_declare.to_token_stream()
+            parse_quote!(#lifetime,)
         };
+
+        let sig_life_declare = merge_lifetime_declarations(sig_life_declare, &life_declare);
 
         let mut container_bound = quote!();
 
@@ -973,7 +1006,7 @@ impl ParsedFunc {
         let ctx_bound = super::traits::ctx_bound();
 
         let gen = quote! {
-            #safety extern "C" fn #fnname<#sig_life_declare #life_declare CGlueC: #container_bound, CGlueCtx: #ctx_bound, #gen_declare>(#args #c_ret_params) #c_out where #gen_where_bounds #c_where_bounds #cglue_c_into_inner CGlueC::ObjType: for<'cglue_b> #trname<#tmp_lifetime #gen_use>, {
+            #safety extern "C" fn #fnname<#sig_life_declare CGlueC: #container_bound, CGlueCtx: #ctx_bound, #gen_declare>(#args #c_ret_params) #c_out where #gen_where_bounds #c_where_bounds #cglue_c_into_inner CGlueC::ObjType: for<'cglue_b> #trname<#tmp_lifetime #gen_use>, {
                 #c_pre_call
                 let ret = #inner_impl;
                 #c_ret
@@ -1218,6 +1251,8 @@ struct ParsedReturnType {
     unbounded_hrtb: bool,
     return_self: bool,
     use_wrap: bool,
+    // Map in-function lifetimes to type lifetimes
+    lifetime_map: BTreeMap<Lifetime, Lifetime>,
 }
 
 // TODO: handle more cases
@@ -1281,6 +1316,7 @@ impl ParsedReturnType {
             unbounded_hrtb: false,
             return_self: false,
             use_wrap: false,
+            lifetime_map: Default::default(),
         };
 
         if let ReturnType::Type(_, ty) = &mut c_ty {
@@ -1299,8 +1335,20 @@ impl ParsedReturnType {
                     impl_return_conv,
                     ty_static,
                     ty_ret_tmp,
+                    ty:
+                        GenericType {
+                            generic_lifetimes: old_lifetimes,
+                            ..
+                        },
                     ..
                 } = wrapped.2;
+
+                // Swap to check if trait_ty even exists before cloning
+                ret.lifetime_map = trait_ty
+                    .iter()
+                    .flat_map(|assoc| assoc.generics.lifetimes().map(|v| &v.lifetime).cloned())
+                    .zip(old_lifetimes.iter().cloned())
+                    .collect();
 
                 // TODO: sort out the order
 

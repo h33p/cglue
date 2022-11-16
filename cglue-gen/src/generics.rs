@@ -1,4 +1,4 @@
-use crate::util::recurse_type_to_path;
+use crate::util::{parse_punctuated, recurse_type_to_path};
 use proc_macro2::TokenStream;
 use quote::*;
 use std::collections::{HashMap, HashSet};
@@ -525,19 +525,7 @@ impl From<&Generics> for ParsedGenerics {
 }
 
 fn parse_generic_arguments(input: ParseStream) -> Punctuated<GenericArgument, Comma> {
-    let mut punct = Punctuated::new();
-
-    while let Ok(arg) = input.parse::<GenericArgument>() {
-        punct.push_value(arg);
-
-        if let Ok(comma) = input.parse::<Comma>() {
-            punct.push_punct(comma);
-        } else {
-            break;
-        }
-    }
-
-    punct
+    parse_punctuated(input)
 }
 
 impl Parse for ParsedGenerics {
@@ -588,29 +576,43 @@ impl Parse for GenericCastType {
 
 #[derive(Clone)]
 pub struct GenericType {
+    /// Path to type (core:: in core::Option<T>)
     pub path: Path,
+    /// Separator to use, this depends on `cast_to_group` parameter
     pub gen_separator: TokenStream,
-    pub generics: TokenStream,
+    /// Generic lifetime parameters (there isn't an example in core::Option<T>)
+    pub generic_lifetimes: Punctuated<Lifetime, Comma>,
+    /// Generic type parameters (T in core::Option<T>)
+    pub generic_types: Punctuated<Type, Comma>,
+    /// The resulting type (Option in core::Option<T>)
     pub target: TokenStream,
 }
 
 impl GenericType {
     pub fn push_lifetime_start(&mut self, lifetime: &Lifetime) {
-        let gen = &self.generics;
-        self.generics = quote!(#lifetime, #gen);
+        self.generic_lifetimes.insert(0, lifetime.clone());
+        if !self.generic_lifetimes.trailing_punct() {
+            self.generic_lifetimes.push_punct(Default::default());
+        }
     }
 
     pub fn push_types_start(&mut self, types: TokenStream) {
-        let generics = std::mem::replace(&mut self.generics, TokenStream::new());
+        let mut types =
+            syn::parse::Parser::parse2(Punctuated::<Type, Comma>::parse_terminated, types)
+                .expect("Invalid types provided");
 
-        let ParsedGenerics {
-            life_declare,
-            gen_declare,
-            ..
-        } = parse2::<ParsedGenerics>(quote!(<#generics>)).expect("Gen 3");
+        if !types.trailing_punct() {
+            types.push_punct(Default::default());
+        }
 
-        self.generics
-            .extend(quote!(#life_declare #types #gen_declare));
+        // Swap here, because types becomes the start
+        std::mem::swap(&mut self.generic_types, &mut types);
+
+        self.generic_types.extend(types.into_iter());
+
+        if !self.generic_types.trailing_punct() {
+            self.generic_types.push_punct(Default::default());
+        }
     }
 
     fn from_type(target: &Type, cast_to_group: bool) -> Self {
@@ -630,24 +632,35 @@ impl GenericType {
             ),
         };
 
-        let (gen_separator, generics) = match (cast_to_group, generics) {
-            (true, Some(params)) => {
-                let pg = ParsedGenerics::from(&params);
-
-                let life = &pg.life_use;
-                let gen = &pg.gen_use;
-
-                (quote!(::), quote!(#life _, _, #gen))
+        let (generic_lifetimes, mut generic_types) = match &generics {
+            Some(params) => {
+                let pg = ParsedGenerics::from(params);
+                (pg.life_use, pg.gen_use)
             }
-            (false, Some(params)) => (quote!(), quote!(#params)),
-            (true, _) => (quote!(::), quote!()),
-            _ => (quote!(), quote!()),
+            _ => Default::default(),
+        };
+
+        let gen_separator = if cast_to_group {
+            if generics.is_some() {
+                let infer = Type::Infer(TypeInfer {
+                    underscore_token: Default::default(),
+                });
+                generic_types.insert(0, infer.clone());
+                generic_types.insert(0, infer);
+                if !generic_types.trailing_punct() {
+                    generic_types.push_punct(Default::default());
+                }
+            }
+            quote!(::)
+        } else {
+            quote!()
         };
 
         Self {
             path,
             gen_separator,
-            generics,
+            generic_lifetimes,
+            generic_types,
             target,
         }
     }
@@ -657,10 +670,11 @@ impl ToTokens for GenericType {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         tokens.extend(self.path.to_token_stream());
         tokens.extend(self.target.clone());
-        let generics = &self.generics;
-        if !generics.is_empty() {
+        let generic_lifetimes = &self.generic_lifetimes;
+        let generic_types = &self.generic_types;
+        if !generic_lifetimes.is_empty() || !generic_types.is_empty() {
             tokens.extend(self.gen_separator.clone());
-            tokens.extend(quote!(<#generics>));
+            tokens.extend(quote!(<#generic_lifetimes #generic_types>));
         }
     }
 }

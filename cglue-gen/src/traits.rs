@@ -494,7 +494,7 @@ pub fn parse_trait(
     let generics = ParsedGenerics::from(&tr.generics);
     let mut trait_type_defs = TokenStream::new();
     let mut types = BTreeMap::new();
-    let mut types_vtbl = BTreeMap::new();
+    let mut types_c_side_vtbl = BTreeMap::new();
 
     let trait_name = &tr.ident;
 
@@ -598,7 +598,7 @@ pub fn parse_trait(
                         continue;
                     }
 
-                    types_vtbl.clear();
+                    types_c_side_vtbl.clear();
                     if let Some((lt, attr)) = attr {
                         let mut punctuated = Punctuated::default();
 
@@ -612,11 +612,11 @@ pub fn parse_trait(
                             &tr.ident,
                             &generics,
                             &mut trait_type_defs,
-                            &mut types_vtbl,
+                            &mut types_c_side_vtbl,
                             crate_path,
                         );
                     }
-                    (true, &types_vtbl)
+                    (true, &types_c_side_vtbl)
                 } else {
                     (false, &types)
                 };

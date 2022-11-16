@@ -1,6 +1,7 @@
 use proc_macro2::TokenStream;
 use proc_macro_crate::{crate_name, FoundCrate};
 use quote::{format_ident, quote};
+use std::collections::{BTreeMap, HashSet};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::token::Colon2;
@@ -44,6 +45,22 @@ pub fn crate_path_fixed() -> Option<FoundCrate> {
     };
 
     Some(ret)
+}
+
+pub fn parse_punctuated<T: Parse, P: Parse>(input: ParseStream) -> Punctuated<T, P> {
+    let mut punct = Punctuated::new();
+
+    while let Ok(arg) = input.parse::<T>() {
+        punct.push_value(arg);
+
+        if let Ok(comma) = input.parse::<P>() {
+            punct.push_punct(comma);
+        } else {
+            break;
+        }
+    }
+
+    punct
 }
 
 pub fn parse_brace_content(input: ParseStream) -> Result<syn::parse::ParseBuffer> {
@@ -143,6 +160,122 @@ pub fn recurse_type_to_path<T>(
         //Type::Tuple(TypeTuple),
         //Type::Verbatim(TokenStream),
     }
+}
+
+pub fn map_lifetimes<T>(
+    lifetimes: &mut Punctuated<Lifetime, T>,
+    map: &BTreeMap<Lifetime, Lifetime>,
+) {
+    for lt in lifetimes.iter_mut() {
+        if let Some(target) = map.get(lt) {
+            *lt = target.clone();
+        }
+    }
+}
+
+pub fn map_lifetime_defs<T>(
+    lifetimes: &mut Punctuated<LifetimeDef, T>,
+    map: &BTreeMap<Lifetime, Lifetime>,
+) {
+    for lt in lifetimes.iter_mut() {
+        if let Some(target) = map.get(&lt.lifetime) {
+            lt.lifetime = target.clone();
+        }
+        map_lifetimes(&mut lt.bounds, map);
+    }
+}
+
+pub fn remap_lifetime_defs<T: Clone>(
+    lifetimes: &Punctuated<LifetimeDef, T>,
+    map: &BTreeMap<Lifetime, Lifetime>,
+) -> Punctuated<LifetimeDef, T> {
+    let mut lifetimes = lifetimes.clone();
+    map_lifetime_defs(&mut lifetimes, map);
+    lifetimes
+}
+
+/// Recursively remap lifetimes of a type.
+pub fn remap_type_lifetimes(ty: &mut Type, map: &BTreeMap<Lifetime, Lifetime>) {
+    match ty {
+        Type::Reference(TypeReference {
+            elem,
+            ref mut lifetime,
+            ..
+        }) => {
+            if let Some(new_lt) = lifetime.as_ref().and_then(|lt| map.get(lt)) {
+                *lifetime = Some(new_lt.clone());
+            }
+            remap_type_lifetimes(&mut *elem, map)
+        }
+        Type::Path(TypePath { path, qself, .. }) => {
+            if let Some(s) = qself.as_mut() {
+                remap_type_lifetimes(&mut *s.ty, map);
+            }
+            for seg in path.segments.iter_mut() {
+                match &mut seg.arguments {
+                    PathArguments::AngleBracketed(args) => {
+                        for arg in args.args.iter_mut() {
+                            match arg {
+                                GenericArgument::Lifetime(lt) => {
+                                    if let Some(new_lt) = map.get(lt) {
+                                        *lt = new_lt.clone();
+                                    }
+                                }
+                                GenericArgument::Type(ty) => remap_type_lifetimes(ty, map),
+                                _ => (),
+                            }
+                        }
+                    }
+                    PathArguments::Parenthesized(args) => {
+                        for arg in args.inputs.iter_mut() {
+                            remap_type_lifetimes(arg, map);
+                        }
+                        if let ReturnType::Type(_, ty) = &mut args.output {
+                            remap_type_lifetimes(&mut *ty, map);
+                        }
+                    }
+                    _ => (),
+                }
+            }
+        }
+        Type::Array(TypeArray { elem, .. }) => remap_type_lifetimes(&mut *elem, map),
+        Type::Group(TypeGroup { elem, .. }) => remap_type_lifetimes(&mut *elem, map),
+        Type::Paren(TypeParen { elem, .. }) => remap_type_lifetimes(&mut *elem, map),
+        Type::Ptr(TypePtr { elem, .. }) => remap_type_lifetimes(&mut *elem, map),
+        Type::Slice(TypeSlice { elem, .. }) => remap_type_lifetimes(&mut *elem, map),
+        Type::Tuple(TypeTuple { elems, .. }) => {
+            for elem in elems.iter_mut() {
+                remap_type_lifetimes(elem, map)
+            }
+        }
+        _ => (),
+        //Type::Tuple(TypeTuple),
+        //Type::Verbatim(TokenStream),
+    }
+}
+
+pub fn merge_lifetime_declarations(
+    a: Punctuated<LifetimeDef, Comma>,
+    b: &Punctuated<LifetimeDef, Comma>,
+) -> Punctuated<LifetimeDef, Comma> {
+    let mut life_declare = Punctuated::new();
+    let mut life_declared = HashSet::<&Ident>::new();
+
+    for val in std::iter::IntoIterator::into_iter([&a, b]) {
+        for life in val.pairs() {
+            let (val, punct) = life.into_tuple();
+            if life_declared.contains(&val.lifetime.ident) {
+                continue;
+            }
+            life_declare.push_value(val.clone());
+            if let Some(punct) = punct {
+                life_declare.push_punct(*punct);
+            }
+            life_declared.insert(&val.lifetime.ident);
+        }
+    }
+
+    life_declare
 }
 
 /// Checks whether the type could be null pointer optimizable.

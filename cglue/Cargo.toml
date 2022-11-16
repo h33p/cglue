@@ -1,6 +1,6 @@
 [package]
 name = "cglue"
-version = "0.2.11"
+version = "0.2.12"
 authors = ["Aurimas Blažulionis <0x60@pm.me>"]
 edition = "2018"
 description = "FFI safe abstractions for making plugins and C-compatible libraries"

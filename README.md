@@ -512,7 +512,7 @@ types in anonymous lifetime references. It should be okay, but the situation is 
 
 1. Due to no GAT, `CGlueObjRef/Mut<'_>` is being promoted to `CGlueObjRef/Mut<'static>`. This
    should be okay, given it is not possible to clone non-CBox objects, and these objects are
-   returned by-reference, not value.
+   returned by-reference, not value (see GATs section for how to avoid this).
 
 2. Trait bounds are only checked for one lifetime (lifetime of the vtable), and the C function
    is being cast into a HRTB one unsafely. This is because it is not possible to specify the
@@ -529,6 +529,48 @@ functions, `wrap_with_obj_mut/wrap_with_group_mut` in `&mut Self::ReturnType` fu
 note that if there is a trait that returns a combination of these types, it is not possible to
 use wrapping, because the underlying object types differ. If possible, split up the type to
 multiple associated types.
+
+### Generic associated types
+
+CGlue has limited support for GATs! More specifically, single lifetime GATs are supported,
+which allows one to implement a form of `LendingIterator`:
+
+```rust
+use cglue::*;
+#[cglue_trait]
+pub trait LendingPrinter {
+    #[wrap_with_obj(InfoPrinter)]
+    type Printer<'a>: InfoPrinter + 'a where Self: 'a;
+
+    fn borrow_printer<'a>(&'a mut self) -> Self::Printer<'a>;
+}
+
+impl<'a> InfoPrinter for &'a mut Info {
+    fn print_info(&self) {
+        (**self).print_info();
+    }
+}
+
+struct InfoStore {
+    info: Info,
+}
+
+impl LendingPrinter for InfoStore {
+    type Printer<'a> = &'a mut Info;
+
+    fn borrow_printer(&mut self) -> Self::Printer<'_> {
+        &mut self.info
+    }
+}
+
+let builder = InfoStore { info: Info { value: 50 } };
+
+let mut obj = trait_obj!(builder as LendingPrinter);
+
+let info_printer = obj.borrow_printer();
+
+info_printer.print_info();
+```
 
 ### Plugin system
 
@@ -696,3 +738,5 @@ If you want your project to be added to the list, please open an issue report :)
 
 It is available in [CHANGELOG.md](https://github.com/h33p/cglue/blob/main/CHANGELOG.md) file.
 
+
+License: MIT
