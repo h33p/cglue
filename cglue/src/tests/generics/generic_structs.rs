@@ -23,9 +23,29 @@ impl TA for GA<usize> {
     }
 }
 
+#[derive(Clone)]
+pub struct Lifetimed<'a, T> {
+    val: &'a T,
+}
+
+impl<'a, T> Getter<T> for Lifetimed<'a, T> {
+    fn get_val(&self) -> &T {
+        self.val
+    }
+}
+
+impl<'a> TA for Lifetimed<'a, usize> {
+    extern "C" fn ta_1(&self) -> usize {
+        *self.val
+    }
+}
+
 cglue_trait_group!(GenGroup<T: Eq>, Getter<T>, { TA });
 cglue_impl_group!(GA<T: Eq>, GenGroup<T>, { TA });
 cglue_impl_group!(GA<T = u64>, GenGroup<T>, {});
+// Internally, the macro prefers to emit 'cglue_a and both of these cases should "just work"
+cglue_impl_group!(Lifetimed<'a, T: Eq>, GenGroup<T>, { TA });
+cglue_impl_group!(Lifetimed<'cglue_a, T = u64>, GenGroup<T>, {});
 
 #[test]
 fn use_getter() {

@@ -334,14 +334,42 @@ impl TraitGroupImpl {
         let ParsedGenerics {
             gen_declare,
             gen_where_bounds,
-            life_declare,
+            mut life_declare,
+            mut life_use,
             ..
         } = [&self.ty_generics, &self.generics]
             .iter()
             .copied()
             .collect();
 
-        let gen_lt_bounds = self.generics.declare_lt_for_all(&quote!('cglue_a));
+        // If no lifetimes are used, default to 'cglue_a
+        if life_use.is_empty() {
+            assert!(life_declare.is_empty());
+            let lifetime = Lifetime {
+                apostrophe: proc_macro2::Span::call_site(),
+                ident: format_ident!("cglue_a"),
+            };
+            life_use.push_value(lifetime.clone());
+            life_declare.push_value(LifetimeDef {
+                lifetime,
+                attrs: Default::default(),
+                bounds: Default::default(),
+                colon_token: Default::default(),
+            });
+        }
+
+        if !life_declare.trailing_punct() {
+            life_declare.push_punct(Default::default());
+        }
+
+        if !life_use.trailing_punct() {
+            life_use.push_punct(Default::default());
+        }
+
+        // Lifetime should always exist based on previous code
+        let first_life = life_use.first().unwrap();
+
+        let gen_lt_bounds = self.generics.declare_lt_for_all(&quote!(#first_life));
         let gen_sabi_bounds = self.generics.declare_sabi_for_all(&crate_path);
 
         let gen_where_bounds = quote! {
@@ -362,13 +390,14 @@ impl TraitGroupImpl {
             quote!(CGlueCtx),
             &self.generics,
             Some(quote!(Self)).as_ref(),
+            first_life,
         );
 
         let gen = quote! {
-            impl<'cglue_a, #life_declare CGlueInst: ::core::ops::Deref<Target = #ty>, CGlueCtx: #ctx_bound, #gen_declare>
-                #group_path #filler_trait<'cglue_a, CGlueInst, CGlueCtx, #gen_use> for #ty
+            impl<#life_declare CGlueInst: ::core::ops::Deref<Target = #ty>, CGlueCtx: #ctx_bound, #gen_declare>
+                #group_path #filler_trait<#life_use CGlueInst, CGlueCtx, #gen_use> for #ty
             where #gen_where_bounds #vtbl_where_bounds {
-                fn fill_table(table: #group_path #vtable_type<'cglue_a, CGlueInst, CGlueCtx, #gen_use>) -> #group_path #vtable_type<'cglue_a, CGlueInst, CGlueCtx, #gen_use> {
+                fn fill_table(table: #group_path #vtable_type<#life_use CGlueInst, CGlueCtx, #gen_use>) -> #group_path #vtable_type<#life_use CGlueInst, CGlueCtx, #gen_use> {
                     table #implemented_tables
                 }
             }
@@ -377,7 +406,7 @@ impl TraitGroupImpl {
         if let Some(fwd_vtbl) = &self.fwd_implemented_vtbl {
             let fwd_filler_trait = format_ident!("{}FwdVtableFiller", group);
 
-            let fwd_ty = quote!(#crate_path::forward::Fwd<&'cglue_a mut #ty>);
+            let fwd_ty = quote!(#crate_path::forward::Fwd<&#first_life mut #ty>);
 
             let implemented_tables = TraitGroup::enable_opt_vtbls(fwd_vtbl.iter());
             let vtbl_where_bounds = TraitGroup::vtbl_where_bounds(
@@ -387,18 +416,19 @@ impl TraitGroupImpl {
                 quote!(CGlueCtx),
                 &self.generics,
                 Some(quote!(Self)).as_ref(),
+                first_life,
             );
 
             quote! {
                 #gen
 
-                impl<'cglue_a, CGlueInst: ::core::ops::Deref<Target = #fwd_ty>, CGlueCtx: #ctx_bound, #gen_declare>
-                    #group_path #fwd_filler_trait<'cglue_a, CGlueInst, CGlueCtx, #gen_use> for #ty
+                impl<#life_declare CGlueInst: ::core::ops::Deref<Target = #fwd_ty>, CGlueCtx: #ctx_bound, #gen_declare>
+                    #group_path #fwd_filler_trait<#life_use CGlueInst, CGlueCtx, #gen_use> for #ty
                 where
                     #cont_name<CGlueInst, CGlueCtx, #gen_use>: #crate_path::trait_group::CGlueObjBase,
                     #gen_where_bounds #vtbl_where_bounds
                 {
-                    fn fill_fwd_table(table: #group_path #vtable_type<'cglue_a, CGlueInst, CGlueCtx, #gen_use>) -> #group_path #vtable_type<'cglue_a, CGlueInst, CGlueCtx, #gen_use> {
+                    fn fill_fwd_table(table: #group_path #vtable_type<#life_use CGlueInst, CGlueCtx, #gen_use>) -> #group_path #vtable_type<#life_use CGlueInst, CGlueCtx, #gen_use> {
                         table #implemented_tables
                     }
                 }
@@ -570,6 +600,11 @@ impl TraitGroup {
             #gen_sabi_bounds
         };
 
+        let cglue_a_lifetime = Lifetime {
+            apostrophe: proc_macro2::Span::call_site(),
+            ident: format_ident!("cglue_a"),
+        };
+
         let mandatory_vtbl_defs = self.mandatory_vtbl_defs(self.mandatory_vtbl.iter());
         let optional_vtbl_defs = self.optional_vtbl_defs(quote!(CGlueInst), quote!(CGlueCtx));
         let optional_vtbl_defs_boxed = self.optional_vtbl_defs(
@@ -600,6 +635,7 @@ impl TraitGroup {
             quote!(CGlueCtx),
             &self.generics,
             None,
+            &cglue_a_lifetime,
         );
         let vtbl_where_bounds_noctx = Self::vtbl_where_bounds(
             self.mandatory_vtbl.iter(),
@@ -608,6 +644,7 @@ impl TraitGroup {
             quote!(#trg_path::NoContext),
             &self.generics,
             None,
+            &cglue_a_lifetime,
         );
         let vtbl_where_bounds_boxed = Self::vtbl_where_bounds(
             self.mandatory_vtbl.iter(),
@@ -616,6 +653,7 @@ impl TraitGroup {
             quote!(#crate_path::trait_group::NoContext),
             &self.generics,
             None,
+            &cglue_a_lifetime,
         );
         let vtbl_where_bounds_ctxboxed = Self::vtbl_where_bounds(
             self.mandatory_vtbl.iter(),
@@ -624,6 +662,7 @@ impl TraitGroup {
             quote!(CGlueCtx),
             &self.generics,
             None,
+            &cglue_a_lifetime,
         );
         let ret_tmp_defs = self.ret_tmp_defs(self.optional_vtbl.iter());
 
@@ -1962,6 +2001,7 @@ impl TraitGroup {
         ctx_ident: TokenStream,
         all_generics: &ParsedGenerics,
         trait_bound: Option<&TokenStream>,
+        vtbl_lifetime: &Lifetime,
     ) -> TokenStream {
         let mut ret = TokenStream::new();
 
@@ -1990,7 +2030,7 @@ impl TraitGroup {
                 ret.extend(quote!(#trait_bound: #path #ident<#life_use #gen_use>,));
             }
 
-            ret.extend(quote!(&'cglue_a #path #vtbl_typename<'cglue_a, #cont_name<#container_ident, #ctx_ident, #all_gen_use>, #gen_use>: 'cglue_a + Default,));
+            ret.extend(quote!(&#vtbl_lifetime #path #vtbl_typename<#vtbl_lifetime, #cont_name<#container_ident, #ctx_ident, #all_gen_use>, #gen_use>: #vtbl_lifetime + Default,));
         }
 
         ret
