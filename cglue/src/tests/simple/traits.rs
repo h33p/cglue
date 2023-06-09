@@ -47,12 +47,18 @@ pub trait WithAliasIntResult {
     }
 }
 
+#[cglue_trait]
+pub trait WithInto {
+    fn winto_1(&self, _into: impl Into<usize>) {}
+}
+
 struct Implementor {}
 
 impl WithSlice for Implementor {}
 impl WithOptions for Implementor {}
 impl WithIntResult for Implementor {}
 impl WithAliasIntResult for Implementor {}
+impl WithInto for Implementor {}
 
 type ICont<I, C> = crate::trait_group::CGlueObjContainer<I, crate::trait_group::NoContext, C>;
 type IRefCont<C> = ICont<&'static Implementor, C>;
@@ -62,6 +68,7 @@ type WSCont = IMutCont<WithSliceRetTmp<crate::trait_group::NoContext>>;
 type WOCont = IMutCont<WithOptionsRetTmp<crate::trait_group::NoContext>>;
 type WIRCont = IRefCont<WithIntResultRetTmp<crate::trait_group::NoContext>>;
 type WAIRCont = IRefCont<WithAliasIntResultRetTmp<crate::trait_group::NoContext>>;
+type WINTOCont = IRefCont<WithIntoRetTmp<crate::trait_group::NoContext>>;
 
 #[test]
 fn slices_wrapped() {
@@ -118,4 +125,10 @@ fn alias_no_int_result() {
     let vtbl = <&WithAliasIntResultVtbl<WAIRCont>>::default();
     let _: unsafe extern "C" fn(&WAIRCont, usize) -> crate::result::CResult<usize, usize> =
         vtbl.waint_2();
+}
+
+#[test]
+fn into_t_wrapped() {
+    let vtbl = <&WithIntoVtbl<WINTOCont>>::default();
+    let _: unsafe extern "C" fn(&WINTOCont, usize) = vtbl.winto_1();
 }

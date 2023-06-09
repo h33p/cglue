@@ -594,9 +594,10 @@ impl GenericType {
     }
 
     pub fn push_types_start(&mut self, types: TokenStream) {
+        let typestr = types.to_string();
         let mut types =
             syn::parse::Parser::parse2(Punctuated::<Type, Comma>::parse_terminated, types)
-                .expect("Invalid types provided");
+                .expect(&format!("Invalid types provided: {}", typestr));
 
         if !types.trailing_punct() {
             types.push_punct(Default::default());

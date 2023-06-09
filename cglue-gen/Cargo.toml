@@ -1,6 +1,6 @@
 [package]
 name = "cglue-gen"
-version = "0.2.7"
+version = "0.2.9"
 authors = ["Aurimas Blažulionis <0x60@pm.me>"]
 edition = "2018"
 description = "FFI safe code generation for making plugins and C-compatible libraries"

@@ -426,6 +426,31 @@ impl TraitArgConv {
                             }
                         }
                     }
+                    Type::ImplTrait(t) => {
+                        // Convert `impl Into<T>` to `T`.
+                        if t.bounds.len() == 1 {
+                            if let TypeParamBound::Trait(t) = t.bounds.first().unwrap() {
+                                if t.path.segments.len() == 1 {
+                                    let seg = t.path.segments.first().unwrap();
+                                    if seg.ident == format_ident!("Into") {
+                                        if let PathArguments::AngleBracketed(a) = &seg.arguments {
+                                            if a.args.len() == 1 {
+                                                let ty = a.args.first().unwrap();
+
+                                                ret = Some((
+                                                    quote!(let #name = #name.into();),
+                                                    quote!(#name,),
+                                                    quote!(#name: #ty,),
+                                                    quote!(#name: #ty,),
+                                                    quote!(#name,),
+                                                ))
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                     _ => {}
                 }
 
@@ -942,6 +967,12 @@ impl ParsedFunc {
             quote!(#life_use)
         };
 
+        let tmp_lifetime_anon = if *use_hrtb && !life_use.is_empty() {
+            quote!('_, )
+        } else {
+            quote!(#life_use)
+        };
+
         // Inject 'cglue_a if there are no lifetimes declared by the trait,
         // and temp lifetime is needed
         let life_declare = if lifetime.is_none() || !life_declare.is_empty() {
@@ -990,7 +1021,7 @@ impl ParsedFunc {
         let inner_impl = if let Some(body) = self.custom_conv.c_inner_body.as_ref() {
             body.clone()
         } else {
-            quote!(this.#name(#call_args))
+            quote!(<CGlueC::ObjType as #trname<#tmp_lifetime_anon #gen_use>>::#name(this, #call_args))
         };
 
         let c_where_bounds = if lifetime_cast.is_some() && *unbounded_hrtb {
@@ -1353,7 +1384,12 @@ impl ParsedReturnType {
                         (ty.mutability.is_some(), ty.lifetime.as_ref().cloned())
                     }
                     (false, _) => (false, None),
-                    _ => panic!("Wrapped ref return currently only valid for references!"),
+                    _ => {
+                        panic!(
+                            "Wrapped ref return currently only valid for references! (ty: {ty})",
+                            ty = ty.to_token_stream()
+                        )
+                    }
                 };
 
                 let unbounded_hrtb = lifetime.is_none() && lifetime_type_bound.is_none();

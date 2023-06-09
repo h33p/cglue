@@ -268,7 +268,7 @@ pub fn process_item(
                                 );
                             }
                         } else if x == "wrap_with_group_ref" || x == "wrap_with_obj_ref" {
-                            let no_context = quote!(CGlueC::Context); //#crate_path::trait_group::NoContext);
+                            let no_context = quote!(CGlueC::Context);
                             new_ty.push_types_start(quote!(&#lifetime #c_void, CGlueC::Context,));
                             new_ty_ret_tmp.push_types_start(quote!(&#lifetime #c_void, CGlueCtx,));
                             new_ty_trait_impl.push_types_start(
@@ -281,14 +281,16 @@ pub fn process_item(
                                 quote!(&#from_lifetime_simple #c_void, CGlueC::Context,),
                             );
                             new_ty_static.push_types_start(quote!(&'static #c_void, CGlueCtx,));
-                            from_new_ty.push_types_start(
-                                quote!(&#from_lifetime <CGlueC::ObjType as #trait_name<#hrtb_lifetime_use #gen_use>>::#ty_def, #no_context,),
-                            );
-                            from_new_ty_ref.extend(quote!(&#from_lifetime));
-                            from_new_ty_simple.push_types_start(
-                                quote!(&#from_lifetime_simple <CGlueC::ObjType as #trait_name<#hrtb_lifetime_use #gen_use>>::#ty_def, #no_context,),
-                            );
-                            from_new_ty_simple_ref.extend(quote!(&#from_lifetime_simple));
+                            if let Some((cglue_f_ty_def, cglue_f_ty_simple_ident)) = &cglue_f_tys {
+                                from_new_ty.push_types_start(
+                                    quote!(&#from_lifetime #cglue_f_ty_def, #no_context,),
+                                );
+                                from_new_ty_ref.extend(quote!(&#from_lifetime));
+                                from_new_ty_simple.push_types_start(
+                                    quote!(&#from_lifetime_simple #cglue_f_ty_simple_ident, #no_context,),
+                                );
+                                from_new_ty_simple_ref.extend(quote!(&#from_lifetime_simple));
+                            }
                         } else if x == "wrap_with_group_mut" || x == "wrap_with_obj_mut" {
                             let no_context = quote!(CGlueC::Context);
                             new_ty
