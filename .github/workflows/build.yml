@@ -12,7 +12,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [macos-latest, ubuntu-latest, windows-latest]
+        os: [macos-11, ubuntu-latest, windows-latest]
         toolchain: ["1.45.0", "stable"]
     steps:
       - uses: actions/checkout@v2
@@ -22,13 +22,40 @@ jobs:
           override: true
 
       - name: Build without examples
-        run: cargo build --verbose -p cglue
+        run: |
+          cd cglue
+          cargo build --verbose
+
+  build-extra-features:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [macos-12, ubuntu-latest, windows-latest]
+        # 1.57 is needed for const panic
+        # panic in const is used to verify waker layouts
+        toolchain: ["1.57.0", "stable"]
+        features: [
+          "--features task_unstable",
+          "--features task_unstable,task_unsound",
+          "--features layout_checks"
+        ]
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          override: true
+
+      - name: Build without examples
+        run: |
+          cd cglue
+          cargo build --verbose ${{ matrix.features }}
 
   build-with-layouts:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [macos-latest, ubuntu-latest, windows-latest]
+        os: [macos-11, ubuntu-latest, windows-latest]
         toolchain: ["1.46.0", "stable"]
     steps:
       - uses: actions/checkout@v2
@@ -47,8 +74,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [macos-latest, ubuntu-latest, windows-latest]
-        toolchain: ["1.46.0", "stable", "nightly-2021-11-05"]
+        os: [macos-11, ubuntu-latest, windows-latest]
+        toolchain: ["1.57.0", "stable", "nightly-2021-11-05"]
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
@@ -88,7 +115,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [macos-latest, ubuntu-latest, windows-latest]
+        os: [macos-11, ubuntu-latest, windows-latest]
         toolchain: ["1.45.0", "stable"]
     steps:
       - uses: actions/checkout@v2
@@ -104,8 +131,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [macos-latest, ubuntu-latest, windows-latest]
-        toolchain: ["1.46.0", "stable", "nightly-2021-11-05"]
+        os: [macos-11, ubuntu-latest, windows-latest]
+        toolchain: ["1.57.0", "stable", "nightly-2021-11-05"]
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
@@ -122,7 +149,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        features: ["--all-features", ""]
+        features: ["--all-features", "", "-p cglue --features task_unstable", "-p cglue --features task_unstable,task_unsound"]
     steps:
       - uses: actions/checkout@v2
       - run: rustup component add clippy

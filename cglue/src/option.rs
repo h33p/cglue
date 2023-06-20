@@ -63,6 +63,10 @@ impl<T> COption<T> {
             COption::None => None,
         }
     }
+
+    pub fn take(&mut self) -> Option<T> {
+        core::mem::take(self).into()
+    }
 }
 
 #[cfg(feature = "serde")]

@@ -988,6 +988,7 @@
 //! It is available in [CHANGELOG.md](https://github.com/h33p/cglue/blob/main/CHANGELOG.md) file.
 //!
 
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(not(feature = "std"), no_std)]
 extern crate no_std_compat as std;
 
@@ -1004,6 +1005,10 @@ pub mod slice;
 pub mod trait_group;
 pub mod tuple;
 pub mod vec;
+
+#[cfg(feature = "task_unstable")]
+#[cfg_attr(docsrs, doc(cfg(feature = "task_unstable")))]
+pub mod task;
 
 pub use ::cglue_macro::{
     as_mut, as_ref, cast, cglue_forward, cglue_forward_ext, cglue_impl_group, cglue_trait,

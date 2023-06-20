@@ -16,7 +16,7 @@ pub trait GroupGatReturn {
 impl GroupGatReturn for SA {
     type ReturnType<'a> = &'a SA;
 
-    fn ggr_1(&mut self, val: &u32) -> &SA {
+    fn ggr_1(&mut self, _val: &u32) -> &SA {
         self
     }
 }
