@@ -393,8 +393,9 @@ impl Vtable {
     pub fn new(name: String, functions_str: &str, container_ty: &str) -> Result<Self> {
         let mut functions = vec![];
 
+        // (?s) allows matching across lines
         let reg = Regex::new(&format!(
-            r"(?P<ret_type>[^;]+)\(\*(?P<name>\w+)\)\((?P<cont>({cont_ty} \*|const {cont_ty} \*|{cont_ty} ))cont(?P<args>.*)\)",
+            r"(?s)(?P<ret_type>[^;]+)\(\*(?P<name>\w+)\)\((?P<cont>({cont_ty} \*|const {cont_ty} \*|{cont_ty} ))cont(?P<args>.*)\)",
             cont_ty = container_ty
         ))?;
 
