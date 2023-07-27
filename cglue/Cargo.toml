@@ -35,7 +35,6 @@ std = ["no-std-compat/std"]
 rust_void = ["cglue-macro/rust_void"]
 unstable = ["cglue-macro/unstable", "try_default"]
 task_unstable = []
-task_unsound = []
 layout_checks = ["cglue-macro/layout_checks", "abi_stable"]
 
 [package.metadata.docs.rs]

@@ -20,11 +20,22 @@ unsafe extern "C" fn other_adapter(data: *const (), other: *const ()) {
 #[cfg_attr(feature = "abi_stable", derive(::abi_stable::StableAbi))]
 pub struct CWaker {
     raw: CRawWaker,
+    order: CRawWakerOrder,
     clone_adapter: unsafe extern "C" fn(*const (), *const ()) -> CRawWaker,
     other_adapter: unsafe extern "C" fn(*const (), *const ()),
 }
 
 impl CWaker {
+    fn data(&self) -> *const () {
+        self.raw.data(&self.order)
+    }
+
+    fn vtable(&self) -> &'static CRawWakerVTable {
+        // SAFETY: we ensure safety during construction of `CWaker` - the order used is always
+        // correct and tied to the raw vtable.
+        unsafe { self.raw.vtable(&self.order) }
+    }
+
     pub fn into_waker(this: BaseArc<Self>) -> Waker {
         unsafe { Waker::from_raw(Self::into_raw_waker(this)) }
     }
@@ -38,13 +49,13 @@ impl CWaker {
 
         unsafe fn wake(data: *const ()) {
             let waker = &*(data as *const CWaker);
-            (waker.other_adapter)(waker.raw.data, waker.raw.vtable.wake_by_ref as _);
+            (waker.other_adapter)(waker.data(), waker.vtable().wake_by_ref as _);
             BaseArc::decrement_strong_count(waker);
         }
 
         unsafe fn wake_by_ref(data: *const ()) {
             let waker = &*(data as *const CWaker);
-            (waker.other_adapter)(waker.raw.data, waker.raw.vtable.wake_by_ref as _);
+            (waker.other_adapter)(waker.data(), waker.vtable().wake_by_ref as _);
         }
 
         unsafe fn drop(data: *const ()) {
@@ -57,8 +68,8 @@ impl CWaker {
 
     pub fn wake(self) {
         let other_adapter = self.other_adapter;
-        let wake = self.raw.vtable.wake;
-        let data = self.raw.data;
+        let wake = self.vtable().wake;
+        let data = self.data();
         // Don't call `drop` -- the waker will be consumed by `wake`.
         core::mem::forget(self);
         // SAFETY: This is safe because `Waker::from_raw` is the only way
@@ -71,8 +82,8 @@ impl CWaker {
 
     pub fn wake_by_ref(&self) {
         let other_adapter = self.other_adapter;
-        let wake_by_ref = self.raw.vtable.wake_by_ref;
-        let data = self.raw.data;
+        let wake_by_ref = self.vtable().wake_by_ref;
+        let data = self.data();
         // SAFETY: This is safe because `Waker::from_raw` is the only way
         // to initialize `wake` and `data` requiring the user to acknowledge
         // that the contract of `RawWaker` is upheld.
@@ -86,6 +97,7 @@ impl CWaker {
 
         Self {
             raw,
+            order: get_order(),
             clone_adapter,
             other_adapter,
         }
@@ -95,8 +107,8 @@ impl CWaker {
 impl Drop for CWaker {
     fn drop(&mut self) {
         let other_adapter = self.other_adapter;
-        let drop = self.raw.vtable.drop;
-        let data = self.raw.data;
+        let drop = self.vtable().drop;
+        let data = self.data();
         // SAFETY: This is safe because `Waker::from_raw` is the only way
         // to initialize `wake` and `data` requiring the user to acknowledge
         // that the contract of `RawWaker` is upheld.
@@ -113,7 +125,8 @@ impl Clone for CWaker {
             // SAFETY: This is safe because `Waker::from_raw` is the only way
             // to initialize `clone` and `data` requiring the user to acknowledge
             // that the contract of [`RawWaker`] is upheld.
-            raw: unsafe { (self.clone_adapter)(self.raw.data, self.raw.vtable.clone as *const ()) },
+            raw: unsafe { (self.clone_adapter)(self.data(), self.vtable().clone as *const ()) },
+            order: self.order,
             clone_adapter: self.clone_adapter,
             other_adapter: self.other_adapter,
         }
@@ -131,6 +144,7 @@ impl From<Waker> for CWaker {
 enum FastCWakerState<'a> {
     Borrowed {
         waker: &'a CRawWaker,
+        order: CRawWakerOrder,
         clone_adapter: unsafe extern "C" fn(*const (), *const ()) -> CRawWaker,
         other_adapter: unsafe extern "C" fn(*const (), *const ()),
     },
@@ -175,6 +189,7 @@ impl<'a> From<&'a Waker> for FastCWaker<'a> {
             lock: Default::default(),
             state: UnsafeCell::new(FastCWakerState::Borrowed {
                 waker: waker.into(),
+                order: get_order(),
                 clone_adapter,
                 other_adapter,
             }),
@@ -208,14 +223,19 @@ impl<'a> FastCWaker<'a> {
                 let (data, wake, adapter) = match unsafe { this.lock() } {
                     FastCWakerState::Borrowed {
                         waker,
+                        order,
                         other_adapter,
                         ..
-                    } => (waker.data, waker.vtable.wake_by_ref, *other_adapter),
+                    } => (
+                        waker.data(order),
+                        waker.vtable(order).wake_by_ref,
+                        *other_adapter,
+                    ),
                     FastCWakerState::Owned(d) => {
                         let waker = &*d.as_ptr();
                         (
-                            waker.raw.data,
-                            waker.raw.vtable.wake_by_ref,
+                            waker.data(),
+                            waker.vtable().wake_by_ref,
                             waker.other_adapter,
                         )
                     }
@@ -248,12 +268,15 @@ impl<'a> FastCWaker<'a> {
             },
             FastCWakerState::Borrowed {
                 waker,
+                order,
                 clone_adapter,
                 other_adapter,
             } => {
-                let waker = unsafe { clone_adapter(waker.data, waker.vtable.clone as _) };
+                let waker =
+                    unsafe { clone_adapter(waker.data(order), waker.vtable(order).clone as _) };
                 let owned: BaseArc<CWaker> = BaseArc::from(CWaker {
                     raw: waker,
+                    order: *order,
                     clone_adapter: *clone_adapter,
                     other_adapter: *other_adapter,
                 });
