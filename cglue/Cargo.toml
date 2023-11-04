@@ -1,6 +1,6 @@
 [package]
 name = "cglue"
-version = "0.2.13"
+version = "0.2.14"
 authors = ["Aurimas Blažulionis <0x60@pm.me>"]
 edition = "2018"
 description = "FFI safe abstractions for making plugins and C-compatible libraries"
@@ -18,7 +18,7 @@ serde = { version = "1", optional = true, default-features = false, features = [
 try_default = { version = "= 1.0.0", optional = true }
 abi_stable = { version = "0.10", optional = true }
 log = { version = "0.4", optional = true }
-tarc = "0.1"
+tarc = { version = "0.1", default-features = false }
 
 [build-dependencies]
 rustc_version = "0.4"
@@ -31,7 +31,7 @@ rustc_version = "0.4"
 
 [features]
 default = ["std"]
-std = ["no-std-compat/std"]
+std = ["no-std-compat/std", "tarc/std"]
 rust_void = ["cglue-macro/rust_void"]
 unstable = ["cglue-macro/unstable", "try_default"]
 task_unstable = []
