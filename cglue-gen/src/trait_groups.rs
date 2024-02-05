@@ -8,10 +8,46 @@ use std::collections::HashMap;
 use syn::parse::{Parse, ParseStream};
 use syn::*;
 
+pub struct AliasPath {
+    path: Path,
+    alias: Option<Ident>,
+}
+
+impl Parse for AliasPath {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let path = input.parse()?;
+
+        let alias = if input.parse::<Token![=]>().is_ok() {
+            Some(input.parse::<Ident>()?)
+        } else {
+            None
+        };
+
+        Ok(Self { path, alias })
+    }
+}
+
+impl AliasPath {
+    fn prelude_remap(self) -> Self {
+        Self {
+            path: prelude_remap(self.path),
+            alias: self.alias,
+        }
+    }
+
+    fn ext_abs_remap(self) -> Self {
+        Self {
+            path: ext_abs_remap(self.path),
+            alias: self.alias,
+        }
+    }
+}
+
 /// Describes information about a single trait.
 pub struct TraitInfo {
     path: Path,
-    ident: Ident,
+    raw_ident: Ident,
+    name_ident: Ident,
     generics: ParsedGenerics,
     vtbl_name: Ident,
     ret_tmp_typename: Ident,
@@ -23,7 +59,7 @@ pub struct TraitInfo {
 
 impl PartialEq for TraitInfo {
     fn eq(&self, o: &Self) -> bool {
-        self.ident == o.ident
+        self.name_ident == o.name_ident
     }
 }
 
@@ -31,7 +67,7 @@ impl Eq for TraitInfo {}
 
 impl Ord for TraitInfo {
     fn cmp(&self, o: &Self) -> std::cmp::Ordering {
-        self.ident.cmp(&o.ident)
+        self.name_ident.cmp(&o.name_ident)
     }
 }
 
@@ -41,22 +77,30 @@ impl PartialOrd for TraitInfo {
     }
 }
 
-impl From<Path> for TraitInfo {
-    fn from(in_path: Path) -> Self {
-        let (path, ident, gens) =
-            split_path_ident(&in_path).expect("Failed to split path by idents");
+impl From<AliasPath> for TraitInfo {
+    fn from(in_path: AliasPath) -> Self {
+        let (path, raw_ident, gens) =
+            split_path_ident(&in_path.path).expect("Failed to split path by idents");
 
-        let lc_ident = ident.to_string().to_lowercase();
+        let mut name_ident = raw_ident.clone();
+
+        let mut lc_ident = raw_ident.to_string().to_lowercase();
+
+        if let Some(alias) = in_path.alias {
+            lc_ident = alias.to_string().to_lowercase();
+            name_ident = alias;
+        }
 
         Self {
             vtbl_name: format_ident!("vtbl_{}", lc_ident),
             lc_name: format_ident!("{}", lc_ident),
-            vtbl_typename: format_ident!("{}Vtbl", ident),
-            ret_tmp_typename: format_ident!("{}RetTmp", ident),
+            vtbl_typename: format_ident!("{}Vtbl", raw_ident),
+            ret_tmp_typename: format_ident!("{}RetTmp", raw_ident),
             ret_tmp_name: format_ident!("ret_tmp_{}", lc_ident),
-            enable_vtbl_name: format_ident!("enable_{}", ident.to_string().to_lowercase()),
+            enable_vtbl_name: format_ident!("enable_{}", lc_ident),
             path,
-            ident,
+            raw_ident,
+            name_ident,
             generics: ParsedGenerics::from(gens.as_ref()),
         }
     }
@@ -84,10 +128,10 @@ impl Parse for TraitGroup {
         parse_brace_content(input).ok();
 
         input.parse::<Token![,]>()?;
-        let mandatory_traits = parse_maybe_braced::<Path>(input)?;
+        let mandatory_traits = parse_maybe_braced::<AliasPath>(input)?;
 
         input.parse::<Token![,]>()?;
-        let optional_traits = parse_maybe_braced::<Path>(input)?;
+        let optional_traits = parse_maybe_braced::<AliasPath>(input)?;
 
         let ext_trait_defs = if input.parse::<Token![,]>().is_ok() {
             parse_maybe_braced::<ItemTrait>(input)?
@@ -99,14 +143,14 @@ impl Parse for TraitGroup {
 
         let mut mandatory_vtbl: Vec<TraitInfo> = mandatory_traits
             .into_iter()
-            .map(prelude_remap)
+            .map(AliasPath::prelude_remap)
             .map(TraitInfo::from)
             .collect();
         mandatory_vtbl.sort();
 
         let mut optional_vtbl: Vec<TraitInfo> = optional_traits
             .into_iter()
-            .map(prelude_remap)
+            .map(AliasPath::prelude_remap)
             .map(TraitInfo::from)
             .collect();
         optional_vtbl.sort();
@@ -134,7 +178,7 @@ impl Parse for TraitGroup {
             }
 
             // If the user has supplied a custom implementation.
-            if let Some(tr) = ext_trait_defs.iter().find(|tr| tr.ident == vtbl.ident) {
+            if let Some(tr) = ext_trait_defs.iter().find(|tr| tr.ident == vtbl.raw_ident) {
                 // Keep the leading colon so as to allow going from the root or relatively
                 let leading_colon = std::mem::replace(&mut vtbl.path.leading_colon, None);
 
@@ -162,11 +206,11 @@ impl Parse for TraitGroup {
             } else {
                 // Check the store otherwise
                 let tr = store_traits
-                    .get(&(vtbl.path.clone(), vtbl.ident.clone()))
+                    .get(&(vtbl.path.clone(), vtbl.raw_ident.clone()))
                     .or_else(|| {
-                        store_exports.get(&vtbl.ident).and_then(|p| {
+                        store_exports.get(&vtbl.raw_ident).and_then(|p| {
                             vtbl.path = p.clone();
-                            store_traits.get(&(p.clone(), vtbl.ident.clone()))
+                            store_traits.get(&(p.clone(), vtbl.raw_ident.clone()))
                         })
                     });
 
@@ -188,7 +232,7 @@ impl Parse for TraitGroup {
                 } else {
                     eprintln!(
                         "Could not find external trait {}. Not changing paths.",
-                        vtbl.ident
+                        vtbl.raw_ident
                     );
                 }
             }
@@ -261,12 +305,12 @@ impl Parse for TraitGroupImpl {
         generics.merge_and_remap(&mut ty_generics);
 
         let implemented_vtbl = if input.parse::<Token![,]>().is_ok() {
-            let implemented_traits = parse_maybe_braced::<Path>(input)?;
+            let implemented_traits = parse_maybe_braced::<AliasPath>(input)?;
 
             let mut implemented_vtbl: Vec<TraitInfo> = implemented_traits
                 .into_iter()
-                .map(prelude_remap)
-                .map(ext_abs_remap)
+                .map(AliasPath::prelude_remap)
+                .map(AliasPath::ext_abs_remap)
                 .map(From::from)
                 .collect();
 
@@ -278,12 +322,12 @@ impl Parse for TraitGroupImpl {
         };
 
         let fwd_implemented_vtbl = if input.parse::<Token![,]>().is_ok() {
-            let implemented_traits = parse_maybe_braced::<Path>(input)?;
+            let implemented_traits = parse_maybe_braced::<AliasPath>(input)?;
 
             let mut implemented_vtbl: Vec<TraitInfo> = implemented_traits
                 .into_iter()
-                .map(prelude_remap)
-                .map(ext_abs_remap)
+                .map(AliasPath::prelude_remap)
+                .map(AliasPath::ext_abs_remap)
                 .map(From::from)
                 .collect();
 
@@ -468,7 +512,10 @@ impl Parse for TraitCastGroup {
             .bounds
             .into_iter()
             .filter_map(|b| match b {
-                TypeParamBound::Trait(tr) => Some(tr.path),
+                TypeParamBound::Trait(tr) => Some(AliasPath {
+                    path: tr.path,
+                    alias: None,
+                }),
                 _ => None,
             })
             .map(From::from)
@@ -517,8 +564,8 @@ impl TraitGroup {
     ) -> Ident {
         let mut all_traits = String::new();
 
-        for TraitInfo { ident, .. } in traits {
-            all_traits.push_str(&ident.to_string());
+        for TraitInfo { name_ident, .. } in traits {
+            all_traits.push_str(&name_ident.to_string());
         }
 
         format_ident!("{}{}With{}", name, postfix, all_traits)
@@ -1466,7 +1513,7 @@ impl TraitGroup {
 
         for TraitInfo {
             path,
-            ident,
+            raw_ident,
             generics:
                 ParsedGenerics {
                     life_use: tr_life_use,
@@ -1476,10 +1523,10 @@ impl TraitGroup {
             ..
         } in iter
         {
-            if let Some((ext_path, tr_info)) = self.ext_traits.get(ident) {
+            if let Some((ext_path, tr_info)) = self.ext_traits.get(raw_ident) {
                 let mut impls = TokenStream::new();
 
-                let ext_name = format_ident!("{}Ext", ident);
+                let ext_name = format_ident!("{}Ext", raw_ident);
 
                 let (funcs, _, _) = super::traits::parse_trait(
                     tr_info,
@@ -1494,7 +1541,7 @@ impl TraitGroup {
 
                 let gen = quote! {
                     impl<'cglue_a, CGlueInst, CGlueCtx: #ctx_bound, #gen_use>
-                        #path #ident <#tr_life_use #tr_gen_use> for #self_ident<'cglue_a, CGlueInst, CGlueCtx, #gen_use>
+                        #path #raw_ident <#tr_life_use #tr_gen_use> for #self_ident<'cglue_a, CGlueInst, CGlueCtx, #gen_use>
                     where
                         #cont_name<CGlueInst, CGlueCtx, #gen_use>: #crate_path::trait_group::CGlueObjBase,
                         Self: #ext_path #ext_name<#tr_life_use #tr_gen_use>
@@ -1553,7 +1600,7 @@ impl TraitGroup {
             i,
             TraitInfo {
                 path,
-                ident,
+                raw_ident,
                 generics:
                     ParsedGenerics {
                         life_use, gen_use, ..
@@ -1572,7 +1619,7 @@ impl TraitGroup {
                 (quote!(for<'cglue_c>), quote!('cglue_c,))
             };
 
-            ret.extend(quote!(#hrtb #path #ident <#life_use #gen_use>));
+            ret.extend(quote!(#hrtb #path #raw_ident <#life_use #gen_use>));
         }
 
         ret
@@ -2009,7 +2056,7 @@ impl TraitGroup {
 
         for TraitInfo {
             path,
-            ident,
+            raw_ident,
             vtbl_typename,
             generics: ParsedGenerics {
                 gen_use, life_use, ..
@@ -2027,7 +2074,7 @@ impl TraitGroup {
                     Some(quote!('cglue_a,))
                 };
 
-                ret.extend(quote!(#trait_bound: #path #ident<#life_use #gen_use>,));
+                ret.extend(quote!(#trait_bound: #path #raw_ident<#life_use #gen_use>,));
             }
 
             ret.extend(quote!(&#vtbl_lifetime #path #vtbl_typename<#vtbl_lifetime, #cont_name<#container_ident, #ctx_ident, #all_gen_use>, #gen_use>: #vtbl_lifetime + Default,));

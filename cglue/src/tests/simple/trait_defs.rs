@@ -22,3 +22,8 @@ pub trait TC {
 
 #[cglue_trait]
 pub trait TE {}
+
+#[cglue_trait]
+pub trait TT<T> {
+    fn tt_1(&self, v: T) -> T;
+}

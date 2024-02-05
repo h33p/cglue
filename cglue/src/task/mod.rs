@@ -58,6 +58,7 @@ impl CRawWaker {
 }
 
 #[repr(C)]
+#[cfg_attr(feature = "abi_stable", derive(::abi_stable::StableAbi))]
 #[derive(Clone, Copy)]
 struct CRawWakerOrder {
     data: usize,

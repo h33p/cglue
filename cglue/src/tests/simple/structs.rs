@@ -50,6 +50,12 @@ impl TC for SA {
     extern "C" fn tc_2(&mut self) {}
 }
 
+impl<T> TT<T> for SA {
+    fn tt_1(&self, v: T) -> T {
+        v
+    }
+}
+
 #[test]
 fn call_a() {
     let mut a = SA {};
@@ -68,6 +74,15 @@ fn get_b() {
     let b = SB {};
 
     let objb = trait_obj!(crate::boxed::CBox::from(b) as TB);
+
+    assert_eq!(objb.tb_2(objb.tb_1(10)), 400);
+}
+
+#[test]
+fn get_b_arc() {
+    let b = SB {};
+
+    let objb = trait_obj!(crate::arc::CArcSome::from(b) as TB);
 
     assert_eq!(objb.tb_2(objb.tb_1(10)), 400);
 }

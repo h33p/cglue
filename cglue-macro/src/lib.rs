@@ -85,6 +85,10 @@ pub fn trait_obj(args: TokenStream) -> TokenStream {
 /// 3. Optionally implemented traits for the group. Either a single trait name, or a braced
 ///    list of traits.
 ///
+/// 3.1. If the same trait is listed twice (with different generic parameters), it may be aliased
+///   with `OrigTrait<Generic> = TraitAlias`. Then, all subsequent operations, such as `cast!` need
+///   to use the alias, as opposed to the original trait.
+///
 /// 4. Optional block for external trait definitions. This block is needed when using non-standard
 ///    external traits.
 #[proc_macro]
@@ -102,7 +106,8 @@ pub fn cglue_trait_group(args: TokenStream) -> TokenStream {
 /// 2. The name of the group to implement.
 ///
 /// 3. Optional traits that this object contains. Either a single trait, or a braced list of
-///    traits.
+///    traits. Note that the list must redefine identical aliases, as defined in
+///    `cglue_trait_group!` invokation.
 #[proc_macro]
 #[cfg_attr(feature = "unstable", allow(unused))]
 pub fn cglue_impl_group(args: TokenStream) -> TokenStream {

@@ -4,12 +4,12 @@ use super::trait_defs::*;
 use cglue_macro::*;
 
 cglue_trait_group!(TestGroup, TA, { TB, TC });
-
 cglue_impl_group!(SA, TestGroup, { TC });
-
 cglue_impl_group!(&'a SA, TestGroup, {});
-
 cglue_impl_group!(SB, super::trait_groups::TestGroup, { TB });
+
+cglue_trait_group!(TestGroupGen, TT<u8>, { TT<usize> = TTUsize, TT<u64> = TTUSixtyFour });
+cglue_impl_group!(SA, TestGroupGen, { TT<usize> = TTUsize });
 
 #[test]
 fn test_group() {
@@ -63,4 +63,20 @@ fn test_group_2() {
     let tb = as_ref!(group impl TB).unwrap();
 
     tb.tb_1(1);
+}
+
+#[test]
+fn test_group_3() {
+    let mut a = SA {};
+
+    let group = group_obj!(&mut a as TestGroupGen);
+    assert!(check!(group impl TTUsize));
+    #[cfg(not(feature = "unstable"))]
+    assert!(!check!(group impl TTUSixtyFour));
+    #[cfg(feature = "unstable")]
+    assert!(check!(group impl TTUSixtyFour));
+
+    let tusize = as_ref!(group impl TTUsize).unwrap();
+
+    tusize.tt_1(1usize);
 }
