@@ -47,6 +47,10 @@ pub trait ObjResultReturn {
     #[allow(clippy::result_unit_err)]
     fn orr_1(&self) -> Result<Self::ReturnType, ()>;
 
+    // NOTE: cbindgen breaks here whenever there is an explicit () type in params.
+    //
+    // You can workaround it by defining a `type Void = ()`, and use `Void` instead of `()`. This
+    // should be reported to cbindgen folks with MRE.
     #[no_int_result]
     #[allow(clippy::result_unit_err)]
     fn orr_2(&self) -> Result<Self::ReturnType, ()> {

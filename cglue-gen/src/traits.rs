@@ -673,6 +673,7 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
     // Need to preserve the same visibility as the trait itself.
     let vis = tr.vis.to_token_stream();
 
+    let unsafety = tr.unsafety;
     let trait_name = tr.ident.clone();
     let trait_name = &trait_name;
 
@@ -682,6 +683,7 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
 
     // Additional identifiers
     let vtbl_ident = format_ident!("{}Vtbl", trait_name);
+    let vtbl_info_ident = format_ident!("{}VtblInfo", trait_name);
     let ret_tmp_ident = format_ident!("{}RetTmp", trait_name);
     let ret_tmp_ident_phantom = format_ident!("{}RetTmpPhantom", trait_name);
     let accessor_trait_ident = format_ident!("{}OpaqueObj", trait_name);
@@ -739,6 +741,8 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
     let gen_declare_stripped = generics.declare_without_nonstatic_bounds();
     let gen_lt_bounds = generics.declare_lt_for_all(&quote!('cglue_a));
     let gen_sabi_bounds = generics.declare_sabi_for_all(&crate_path);
+
+    let gen_where_bounds_base_nolt = gen_where_bounds.clone();
 
     let gen_where_bounds_base = quote! {
         #gen_where_bounds
@@ -867,7 +871,7 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
         }
 
         quote! {
-            impl<#life_declare CGlueT, CGlueV, CGlueC, CGlueR, #gen_declare> #trait_name<#life_use #gen_use>
+            #unsafety impl<#life_declare CGlueT, CGlueV, CGlueC, CGlueR, #gen_declare> #trait_name<#life_use #gen_use>
                 for #trg_path::CGlueTraitObj<'_, CGlueT, CGlueV, CGlueC, CGlueR>
             where
                 Self: #ext_name<#life_use #gen_use>
@@ -1020,6 +1024,7 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
 
             #vis use cglue_internal::{
                 #vtbl_ident,
+                #vtbl_info_ident,
                 #ret_tmp_ident,
                 #accessor_trait_ident,
 
@@ -1051,6 +1056,16 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
 
             /* Primary vtable definition. */
 
+            pub struct #vtbl_info_ident;
+
+            impl<#gen_declare_stripped> #trg_path::TraitInfo<(#gen_use)> for #vtbl_info_ident
+                where
+                    #gen_where_bounds_base_nolt
+            {
+                type Assocs = ();
+                type Vtbl<'cglue_a, CGlueC: #trg_path::CGlueObjBase> = #vtbl_ident<'cglue_a, CGlueC, #gen_use> where CGlueC: 'cglue_a;
+            }
+
             #[doc = #vtbl_doc]
             ///
             /// This virtual function table contains ABI-safe interface for the given trait.
@@ -1058,7 +1073,7 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
             #derive_layouts
             pub struct #vtbl_ident<'cglue_a, CGlueC: 'cglue_a + #trg_path::CGlueObjBase, #gen_declare_stripped>
             where
-                #gen_where_bounds_base
+                #gen_where_bounds_base_nolt
             {
                 #vtbl_func_defintions
                 _lt_cglue_a: ::core::marker::PhantomData<&'cglue_a CGlueC>,
@@ -1216,7 +1231,7 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
             /* Define trait for simpler type accesses */
 
             pub trait #accessor_trait_ident<'cglue_a #cglue_a_outlives, #life_declare #gen_declare>
-                : 'cglue_a + #trg_path::GetContainer + #trg_path::GetVtbl<#vtbl_ident<'cglue_a, <Self as #trg_path::GetContainer>::ContType, #gen_use>> #supertrait_bounds
+                : 'cglue_a + #trg_path::GetContainer + #trg_path::GetVtbl<'cglue_a, (#gen_use), #vtbl_info_ident> #supertrait_bounds
             where
                 #gen_where_bounds
             {
@@ -1224,7 +1239,7 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
             }
 
             impl<'cglue_a #cglue_a_outlives, #life_declare
-                CGlueO: 'cglue_a + #trg_path::GetContainer + #trg_path::GetVtbl<#vtbl_ident<'cglue_a, <Self as #trg_path::GetContainer>::ContType, #gen_use>> #supertrait_bounds, #gen_declare>
+                CGlueO: 'cglue_a + #trg_path::GetContainer + #trg_path::GetVtbl<'cglue_a, (#gen_use), #vtbl_info_ident> #supertrait_bounds, #gen_declare>
                 #accessor_trait_ident<'cglue_a, #life_use #gen_use> for CGlueO
             where
                 #objcont_accessor_bound
@@ -1235,8 +1250,8 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
 
             /* Trait implementation. */
 
-            impl<'cglue_a #cglue_a_outlives, #life_declare
-                CGlueO: 'cglue_a + #trg_path::GetContainer + #trg_path::GetVtbl<#vtbl_ident<'cglue_a, <Self as #trg_path::GetContainer>::ContType, #gen_use>> #supertrait_bounds
+            #unsafety impl<'cglue_a #cglue_a_outlives, #life_declare
+                CGlueO: 'cglue_a + /*#trg_path::GetContainer + */#trg_path::GetVtbl<'cglue_a, (#gen_use), #vtbl_info_ident> #supertrait_bounds
                     // We essentially need only this bound, but we repeat the previous ones because
                     // otherwise we get conflicting impl errors.
                     // TODO: Is this a bug? Typically Rust typesystem doesn't complain in such cases.

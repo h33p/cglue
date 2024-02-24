@@ -1,5 +1,3 @@
-//! Core definitions for traits, and their groups.
-//!
 //! These are essentially the internals of CGlue.
 
 // TODO: split everything up
@@ -144,12 +142,22 @@ unsafe impl<'a, T: Opaquable, F: CGlueBaseVtbl<Context = C, RetTmp = R>, C: Cont
     type OpaqueTarget = CGlueTraitObj<'a, T::OpaqueTarget, F::OpaqueVtbl, C, R>;
 }
 
-pub trait GetVtbl<V> {
-    fn get_vtbl(&self) -> &V;
+pub trait TraitInfo<Generics> {
+    type Vtbl<'cglue_a, CGlueC: CGlueObjBase>
+    where
+        CGlueC: 'cglue_a;
+    type Assocs;
 }
 
-impl<T, V, C, R> GetVtbl<V> for CGlueTraitObj<'_, T, V, C, R> {
-    fn get_vtbl(&self) -> &V {
+pub trait GetVtbl<'a, Generics, T: TraitInfo<Generics>>: GetContainer {
+    fn get_vtbl(&self) -> &T::Vtbl<'a, <Self as GetContainer>::ContType>;
+}
+
+impl<'a, T: Deref<Target = F>, F, Tr: TraitInfo<Generics>, Generics, C: ContextBounds, R>
+    GetVtbl<'a, Generics, Tr>
+    for CGlueTraitObj<'a, T, Tr::Vtbl<'a, CGlueObjContainer<T, C, R>>, C, R>
+{
+    fn get_vtbl(&self) -> &Tr::Vtbl<'a, <Self as GetContainer>::ContType> {
         self.vtbl
     }
 }

@@ -55,6 +55,7 @@ pub struct TraitInfo {
     enable_vtbl_name: Ident,
     lc_name: Ident,
     vtbl_typename: Ident,
+    vtbl_info_typename: Ident,
 }
 
 impl PartialEq for TraitInfo {
@@ -95,6 +96,7 @@ impl From<AliasPath> for TraitInfo {
             vtbl_name: format_ident!("vtbl_{}", lc_ident),
             lc_name: format_ident!("{}", lc_ident),
             vtbl_typename: format_ident!("{}Vtbl", raw_ident),
+            vtbl_info_typename: format_ident!("{}VtblInfo", raw_ident),
             ret_tmp_typename: format_ident!("{}RetTmp", raw_ident),
             ret_tmp_name: format_ident!("ret_tmp_{}", lc_ident),
             enable_vtbl_name: format_ident!("enable_{}", lc_ident),
@@ -1881,6 +1883,7 @@ impl TraitGroup {
             vtbl_name,
             path,
             vtbl_typename,
+            vtbl_info_typename,
             generics: ParsedGenerics { gen_use, .. },
             ..
         } in traits
@@ -1889,9 +1892,10 @@ impl TraitGroup {
 
                 // TODO: bring back CGlueObjBuild
 
-                impl<'cglue_a, CGlueInst, CGlueCtx: #ctx_bound, #all_gen_declare> #trg_path::GetVtbl<#path #vtbl_typename<'cglue_a, #cont_name<CGlueInst, CGlueCtx, #all_gen_use>, #gen_use>>
+                impl<'cglue_a, CGlueInst: ::core::ops::Deref, CGlueCtx: #ctx_bound, #all_gen_declare> #trg_path::GetVtbl<'cglue_a, (#gen_use), #path #vtbl_info_typename>
                     for #name<'cglue_a, CGlueInst, CGlueCtx, #all_gen_use>
                 where
+                    <CGlueInst as ::core::ops::Deref>::Target: Sized,
                     #cont_name<CGlueInst, CGlueCtx, #all_gen_use>: #trg_path::CGlueObjBase,
                     #all_gen_where_bounds
                 {
