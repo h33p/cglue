@@ -918,6 +918,8 @@ impl ParsedFunc {
         tokens: &mut TokenStream,
         trg_path: &TokenStream,
         ret_tmp: &TokenStream,
+        vtbl_assocs_ident: &Ident,
+        trait_assocs_ident: &Ident,
     ) -> Option<&TokenStream> {
         if !self.is_wrapped() {
             return None;
@@ -1033,7 +1035,7 @@ impl ParsedFunc {
         let ctx_bound = super::traits::ctx_bound();
 
         let gen = quote! {
-            #safety extern "C" fn #fnname<#sig_life_declare CGlueC: #container_bound, CGlueCtx: #ctx_bound, #gen_declare>(#args #c_ret_params) #c_out where #gen_where_bounds #c_where_bounds #cglue_c_into_inner CGlueC::ObjType: for<'cglue_b> #trname<#tmp_lifetime #gen_use>, {
+            #safety extern "C" fn #fnname<#sig_life_declare CGlueC: #container_bound, CGlueCtx: #ctx_bound, CGlueAssocs: #vtbl_assocs_ident<#gen_use>, #gen_declare>(#args #c_ret_params) #c_out where #gen_where_bounds #c_where_bounds #cglue_c_into_inner CGlueC::ObjType: for<'cglue_b> #trname<#tmp_lifetime #gen_use> + #trait_assocs_ident<#gen_use Assocs = CGlueAssocs>, {
                 #c_pre_call
                 let ret = #inner_impl;
                 #c_ret

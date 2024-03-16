@@ -36,7 +36,6 @@ jobs:
         toolchain: ["1.57.0", "stable"]
         features: [
           "--features task_unstable",
-          "--features task_unstable,task_unsound",
           "--features layout_checks"
         ]
     steps:
@@ -149,7 +148,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        features: ["--all-features", "", "-p cglue --features task_unstable", "-p cglue --features task_unstable,task_unsound"]
+        features: ["--all-features", "", "-p cglue --features task_unstable", "-p cglue --features task_unstable"]
     steps:
       - uses: actions/checkout@v2
       - run: rustup component add clippy

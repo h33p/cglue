@@ -4,10 +4,9 @@ extern crate proc_macro;
 
 use cglue_gen::ext::{ext_abs_remap, prelude_remap_with_ident};
 use cglue_gen::forward::gen_forward;
-use cglue_gen::generics::GenericCastType;
+use cglue_gen::generics::{GenericCastType, GroupCastType};
 use cglue_gen::trait_groups::*;
 use proc_macro::TokenStream;
-use quote::ToTokens;
 use quote::{format_ident, quote};
 use syn::*;
 
@@ -54,20 +53,21 @@ pub fn cglue_trait_ext(_args: TokenStream, input: TokenStream) -> TokenStream {
 pub fn trait_obj(args: TokenStream) -> TokenStream {
     let crate_path = cglue_gen::util::crate_path();
 
-    let GenericCastType { ident, mut target } = parse_macro_input!(args as GenericCastType);
+    let GenericCastType {
+        mut target,
+        expr,
+        ident,
+    } = parse_macro_input!(args as GenericCastType);
 
-    if let Ok(ident) = parse2::<Ident>(target.target.clone()) {
+    if let Ok(ident) = parse2::<Ident>(ident) {
         target.path = ext_abs_remap(prelude_remap_with_ident(target.path, &ident))
     }
-
-    target.target =
-        format_ident!("{}Base", target.target.to_token_stream().to_string()).to_token_stream();
 
     let gen = quote! {
         #crate_path::trait_group::Opaquable::into_opaque({
             // We need rust to infer lifetimes and generics, thus we use a wrapper trait
             use #crate_path::from2::From2;
-            #target ::from2(#ident)
+            #target ::from2(#expr)
         })
     };
 
@@ -133,17 +133,21 @@ pub fn cglue_impl_group(args: TokenStream) -> TokenStream {
 pub fn group_obj(args: TokenStream) -> TokenStream {
     let crate_path = cglue_gen::util::crate_path();
 
-    let GenericCastType { ident, mut target } = parse_macro_input!(args as GenericCastType);
+    let GroupCastType {
+        mut target,
+        expr,
+        ident,
+    } = parse_macro_input!(args as GroupCastType);
 
-    if let Ok(ident) = parse2::<Ident>(target.target.clone()) {
-        target.path = ext_abs_remap(prelude_remap_with_ident(target.path, &ident))
+    if let Ok(ident) = parse2::<Ident>(ident) {
+        target.path = ext_abs_remap(prelude_remap_with_ident(target.path, &ident));
     }
 
     let gen = quote! {
         #crate_path::trait_group::Opaquable::into_opaque({
             // We need rust to infer lifetimes and generics, thus we use a wrapper trait
             use #crate_path::from2::From2;
-            #target ::from2(#ident)
+            #target ::from2(#expr)
         })
     };
 

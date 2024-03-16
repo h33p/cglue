@@ -511,16 +511,18 @@
 //!         CGlueInst: ::core::ops::Deref<Target = GA<T>>,
 //!         CGlueCtx: cglue::trait_group::ContextBounds,
 //!         T: Eq,
-//!     > GenGroupVtableFiller<'cglue_a, CGlueInst, CGlueCtx, T> for GA<T>
+//!         CGlueAssocs: GenGroupVtblAssocs<T>,
+//!     > GenGroupVtableFiller<'cglue_a, CGlueInst, CGlueCtx, T, CGlueAssocs> for GA<T>
 //! where
 //!     Self: TA,
-//!     &'cglue_a TAVtbl<'cglue_a, GenGroupContainer<CGlueInst, CGlueCtx, T>>:
+//!     &'cglue_a TAVtbl<'cglue_a, GenGroupContainer<CGlueInst, CGlueCtx, T, CGlueAssocs>,
+//!     CGlueAssocs::TA>:
 //!         'cglue_a + Default,
 //!     T: cglue::trait_group::GenericTypeBounds,
 //! {
 //!     fn fill_table(
-//!         table: GenGroupVtables<'cglue_a, CGlueInst, CGlueCtx, T>,
-//!     ) -> GenGroupVtables<'cglue_a, CGlueInst, CGlueCtx, T> {
+//!         table: GenGroupVtables<'cglue_a, CGlueInst, CGlueCtx, T, CGlueAssocs>,
+//!     ) -> GenGroupVtables<'cglue_a, CGlueInst, CGlueCtx, T, CGlueAssocs> {
 //!         table.enable_ta()
 //!     }
 //! }
@@ -529,11 +531,12 @@
 //!         'cglue_a,
 //!         CGlueInst: ::core::ops::Deref<Target = GA<u64>>,
 //!         CGlueCtx: cglue::trait_group::ContextBounds,
-//!     > GenGroupVtableFiller<'cglue_a, CGlueInst, CGlueCtx, u64> for GA<u64>
+//!         CGlueAssocs: GenGroupVtblAssocs<u64>,
+//!     > GenGroupVtableFiller<'cglue_a, CGlueInst, CGlueCtx, u64, CGlueAssocs> for GA<u64>
 //! {
 //!     fn fill_table(
-//!         table: GenGroupVtables<'cglue_a, CGlueInst, CGlueCtx, u64>,
-//!     ) -> GenGroupVtables<'cglue_a, CGlueInst, CGlueCtx, u64> {
+//!         table: GenGroupVtables<'cglue_a, CGlueInst, CGlueCtx, u64, CGlueAssocs>,
+//!     ) -> GenGroupVtables<'cglue_a, CGlueInst, CGlueCtx, u64, CGlueAssocs> {
 //!         table
 //!     }
 //! }

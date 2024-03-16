@@ -1,6 +1,7 @@
 //! These are essentially the internals of CGlue.
 
 // TODO: split everything up
+pub mod specify;
 
 use crate::boxed::CBox;
 #[cfg(feature = "layout_checks")]
@@ -142,23 +143,13 @@ unsafe impl<'a, T: Opaquable, F: CGlueBaseVtbl<Context = C, RetTmp = R>, C: Cont
     type OpaqueTarget = CGlueTraitObj<'a, T::OpaqueTarget, F::OpaqueVtbl, C, R>;
 }
 
-pub trait TraitInfo<Generics> {
-    type Vtbl<'cglue_a, CGlueC: CGlueObjBase>
-    where
-        CGlueC: 'cglue_a;
-    type Assocs;
+pub trait GetVtblBase<V> {
+    fn get_vtbl_base(&self) -> &V;
 }
 
-pub trait GetVtbl<'a, Generics, T: TraitInfo<Generics>>: GetContainer {
-    fn get_vtbl(&self) -> &T::Vtbl<'a, <Self as GetContainer>::ContType>;
-}
-
-impl<'a, T: Deref<Target = F>, F, Tr: TraitInfo<Generics>, Generics, C: ContextBounds, R>
-    GetVtbl<'a, Generics, Tr>
-    for CGlueTraitObj<'a, T, Tr::Vtbl<'a, CGlueObjContainer<T, C, R>>, C, R>
-{
-    fn get_vtbl(&self) -> &Tr::Vtbl<'a, <Self as GetContainer>::ContType> {
-        self.vtbl
+impl<T, V, C, R> GetVtblBase<V> for CGlueTraitObj<'_, T, V, C, R> {
+    fn get_vtbl_base(&self) -> &V {
+        &self.vtbl
     }
 }
 

@@ -556,18 +556,46 @@ impl Parse for ParsedGenerics {
 }
 
 pub struct GenericCastType {
-    pub ident: Box<Expr>,
+    pub expr: Box<Expr>,
     pub target: GenericType,
+    pub ident: TokenStream,
 }
 
 impl Parse for GenericCastType {
     fn parse(input: ParseStream) -> Result<Self> {
         let cast: ExprCast = input.parse()?;
 
-        let ident = cast.expr;
+        let expr = cast.expr;
         let target = GenericType::from_type(&cast.ty, true);
+        let ident = GenericType::from_type(&cast.ty, false).target;
 
-        Ok(Self { ident, target })
+        Ok(Self {
+            expr,
+            target,
+            ident,
+        })
+    }
+}
+
+pub struct GroupCastType {
+    pub expr: Box<Expr>,
+    pub target: GenericType,
+    pub ident: TokenStream,
+}
+
+impl Parse for GroupCastType {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let cast: ExprCast = input.parse()?;
+
+        let expr = cast.expr;
+        let target = GenericType::from_type(&cast.ty, true);
+        let ident = GenericType::from_type(&cast.ty, false).target;
+
+        Ok(Self {
+            expr,
+            target,
+            ident,
+        })
     }
 }
 
@@ -613,8 +641,26 @@ impl GenericType {
         }
     }
 
-    fn from_type(target: &Type, cast_to_group: bool) -> Self {
-        let (path, target, generics) = match target {
+    pub fn push_types_end(&mut self, types: TokenStream) {
+        let typestr = types.to_string();
+        let types = syn::parse::Parser::parse2(Punctuated::<Type, Comma>::parse_terminated, types)
+            .expect(&format!("Invalid types provided: {}", typestr));
+
+        // Unlike in push_types_start, we do not swap them
+
+        if !self.generic_types.trailing_punct() {
+            self.generic_types.push_punct(Default::default());
+        }
+
+        self.generic_types.extend(types.into_iter());
+
+        if !self.generic_types.trailing_punct() {
+            self.generic_types.push_punct(Default::default());
+        }
+    }
+
+    fn from_type(target: &Type, cast_to_obj: bool) -> Self {
+        let (path, mut target, generics) = match target {
             Type::Path(ty) => {
                 let (path, target, generics) =
                     crate::util::split_path_ident(&ty.path).expect("Gen 3");
@@ -638,16 +684,23 @@ impl GenericType {
             _ => Default::default(),
         };
 
-        let gen_separator = if cast_to_group {
+        let gen_separator = if cast_to_obj {
             if generics.is_some() {
                 let infer = Type::Infer(TypeInfer {
                     underscore_token: Default::default(),
                 });
                 generic_types.insert(0, infer.clone());
                 generic_types.insert(0, infer);
+
+                let base_assocs_ident = format_ident!("{}BaseAssocs", target.to_string());
+                generic_types.push(parse_quote!(#path #base_assocs_ident));
+
                 if !generic_types.trailing_punct() {
                     generic_types.push_punct(Default::default());
                 }
+                target = format_ident!("{}Base", target.to_string()).to_token_stream();
+            } else {
+                target = format_ident!("{}BaseBaseAssocs", target.to_string()).to_token_stream();
             }
             quote!(::)
         } else {

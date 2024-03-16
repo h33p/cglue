@@ -47,10 +47,6 @@ pub trait ObjResultReturn {
     #[allow(clippy::result_unit_err)]
     fn orr_1(&self) -> Result<Self::ReturnType, ()>;
 
-    // NOTE: cbindgen breaks here whenever there is an explicit () type in params.
-    //
-    // You can workaround it by defining a `type Void = ()`, and use `Void` instead of `()`. This
-    // should be reported to cbindgen folks with MRE.
     #[no_int_result]
     #[allow(clippy::result_unit_err)]
     fn orr_2(&self) -> Result<Self::ReturnType, ()> {
@@ -128,6 +124,22 @@ impl GenericConsumedGroupReturn<usize> for SA {
     type ReturnType = SA;
 
     fn gcgr_1(self) -> SA {
+        self
+    }
+}
+
+//#[cglue_trait]
+// FIXME: cglue currently does not support unwrapped associated types.
+pub trait UnwrappedAssociatedReturn {
+    type ReturnType;
+
+    fn uar_1(self) -> Self::ReturnType;
+}
+
+impl UnwrappedAssociatedReturn for SA {
+    type ReturnType = SA;
+
+    fn uar_1(self) -> SA {
         self
     }
 }
