@@ -186,13 +186,13 @@ pub fn parse_header(header: &str, config: &Config) -> Result<String> {
         },
     ) {
         all_wrappers += &format!(
-            r"static {ty} ctx_{prefix}_clone({ty} *self) {{
+            r"static inline {ty} ctx_{prefix}_clone({ty} *self) {{
     {ty} ret = *self;
     {impl_clone}
     return ret;
 }}
 
-void ctx_{prefix}_drop({ty} *self) {{
+static inline void ctx_{prefix}_drop({ty} *self) {{
     {impl_drop}
 }}
 ",
@@ -214,7 +214,7 @@ void ctx_{prefix}_drop({ty} *self) {{
         )| drop_impl.map(|impl_drop| (ty, ty_prefix.to_lowercase(), impl_drop)),
     ) {
         all_wrappers += &format!(
-            r"void cont_{prefix}_drop({ty} *self) {{
+            r"static inline void cont_{prefix}_drop({ty} *self) {{
     {impl_drop}
 }}
 ",
