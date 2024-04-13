@@ -796,15 +796,11 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
     let derive_layouts = quote!();
 
     #[cfg(feature = "layout_checks")]
-    let cglue_assocs_phantom_decl =
-        quote!(::abi_stable::marker_type::UnsafeIgnoredType<CGlueAssocs>);
+    let cglue_assocs_phantom_decl = quote!(
+        ::core::marker::PhantomData<::abi_stable::marker_type::UnsafeIgnoredType<CGlueAssocs>>
+    );
     #[cfg(not(feature = "layout_checks"))]
     let cglue_assocs_phantom_decl = quote!(::core::marker::PhantomData<CGlueAssocs>);
-    #[cfg(feature = "layout_checks")]
-    let cglue_assocs_phantom_new =
-        quote!(::abi_stable::marker_type::UnsafeIgnoredType::<CGlueAssocs>::NEW);
-    #[cfg(not(feature = "layout_checks"))]
-    let cglue_assocs_phantom_new = quote!(::core::marker::PhantomData);
 
     // Function definitions in the vtable
     let mut vtbl_func_defintions = TokenStream::new();
@@ -1192,7 +1188,7 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
                     &#vtbl_ident {
                         #vtbl_default_funcs
                         _lt_cglue_a: ::core::marker::PhantomData,
-                        _assocs: #cglue_assocs_phantom_new,
+                        _assocs: ::core::marker::PhantomData,
                     }
                 }
             }
@@ -1238,40 +1234,40 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
                 CGlueC::ObjType: for<#life_declare> #trait_name<#life_use #gen_use> + #trait_assocs_ident<#gen_use Assocs = CGlueAssocs> {}
 
             #[doc = #base_box_trait_obj_doc]
-            pub type #base_box_trait_obj_ident<'cglue_a, CGlueT, #gen_use CGlueAssocs = #assocs_base_type>
-                = #base_trait_obj_ident<'cglue_a, #crate_path::boxed::CBox<'cglue_a, CGlueT>, #trg_path::NoContext, #gen_use CGlueAssocs>;
+            pub type #base_box_trait_obj_ident<'cglue_a, CGlueT, #gen_use>
+                = #base_trait_obj_ident<'cglue_a, #crate_path::boxed::CBox<'cglue_a, CGlueT>, #trg_path::NoContext, #gen_use>;
 
             #[doc = #base_ctx_trait_obj_doc]
-            pub type #base_ctx_trait_obj_ident<'cglue_a, CGlueT, CGlueCtx, #gen_use CGlueAssocs = #assocs_base_type>
-                = #base_trait_obj_ident<'cglue_a, #crate_path::boxed::CBox<'cglue_a, CGlueT>, CGlueCtx, #gen_use CGlueAssocs>;
+            pub type #base_ctx_trait_obj_ident<'cglue_a, CGlueT, CGlueCtx, #gen_use>
+                = #base_trait_obj_ident<'cglue_a, #crate_path::boxed::CBox<'cglue_a, CGlueT>, CGlueCtx, #gen_use>;
 
             #[doc = #base_arc_trait_obj_doc]
-            pub type #base_arc_trait_obj_ident<'cglue_a, CGlueT, CGlueC, #gen_use CGlueAssocs = #assocs_base_type>
-                = #base_ctx_trait_obj_ident<'cglue_a, CGlueT, #crate_path::arc::CArc<CGlueC>, #gen_use CGlueAssocs>;
+            pub type #base_arc_trait_obj_ident<'cglue_a, CGlueT, CGlueC, #gen_use>
+                = #base_ctx_trait_obj_ident<'cglue_a, CGlueT, #crate_path::arc::CArc<CGlueC>, #gen_use>;
 
             #[doc = #base_mut_trait_obj_doc]
-            pub type #base_mut_trait_obj_ident<'cglue_a, CGlueT, #gen_use CGlueAssocs = #assocs_base_type>
-                = #base_trait_obj_ident<'cglue_a, &'cglue_a mut CGlueT, #trg_path::NoContext, #gen_use CGlueAssocs>;
+            pub type #base_mut_trait_obj_ident<'cglue_a, CGlueT, #gen_use>
+                = #base_trait_obj_ident<'cglue_a, &'cglue_a mut CGlueT, #trg_path::NoContext, #gen_use>;
 
             #[doc = #base_ctx_mut_trait_obj_doc]
-            pub type #base_ctx_mut_trait_obj_ident<'cglue_a, CGlueT, CGlueCtx, #gen_use CGlueAssocs = #assocs_base_type>
-                = #base_trait_obj_ident<'cglue_a, &'cglue_a mut CGlueT, CGlueCtx, #gen_use CGlueAssocs>;
+            pub type #base_ctx_mut_trait_obj_ident<'cglue_a, CGlueT, CGlueCtx, #gen_use>
+                = #base_trait_obj_ident<'cglue_a, &'cglue_a mut CGlueT, CGlueCtx, #gen_use>;
 
             #[doc = #base_arc_mut_trait_obj_doc]
-            pub type #base_arc_mut_trait_obj_ident<'cglue_a, CGlueT, CGlueC, #gen_use CGlueAssocs = #assocs_base_type>
-                = #base_trait_obj_ident<'cglue_a, &'cglue_a mut CGlueT, #crate_path::arc::CArc<CGlueC>, #gen_use CGlueAssocs>;
+            pub type #base_arc_mut_trait_obj_ident<'cglue_a, CGlueT, CGlueC, #gen_use>
+                = #base_trait_obj_ident<'cglue_a, &'cglue_a mut CGlueT, #crate_path::arc::CArc<CGlueC>, #gen_use>;
 
             #[doc = #base_ref_trait_obj_doc]
-            pub type #base_ref_trait_obj_ident<'cglue_a, CGlueT, #gen_use CGlueAssocs = #assocs_base_type>
-                = #base_trait_obj_ident<'cglue_a, &'cglue_a CGlueT, #trg_path::NoContext, #gen_use CGlueAssocs>;
+            pub type #base_ref_trait_obj_ident<'cglue_a, CGlueT, #gen_use>
+                = #base_trait_obj_ident<'cglue_a, &'cglue_a CGlueT, #trg_path::NoContext, #gen_use>;
 
             #[doc = #base_ctx_ref_trait_obj_doc]
-            pub type #base_ctx_ref_trait_obj_ident<'cglue_a, CGlueT, CGlueCtx, #gen_use CGlueAssocs = #assocs_base_type>
-                = #base_trait_obj_ident<'cglue_a, &'cglue_a CGlueT, CGlueCtx, #gen_use CGlueAssocs>;
+            pub type #base_ctx_ref_trait_obj_ident<'cglue_a, CGlueT, CGlueCtx, #gen_use>
+                = #base_trait_obj_ident<'cglue_a, &'cglue_a CGlueT, CGlueCtx, #gen_use>;
 
             #[doc = #base_arc_ref_trait_obj_doc]
-            pub type #base_arc_ref_trait_obj_ident<'cglue_a, CGlueT, CGlueC, #gen_use CGlueAssocs = #assocs_base_type>
-                = #base_trait_obj_ident<'cglue_a, &'cglue_a CGlueT, #crate_path::arc::CArc<CGlueC>, #gen_use CGlueAssocs>;
+            pub type #base_arc_ref_trait_obj_ident<'cglue_a, CGlueT, CGlueC, #gen_use>
+                = #base_trait_obj_ident<'cglue_a, &'cglue_a CGlueT, #crate_path::arc::CArc<CGlueC>, #gen_use>;
 
             #[doc = #base_trait_obj_doc]
             pub type #base_trait_obj_ident<'cglue_a, CGlueInst, CGlueCtx, #gen_use CGlueAssocs = #assocs_base_type>
@@ -1289,43 +1285,43 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
                 >;
 
             pub type #base_baseassocs_trait_obj_ident<'cglue_a, CGlueInst, CGlueCtx, #gen_use>
-                = #base_trait_obj_ident<'cglue_a, CGlueInst, CGlueCtx, #gen_use>;
+                = #base_trait_obj_ident<'cglue_a, CGlueInst, CGlueCtx, #gen_use #assocs_base_type>;
 
             #[doc = #opaque_box_trait_obj_doc]
-            pub type #opaque_box_trait_obj_ident<'cglue_a, #gen_use CGlueAssocs = #assocs_base_type>
-                = #base_box_trait_obj_ident<'cglue_a, #c_void, #gen_use CGlueAssocs>;
+            pub type #opaque_box_trait_obj_ident<'cglue_a, #gen_use>
+                = #base_box_trait_obj_ident<'cglue_a, #c_void, #gen_use>;
 
             #[doc = #opaque_ctx_trait_obj_doc]
-            pub type #opaque_ctx_trait_obj_ident<'cglue_a, CGlueCtx, #gen_use CGlueAssocs = #assocs_base_type>
-                = #base_ctx_trait_obj_ident<'cglue_a, #c_void, CGlueCtx, #gen_use CGlueAssocs>;
+            pub type #opaque_ctx_trait_obj_ident<'cglue_a, CGlueCtx, #gen_use>
+                = #base_ctx_trait_obj_ident<'cglue_a, #c_void, CGlueCtx, #gen_use>;
 
             #[doc = #opaque_arc_trait_obj_doc]
-            pub type #opaque_arc_trait_obj_ident<'cglue_a, #gen_use CGlueAssocs = #assocs_base_type>
-                = #base_arc_trait_obj_ident<'cglue_a, #c_void, #c_void, #gen_use CGlueAssocs>;
+            pub type #opaque_arc_trait_obj_ident<'cglue_a, #gen_use>
+                = #base_arc_trait_obj_ident<'cglue_a, #c_void, #c_void, #gen_use>;
 
             #[doc = #opaque_mut_trait_obj_doc]
-            pub type #opaque_mut_trait_obj_ident<'cglue_a, #gen_use CGlueAssocs = #assocs_base_type>
-                = #base_mut_trait_obj_ident<'cglue_a, #c_void, #gen_use CGlueAssocs>;
+            pub type #opaque_mut_trait_obj_ident<'cglue_a, #gen_use>
+                = #base_mut_trait_obj_ident<'cglue_a, #c_void, #gen_use>;
 
             #[doc = #opaque_ctx_mut_trait_obj_doc]
-            pub type #opaque_ctx_mut_trait_obj_ident<'cglue_a, CGlueCtx, #gen_use CGlueAssocs = #assocs_base_type>
-                = #base_ctx_mut_trait_obj_ident<'cglue_a, #c_void, CGlueCtx, #gen_use CGlueAssocs>;
+            pub type #opaque_ctx_mut_trait_obj_ident<'cglue_a, CGlueCtx, #gen_use>
+                = #base_ctx_mut_trait_obj_ident<'cglue_a, #c_void, CGlueCtx, #gen_use>;
 
             #[doc = #opaque_arc_mut_trait_obj_doc]
-            pub type #opaque_arc_mut_trait_obj_ident<'cglue_a, #gen_use CGlueAssocs = #assocs_base_type>
-                = #base_arc_mut_trait_obj_ident<'cglue_a, #c_void, #c_void, #gen_use CGlueAssocs>;
+            pub type #opaque_arc_mut_trait_obj_ident<'cglue_a, #gen_use>
+                = #base_arc_mut_trait_obj_ident<'cglue_a, #c_void, #c_void, #gen_use>;
 
             #[doc = #opaque_ref_trait_obj_doc]
-            pub type #opaque_ref_trait_obj_ident<'cglue_a, #gen_use CGlueAssocs = #assocs_base_type>
-                = #base_ref_trait_obj_ident<'cglue_a, #c_void, #gen_use CGlueAssocs>;
+            pub type #opaque_ref_trait_obj_ident<'cglue_a, #gen_use>
+                = #base_ref_trait_obj_ident<'cglue_a, #c_void, #gen_use>;
 
             #[doc = #opaque_ctx_ref_trait_obj_doc]
-            pub type #opaque_ctx_ref_trait_obj_ident<'cglue_a, CGlueCtx, #gen_use CGlueAssocs = #assocs_base_type>
-                = #base_ctx_ref_trait_obj_ident<'cglue_a, #c_void, CGlueCtx, #gen_use CGlueAssocs>;
+            pub type #opaque_ctx_ref_trait_obj_ident<'cglue_a, CGlueCtx, #gen_use>
+                = #base_ctx_ref_trait_obj_ident<'cglue_a, #c_void, CGlueCtx, #gen_use>;
 
             #[doc = #opaque_arc_ref_trait_obj_doc]
-            pub type #opaque_arc_ref_trait_obj_ident<'cglue_a, #gen_use CGlueAssocs = #assocs_base_type>
-                = #base_arc_ref_trait_obj_ident<'cglue_a, #c_void, #c_void, #gen_use CGlueAssocs>;
+            pub type #opaque_arc_ref_trait_obj_ident<'cglue_a, #gen_use>
+                = #base_arc_ref_trait_obj_ident<'cglue_a, #c_void, #c_void, #gen_use>;
 
             /* Internal wrapper functions. */
 

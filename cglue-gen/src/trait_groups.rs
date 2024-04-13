@@ -480,7 +480,7 @@ impl TraitGroupImpl {
                     #cont_name<CGlueInst, CGlueCtx, #gen_use CGlueAssocs>: #crate_path::trait_group::CGlueObjBase,
                     #gen_where_bounds #vtbl_where_bounds
                 {
-                    fn fill_fwd_table(table: #group_path #vtable_type<#life_use CGlueInst, CGlueCtx, #gen_use CGlueAssocs>) -> #group_path #vtable_type<#life_use CGlueInst, CGlueCtx, #gen_use> {
+                    fn fill_fwd_table(table: #group_path #vtable_type<#life_use CGlueInst, CGlueCtx, #gen_use CGlueAssocs>) -> #group_path #vtable_type<#life_use CGlueInst, CGlueCtx, #gen_use CGlueAssocs> {
                         table #implemented_tables
                     }
                 }
