@@ -7,7 +7,8 @@ members = [
 	"cglue-bindgen",
 	"examples/plugin-api",
 	"examples/plugin-lib",
-	"examples/user-bin"
+	"examples/user-bin", 
+    "version-hack"
 ]
 
 default-members = [
@@ -15,5 +16,6 @@ default-members = [
 	"cglue-gen",
 	"cglue-macro",
 	"cglue-bindgen",
+    "version-hack",
 ]
 

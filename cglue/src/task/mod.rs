@@ -74,15 +74,24 @@ const _: () = {
     use core::mem::{size_of, transmute};
 
     if size_of::<CRawWaker>() != size_of::<RawWaker>() {
-        panic!("Raw waker size mismatch")
+        #[cfg(not(const_panic_on_stable))]
+        let _ = "Raw waker size mismatch".as_bytes()[!0];
+        #[cfg(const_panic_on_stable)]
+        panic!("Raw waker size mismatch");
     }
 
     if size_of::<CRawWaker>() != size_of::<Waker>() {
-        panic!("Raw waker size mismatch")
+        #[cfg(not(const_panic_on_stable))]
+        let _ = "Raw waker size mismatch".as_bytes()[!0];
+        #[cfg(const_panic_on_stable)]
+        panic!("Raw waker size mismatch");
     }
 
     if size_of::<CRawWakerVTable>() != size_of::<RawWakerVTable>() {
-        panic!("Raw waker vtbl size mismatch")
+        #[cfg(not(const_panic_on_stable))]
+        let _ = "Raw waker vtbl size mismatch".as_bytes()[!0];
+        #[cfg(const_panic_on_stable)]
+        panic!("Raw waker vtbl size mismatch");
     }
 
     macro_rules! expand {
@@ -134,6 +143,9 @@ const _: () = {
             let mut cnt = 0;
             while cnt < $a.len() {
                 if $a[cnt] != $b[cnt] {
+                    #[cfg(not(const_panic_on_stable))]
+                    let _buffers_not_equal: () = [][cnt];
+                    #[cfg(const_panic_on_stable)]
                     panic!("{}", BUF[cnt]);
                 }
                 cnt += 1;

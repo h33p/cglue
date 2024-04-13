@@ -1,0 +1,16 @@
+[package]
+name = "version-hack"
+version = "0.1.0"
+edition = "2018"
+
+# Need to uncomment these before cargo update to keep hashbrown on rust 2018 edition
+[dependencies]
+indexmap = "~1.7"
+once_cell = "~1.14"
+thiserror = "=1.0.24"
+thiserror-impl = "=1.0.24"
+serde = "=1.0.127"
+proc-macro2 = "=1.0.65"
+memchr = "=2.4.1"
+log = "=0.4.18"
+crossbeam-utils = "=0.8.16"
