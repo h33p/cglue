@@ -692,16 +692,12 @@ impl GenericType {
                 generic_types.insert(0, infer.clone());
                 generic_types.insert(0, infer);
 
-                let base_assocs_ident = format_ident!("{}BaseAssocs", target.to_string());
-                generic_types.push(parse_quote!(#path #base_assocs_ident));
-
                 if !generic_types.trailing_punct() {
                     generic_types.push_punct(Default::default());
                 }
-                target = format_ident!("{}Base", target.to_string()).to_token_stream();
-            } else {
-                target = format_ident!("{}BaseBaseAssocs", target.to_string()).to_token_stream();
             }
+            target = format_ident!("{}Base", target.to_string()).to_token_stream();
+
             quote!(::)
         } else {
             quote!()

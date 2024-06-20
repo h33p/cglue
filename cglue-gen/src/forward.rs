@@ -32,11 +32,11 @@ pub fn gen_forward(tr: ItemTrait, ext_path: Option<TokenStream>) -> TokenStream 
 
     let mut wrapped_types = TokenStream::new();
 
-    let (funcs, generics, _) = super::traits::parse_trait(
+    let (funcs, generics, _, _) = super::traits::parse_trait(
         &tr,
         &crate_path,
         false,
-        |(ty_ident, _, ty_where_clause, _), _, _, _, _, _| {
+        |(ty_ident, _, ty_where_clause, _), _, _, _, _, _, _| {
             if let Some(ident) = ty_ident {
                 wrapped_types.extend(quote!(type #ident = CGlueT::#ident #ty_where_clause;));
             }

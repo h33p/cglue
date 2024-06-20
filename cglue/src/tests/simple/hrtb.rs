@@ -138,7 +138,7 @@ fn use_plugin_group() {
 fn use_plugin_group_mut() {
     let mut sa = SA {};
 
-    let base = PluginInstance::<_, _, PluginInstanceBaseAssocs>::from(&mut sa);
+    let base = PluginInstance::<_, _>::from(&mut sa);
 
     let mut obj = crate::trait_group::Opaquable::into_opaque(base);
 

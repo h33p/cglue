@@ -128,8 +128,12 @@ impl GenericConsumedGroupReturn<usize> for SA {
     }
 }
 
-//#[cglue_trait]
-// FIXME: cglue currently does not support unwrapped associated types.
+#[cglue_trait]
+pub trait UnwrappedAssociatedVar {
+    type AssocVar;
+}
+
+#[cglue_trait]
 pub trait UnwrappedAssociatedReturn {
     type ReturnType;
 
@@ -143,6 +147,13 @@ impl UnwrappedAssociatedReturn for SA {
         self
     }
 }
+
+cglue_trait_group!(
+    UnwrappedGroup<T>,
+    UnwrappedAssociatedReturn<ReturnType = T>,
+    {}
+);
+cglue_impl_group!(SA, UnwrappedGroup<T = SA>);
 
 #[test]
 fn use_assoc_return() {
@@ -207,4 +218,22 @@ fn use_consumed_group_return() {
 
     assert!(cast.gwi_1(&cast.gt_1()));
     assert!(!cast.gwi_1(&(cast.gt_1() + 1)));
+}
+
+#[test]
+fn use_unwrapped_associated_return() {
+    let sa = SA {};
+
+    let obj = trait_obj!(sa as UnwrappedAssociatedReturn);
+
+    let _sa: SA = obj.uar_1();
+}
+
+#[test]
+fn use_unwrapped_group() {
+    let sa = SA {};
+
+    let obj = group_obj!(sa as UnwrappedGroup);
+
+    let _sa: SA = obj.uar_1();
 }

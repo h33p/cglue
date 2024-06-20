@@ -64,15 +64,15 @@ type ICont<I, C> = crate::trait_group::CGlueObjContainer<I, crate::trait_group::
 type IRefCont<C> = ICont<&'static Implementor, C>;
 type IMutCont<C> = ICont<&'static mut Implementor, C>;
 
-type WSCont = IMutCont<WithSliceRetTmp<crate::trait_group::NoContext, ()>>;
-type WOCont = IMutCont<WithOptionsRetTmp<crate::trait_group::NoContext, ()>>;
-type WIRCont = IRefCont<WithIntResultRetTmp<crate::trait_group::NoContext, ()>>;
-type WAIRCont = IRefCont<WithAliasIntResultRetTmp<crate::trait_group::NoContext, ()>>;
-type WINTOCont = IRefCont<WithIntoRetTmp<crate::trait_group::NoContext, ()>>;
+type WSCont = IMutCont<WithSliceRetTmp<crate::trait_group::NoContext>>;
+type WOCont = IMutCont<WithOptionsRetTmp<crate::trait_group::NoContext>>;
+type WIRCont = IRefCont<WithIntResultRetTmp<crate::trait_group::NoContext>>;
+type WAIRCont = IRefCont<WithAliasIntResultRetTmp<crate::trait_group::NoContext>>;
+type WINTOCont = IRefCont<WithIntoRetTmp<crate::trait_group::NoContext>>;
 
 #[test]
 fn slices_wrapped() {
-    let vtbl = <&WithSliceVtbl<WSCont, _>>::default();
+    let vtbl = <&WithSliceVtbl<WSCont>>::default();
     let _: unsafe extern "C" fn(&mut WSCont, CSliceRef<usize>) = vtbl.wslice_1();
     let _: unsafe extern "C" fn(&mut WSCont, CSliceRef<u8>) = vtbl.wslice_2();
     let _: unsafe extern "C" fn(&mut WSCont) -> CSliceRef<u8> = vtbl.wslice_3();
@@ -82,53 +82,53 @@ fn slices_wrapped() {
 
 #[test]
 fn npo_option_forwarded() {
-    let vtbl = <&WithOptionsVtbl<WOCont, _>>::default();
+    let vtbl = <&WithOptionsVtbl<WOCont>>::default();
     let _: unsafe extern "C" fn(&WOCont, Option<&usize>) = vtbl.wopt_1();
 }
 
 #[test]
 fn non_npo_option_wrapped() {
-    let vtbl = <&WithOptionsVtbl<WOCont, _>>::default();
+    let vtbl = <&WithOptionsVtbl<WOCont>>::default();
     let _: unsafe extern "C" fn(&WOCont, crate::option::COption<usize>) = vtbl.wopt_2();
 }
 
 #[test]
 fn mixed_options() {
-    let vtbl = <&WithOptionsVtbl<WOCont, _>>::default();
+    let vtbl = <&WithOptionsVtbl<WOCont>>::default();
     let _: unsafe extern "C" fn(&mut WOCont, Option<&u64>, crate::option::COption<u64>) =
         vtbl.wopt_3();
 }
 
 #[test]
 fn int_result() {
-    let vtbl = <&WithIntResultVtbl<WIRCont, _>>::default();
+    let vtbl = <&WithIntResultVtbl<WIRCont>>::default();
     let _: unsafe extern "C" fn(&WIRCont, usize, &mut core::mem::MaybeUninit<usize>) -> i32 =
         vtbl.wint_1();
 }
 
 #[test]
 fn no_int_result() {
-    let vtbl = <&WithIntResultVtbl<WIRCont, _>>::default();
+    let vtbl = <&WithIntResultVtbl<WIRCont>>::default();
     let _: unsafe extern "C" fn(&WIRCont, usize) -> crate::result::CResult<usize, usize> =
         vtbl.wint_2();
 }
 
 #[test]
 fn alias_int_result() {
-    let vtbl = <&WithAliasIntResultVtbl<WAIRCont, _>>::default();
+    let vtbl = <&WithAliasIntResultVtbl<WAIRCont>>::default();
     let _: unsafe extern "C" fn(&WAIRCont, usize, &mut core::mem::MaybeUninit<usize>) -> i32 =
         vtbl.waint_1();
 }
 
 #[test]
 fn alias_no_int_result() {
-    let vtbl = <&WithAliasIntResultVtbl<WAIRCont, _>>::default();
+    let vtbl = <&WithAliasIntResultVtbl<WAIRCont>>::default();
     let _: unsafe extern "C" fn(&WAIRCont, usize) -> crate::result::CResult<usize, usize> =
         vtbl.waint_2();
 }
 
 #[test]
 fn into_t_wrapped() {
-    let vtbl = <&WithIntoVtbl<WINTOCont, _>>::default();
+    let vtbl = <&WithIntoVtbl<WINTOCont>>::default();
     let _: unsafe extern "C" fn(&WINTOCont, usize) = vtbl.winto_1();
 }
