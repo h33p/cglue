@@ -214,6 +214,7 @@ impl<'a> FastCWaker<'a> {
             unsafe fn unreach(_: *const ()) {
                 unreachable!()
             }
+            unsafe fn noop(_: *const ()) {}
             unsafe fn clone(data: *const ()) -> RawWaker {
                 let this = &*(data as *const FastCWaker);
                 CWaker::into_raw_waker(this.c_waker())
@@ -245,7 +246,7 @@ impl<'a> FastCWaker<'a> {
                 adapter(data, wake as _)
             }
 
-            let vtbl = &RawWakerVTable::new(clone, unreach, wake_by_ref, unreach);
+            let vtbl = &RawWakerVTable::new(clone, unreach, wake_by_ref, noop);
             let waker = RawWaker::new(self as *const Self as *const (), vtbl);
             let waker = unsafe { Waker::from_raw(waker) };
 

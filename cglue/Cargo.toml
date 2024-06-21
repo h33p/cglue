@@ -23,13 +23,16 @@ tarc = { version = "0.1", default-features = false }
 [build-dependencies]
 rustc_version = "0.4"
 
+[dev-dependencies]
+pollster = "0.1"
+
 [features]
 default = ["std"]
 std = ["no-std-compat/std", "tarc/std"]
 rust_void = ["cglue-macro/rust_void"]
 unstable = ["cglue-macro/unstable", "try_default"]
-task_unstable = []
+task = ["cglue-macro/task"]
 layout_checks = ["cglue-macro/layout_checks", "abi_stable"]
 
 [package.metadata.docs.rs]
-features = ["std", "task_unstable"]
+features = ["std", "task"]

@@ -8,6 +8,7 @@ use crate::boxed::CBox;
 use abi_stable::{abi_stability::check_layout_compatibility, type_layout::TypeLayout};
 use core::mem::ManuallyDrop;
 use core::ops::{Deref, DerefMut};
+use core::pin::Pin;
 #[cfg(feature = "rust_void")]
 #[allow(non_camel_case_types)]
 pub type c_void = ();
@@ -333,6 +334,12 @@ pub trait CGlueObjBase {
 
 pub trait CGlueObjRef<R>: CGlueObjBase {
     fn cobj_ref(&self) -> (&Self::ObjType, &R, &Self::Context);
+
+    fn cobj_pin_ref(self: Pin<&Self>) -> (Pin<&Self::ObjType>, &R, &Self::Context) {
+        let this = self.get_ref();
+        let (a, b, c) = this.cobj_ref();
+        (unsafe { Pin::new_unchecked(a) }, b, c)
+    }
 }
 
 impl<T: Deref<Target = F>, F, C: ContextBounds, R> CGlueObjBase for CGlueObjContainer<T, C, R> {
@@ -360,6 +367,12 @@ impl<T: Deref<Target = F>, F, C: ContextBounds, R> CGlueObjRef<R> for CGlueObjCo
 /// This trait allows to retrieve the mutable `this` pointer on the structure.
 pub trait CGlueObjMut<R>: CGlueObjRef<R> {
     fn cobj_mut(&mut self) -> (&mut Self::ObjType, &mut R, &Self::Context);
+
+    fn cobj_pin_mut(self: Pin<&mut Self>) -> (Pin<&mut Self::ObjType>, &mut R, &Self::Context) {
+        let this = unsafe { self.get_unchecked_mut() };
+        let (a, b, c) = this.cobj_mut();
+        (unsafe { Pin::new_unchecked(a) }, b, c)
+    }
 }
 
 impl<T: Deref<Target = F> + DerefMut, F, C: ContextBounds, R> CGlueObjMut<R>
@@ -377,6 +390,14 @@ pub trait GetContainer {
     fn ccont_mut(&mut self) -> &mut Self::ContType;
     fn into_ccont(self) -> Self::ContType;
     fn build_with_ccont(&self, container: Self::ContType) -> Self;
+
+    fn ccont_pin_ref(self: Pin<&Self>) -> Pin<&Self::ContType> {
+        unsafe { self.map_unchecked(Self::ccont_ref) }
+    }
+
+    fn ccont_pin_mut(self: Pin<&mut Self>) -> Pin<&mut Self::ContType> {
+        unsafe { self.map_unchecked_mut(Self::ccont_mut) }
+    }
 }
 
 impl<T: Deref<Target = F>, F, V, C: ContextBounds, R> GetContainer

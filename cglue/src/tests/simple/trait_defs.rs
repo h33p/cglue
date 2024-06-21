@@ -31,4 +31,5 @@ pub trait TT<T> {
 #[cglue_trait]
 pub trait TF {
     unsafe fn tf_1(&self);
+    fn tf_2(self: core::pin::Pin<&Self>);
 }

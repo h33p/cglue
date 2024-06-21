@@ -302,6 +302,28 @@ impl TraitArgConv {
                     )
                 }
             }
+            t if recv_pin(t) => {
+                let lifetime = inject_lifetime.or_else(|| recv_lifetime(t));
+                let lifetime_cast = inject_lifetime_cast.or_else(|| recv_lifetime(t));
+
+                if recv_mutable(t) {
+                    (
+                        quote!(let cont = self.ccont_pin_mut();),
+                        quote!(cont,),
+                        quote!(cont: ::core::pin::Pin<&#lifetime mut CGlueC>,),
+                        quote!(cont: ::core::pin::Pin<&#lifetime_cast mut CGlueC>,),
+                        quote!(),
+                    )
+                } else {
+                    (
+                        quote!(let cont = self.ccont_pin_ref();),
+                        quote!(cont,),
+                        quote!(cont: ::core::pin::Pin<&#lifetime CGlueC>,),
+                        quote!(cont: ::core::pin::Pin<&#lifetime_cast CGlueC>,),
+                        quote!(),
+                    )
+                }
+            }
             FnArg::Typed(t) => {
                 let mut t = t.clone();
                 let _old = do_wrap_type(&mut t.ty, targets);
@@ -481,7 +503,7 @@ pub struct ParsedFunc {
     trait_name: Ident,
     safe: bool,
     abi: FuncAbi,
-    receiver: Receiver,
+    receiver: FnArg,
     orig_args: Vec<FnArg>,
     args: Vec<TraitArgConv>,
     out: ParsedReturnType,
@@ -489,6 +511,65 @@ pub struct ParsedFunc {
     sig_generics: ParsedGenerics,
     custom_conv: CustomFuncConv,
     only_c_side: bool,
+}
+
+fn extract_pin(t: &Type) -> Option<&Type> {
+    if let Type::Path(v) = t {
+        if let Some(seg) = v.path.segments.last() {
+            if seg.ident != "Pin" {
+                return None;
+            }
+            if let PathArguments::AngleBracketed(a) = &seg.arguments {
+                if a.args.len() == 1 {
+                    let a = a.args.first()?;
+                    if let GenericArgument::Type(t) = a {
+                        return Some(t);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+fn recv_pin(recv: &FnArg) -> bool {
+    match recv {
+        FnArg::Receiver(_) => false,
+        FnArg::Typed(t) => matches!(extract_pin(&t.ty), Some(Type::Reference(_))),
+    }
+}
+
+fn recv_lifetime(recv: &FnArg) -> Option<&Lifetime> {
+    match recv {
+        FnArg::Receiver(r) => r.lifetime(),
+        FnArg::Typed(t) => {
+            if let Some(Type::Reference(r)) = extract_pin(&t.ty) {
+                r.lifetime.as_ref()
+            } else {
+                None
+            }
+        }
+    }
+}
+
+fn recv_reference(recv: &FnArg) -> bool {
+    match recv {
+        FnArg::Receiver(r) => r.reference.is_some(),
+        FnArg::Typed(t) => matches!(extract_pin(&t.ty), Some(Type::Reference(_))),
+    }
+}
+
+fn recv_mutable(recv: &FnArg) -> bool {
+    match recv {
+        FnArg::Receiver(r) => r.mutability.is_some(),
+        FnArg::Typed(t) => matches!(
+            extract_pin(&t.ty),
+            Some(Type::Reference(TypeReference {
+                mutability: Some(_),
+                ..
+            }))
+        ),
+    }
 }
 
 impl ParsedFunc {
@@ -515,8 +596,17 @@ impl ParsedFunc {
         let unsafety = if safe { quote!(unsafe) } else { quote!() };
 
         for input in sig.inputs.iter() {
-            if let FnArg::Receiver(r) = &input {
-                receiver = Some(r.clone());
+            match &input {
+                FnArg::Receiver(_) => {
+                    receiver = Some(input.clone());
+                }
+                FnArg::Typed(v) => {
+                    if let Pat::Ident(ref i) = *v.pat {
+                        if i.ident == "self" {
+                            receiver = Some(input.clone());
+                        }
+                    }
+                }
             }
         }
 
@@ -545,7 +635,17 @@ impl ParsedFunc {
             // But first, we need to process the receiver (self) type, as it is implicit.
             for arg in orig_args
                 .iter()
-                .filter(|a| matches!(a, FnArg::Receiver(_)))
+                .filter(|a| match a {
+                    FnArg::Receiver(_) => true,
+                    FnArg::Typed(v) => {
+                        if let Pat::Ident(ref i) = *v.pat {
+                            if i.ident == "self" {
+                                return true;
+                            }
+                        }
+                        false
+                    }
+                })
                 .take(1)
                 .chain(tys.iter())
             {
@@ -612,7 +712,7 @@ impl ParsedFunc {
                 .as_ref()
                 .or(self.out.injected_ret_tmp.as_ref()),
         ) {
-            let gen = if self.receiver.mutability.is_some() {
+            let gen = if recv_mutable(&self.receiver) {
                 quote!(#name: ::core::mem::MaybeUninit<#ty>,)
             } else {
                 quote!(#name: ::core::cell::Cell<::core::mem::MaybeUninit<#ty>>,)
@@ -624,7 +724,7 @@ impl ParsedFunc {
     pub fn ret_default_def(&self, stream: &mut TokenStream) {
         let name = &self.name;
         if self.out.injected_ret_tmp.is_some() {
-            let gen = if self.receiver.mutability.is_some() {
+            let gen = if recv_mutable(&self.receiver) {
                 quote!(#name: ::core::mem::MaybeUninit::uninit(),)
             } else {
                 quote!(#name: ::core::cell::Cell::new(::core::mem::MaybeUninit::uninit()),)
@@ -637,8 +737,8 @@ impl ParsedFunc {
         let name = &self.name;
 
         if let Some(ty) = &self.out.injected_ret_tmp {
-            let gen = match (&self.out.lifetime, &self.receiver.mutability) {
-                (Some(lt), Some(_)) => {
+            let gen = match (&self.out.lifetime, recv_mutable(&self.receiver)) {
+                (Some(lt), true) => {
                     quote! {
                         fn #name<#lt>(&#lt mut self) -> &#lt mut ::core::mem::MaybeUninit<#ty> {
                             // SAFETY:
@@ -649,14 +749,14 @@ impl ParsedFunc {
                         }
                     }
                 }
-                (None, Some(_)) => {
+                (None, true) => {
                     quote! {
                         fn #name(&mut self) -> &mut ::core::mem::MaybeUninit<#ty> {
                             &mut self.#name
                         }
                     }
                 }
-                (Some(lt), None) => {
+                (Some(lt), false) => {
                     quote! {
                         #[allow(clippy::mut_from_ref)]
                         fn #name<#lt>(&#lt self) -> &#lt mut ::core::mem::MaybeUninit<#ty> {
@@ -674,7 +774,7 @@ impl ParsedFunc {
                         }
                     }
                 }
-                (None, None) => {
+                (None, false) => {
                     quote! {
                         #[allow(clippy::mut_from_ref)]
                         fn #name(&self) -> &mut ::core::mem::MaybeUninit<#ty> {
@@ -990,7 +1090,7 @@ impl ParsedFunc {
 
         let mut container_bound = quote!();
 
-        let (c_pre_call, cglue_c_into_inner) = if self.receiver.reference.is_none() {
+        let (c_pre_call, cglue_c_into_inner) = if !recv_reference(&self.receiver) {
             container_bound.extend(quote!(#trg_path::CGlueObjBase<Context = CGlueCtx> + ));
 
             (
@@ -1003,20 +1103,30 @@ impl ParsedFunc {
                     CGlueC::InstType: #trg_path::IntoInner<InnerTarget = CGlueC::ObjType>,
                 )),
             )
-        } else if self.receiver.mutability.is_some() {
+        } else if recv_mutable(&self.receiver) {
+            let cobj_func = if recv_pin(&self.receiver) {
+                quote!(cobj_pin_mut)
+            } else {
+                quote!(cobj_mut)
+            };
             container_bound.extend(quote!(#trg_path::CGlueObjMut<#ret_tmp, Context = CGlueCtx> + ));
             (
                 quote! {
-                    let (this, ret_tmp, cglue_ctx) = cont.cobj_mut();
+                    let (this, ret_tmp, cglue_ctx) = cont.#cobj_func();
                     #c_pre_call
                 },
                 None,
             )
         } else {
+            let cobj_func = if recv_pin(&self.receiver) {
+                quote!(cobj_pin_ref)
+            } else {
+                quote!(cobj_ref)
+            };
             container_bound.extend(quote!(#trg_path::CGlueObjRef<#ret_tmp, Context = CGlueCtx> + ));
             (
                 quote! {
-                    let (this, ret_tmp, cglue_ctx) = cont.cobj_ref();
+                    let (this, ret_tmp, cglue_ctx) = cont.#cobj_func();
                     #c_pre_call
                 },
                 None,
@@ -1096,7 +1206,12 @@ impl ParsedFunc {
             };
 
             let custom_precall_impl = self.custom_conv.pre_call_impl.to_token_stream();
-            let custom_ret_impl = self.custom_conv.impl_func_ret.to_token_stream();
+
+            let impl_func_ret = if let Some(impl_func_ret) = &self.custom_conv.impl_func_ret {
+                impl_func_ret
+            } else {
+                impl_func_ret
+            };
 
             let gen = quote! {
                 #[inline(always)]
@@ -1107,7 +1222,6 @@ impl ParsedFunc {
                     #c_ret_precall_def
                     let mut ret = __cglue_vfunc(#call_args #c_call_ret_args);
                     #impl_func_ret
-                    #custom_ret_impl
                 }
             };
 
@@ -1115,14 +1229,14 @@ impl ParsedFunc {
         }
 
         (
-            self.receiver.mutability.is_some(),
-            self.receiver.reference.is_none(),
+            recv_mutable(&self.receiver),
+            !recv_reference(&self.receiver),
             self.out.return_self,
         )
     }
 
     pub fn forward_wrapped_trait_impl(&self, tokens: &mut TokenStream) -> bool {
-        if self.receiver.reference.is_none() {
+        if !recv_reference(&self.receiver) {
             return false;
         }
 
@@ -1157,7 +1271,7 @@ impl ParsedFunc {
 
         tokens.extend(gen);
 
-        self.receiver.mutability.is_some()
+        recv_mutable(&self.receiver)
     }
 
     pub fn arc_wrapped_trait_impl(&self, tokens: &mut TokenStream) {
@@ -1176,9 +1290,9 @@ impl ParsedFunc {
             ..
         } = &self.sig_generics;
 
-        let get_inner = if self.receiver.reference.is_none() {
+        let get_inner = if !recv_reference(&self.receiver) {
             quote!(self.into_inner())
-        } else if self.receiver.mutability.is_some() {
+        } else if recv_mutable(&self.receiver) {
             quote!(self.as_mut())
         } else {
             quote!(self.as_ref())
@@ -1323,7 +1437,7 @@ impl ParsedReturnType {
         res_override: Option<&Ident>,
         int_result: bool,
         unsafety: &TokenStream,
-        (func_name, receiver): (&Ident, &Receiver),
+        (func_name, receiver): (&Ident, &FnArg),
         (crate_path, trait_name, trait_generics): (&TokenStream, &Ident, &ParsedGenerics),
     ) -> Self {
         let mut c_ty = c_override.unwrap_or(&ty).clone();
@@ -1354,6 +1468,8 @@ impl ParsedReturnType {
         if let ReturnType::Type(_, ty) = &mut c_ty {
             let mut ty_cast = None;
 
+            // If this branch is hit (whenever ty includes any of the targets), then return type is
+            // replaced with c_ty. However, we need to do that regardless in custom impl.
             if let Some(wrapped) = ret_wrap_type(&mut *ty, targets) {
                 let old_ty = wrapped.0;
                 let trait_ty = wrapped.1;
@@ -1492,7 +1608,7 @@ impl ParsedReturnType {
                     _ => (None, quote!()),
                 };
 
-                let c_pre_call = if receiver.reference.is_some() {
+                let c_pre_call = if recv_reference(receiver) {
                     quote!(#c_pre_call let cglue_ctx = cglue_ctx.clone();)
                 } else {
                     c_pre_call
@@ -1530,6 +1646,8 @@ impl ParsedReturnType {
                 ret.use_wrap = true;
                 ret.lifetime = lifetime;
                 ret.lifetime_cast = lifetime_cast;
+            } else {
+                ret.c_out = quote!(-> #ty);
             }
 
             match &mut **ty {

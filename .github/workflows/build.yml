@@ -35,7 +35,7 @@ jobs:
         # panic in const is used to verify waker layouts
         toolchain: ["1.57.0", "stable"]
         features: [
-          "--features task_unstable",
+          "--features task",
           "--features layout_checks"
         ]
     steps:
@@ -148,7 +148,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        features: ["--all-features", "", "-p cglue --features task_unstable", "-p cglue --features task_unstable"]
+        features: ["--all-features", "", "-p cglue --features task", "-p cglue --features task"]
     steps:
       - uses: actions/checkout@v2
       - run: rustup component add clippy

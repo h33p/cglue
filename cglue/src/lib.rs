@@ -1007,8 +1007,8 @@ pub mod trait_group;
 pub mod tuple;
 pub mod vec;
 
-#[cfg(feature = "task_unstable")]
-#[cfg_attr(docsrs, doc(cfg(feature = "task_unstable")))]
+#[cfg(feature = "task")]
+#[cfg_attr(docsrs, doc(cfg(feature = "task")))]
 pub mod task;
 
 pub use ::cglue_macro::{

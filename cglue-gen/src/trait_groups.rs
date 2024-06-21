@@ -1561,12 +1561,18 @@ impl TraitGroup {
 
                 let ext_name = format_ident!("{}Ext", raw_ident);
 
-                let (funcs, _, _, _) = super::traits::parse_trait(
+                let (funcs, _, (_, assoc_idents, _), _) = super::traits::parse_trait(
                     tr_info,
                     crate_path,
                     false,
                     super::traits::process_item,
                 );
+
+                for a in &assoc_idents {
+                    impls.extend(
+                        quote!(type #a = <Self as #ext_name<#tr_life_use #tr_gen_use>>::#a;),
+                    );
+                }
 
                 for func in &funcs {
                     func.int_trait_impl(Some(ext_path), &ext_name, &mut impls);

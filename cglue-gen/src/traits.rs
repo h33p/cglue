@@ -535,7 +535,7 @@ pub fn parse_trait(
 ) -> (
     Vec<ParsedFunc>,
     ParsedGenerics,
-    (ParsedGenerics, TokenStream),
+    (ParsedGenerics, Vec<Ident>, TokenStream),
     TokenStream,
 ) {
     let mut funcs = vec![];
@@ -718,6 +718,8 @@ pub fn parse_trait(
         // <X> = CGlueA<X>, <Y> = CGlueA<Y>, ...
         let mut equality = TokenStream::new();
 
+        let mut assoc_vec = vec![];
+
         // TODO: please, make this cleaner without reparsing tokens.
         for (t, mut b) in assocs {
             let t = t.ident;
@@ -731,9 +733,10 @@ pub fn parse_trait(
                 }
                 tokens.extend(quote!(#ident: #b))
             }
+            assoc_vec.push(t);
         }
 
-        (parse2(quote!(<#tokens>)).unwrap(), equality)
+        (parse2(quote!(<#tokens>)).unwrap(), assoc_vec, equality)
     };
 
     (funcs, generics, assoc_types, trait_type_defs)
@@ -784,7 +787,7 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
     let opaque_ctx_ref_trait_obj_ident = format_ident!("{}CtxRef", trait_name);
     let opaque_arc_ref_trait_obj_ident = format_ident!("{}ArcRef", trait_name);
 
-    let (funcs, generics, (assocs, assoc_equality), trait_type_defs) =
+    let (funcs, generics, (assocs, assoc_idents, assoc_equality), trait_type_defs) =
         parse_trait(&tr, &crate_path, true, process_item);
 
     let cglue_c_opaque_bound = cglue_c_opaque_bound();
@@ -959,6 +962,10 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
 
     let internal_trait_impl = if let Some(ext_name) = ext_name {
         let mut impls = TokenStream::new();
+
+        for a in &assoc_idents {
+            impls.extend(quote!(type #a = <Self as #ext_name<#life_use #gen_use>>::#a;));
+        }
 
         for func in &funcs {
             func.int_trait_impl(None, ext_name, &mut impls);

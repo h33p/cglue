@@ -1,3 +1,5 @@
 pub mod as_ref;
 pub mod clone;
 pub mod fmt;
+#[cfg(feature = "task")]
+pub mod future;
