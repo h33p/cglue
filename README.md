@@ -16,7 +16,7 @@
 
 If all code is glued together, our glue is the safest on the market.
 
-## FFI-safe trait generation, helper structures, and more!
+## The most complete dynamic trait object implementation, period.
 
 <!-- toc -->
 - [Overview](#overview)
@@ -41,8 +41,9 @@ If all code is glued together, our glue is the safest on the market.
 
 ## Overview
 
-CGlue bridges Rust traits between C and other languages. It aims to be seamless to integrate -
-just add a few annotations around your traits, and they should be good to go!
+CGlue exposes `dyn Trait` in FFI-safe manner. It bridges Rust traits between C and other
+languages. It aims to be seamless to integrate - just add a few annotations around your traits,
+and they should be good to go!
 
 ```rust
 use cglue::*;
@@ -50,7 +51,8 @@ use cglue::*;
 // One annotation for the trait.
 #[cglue_trait]
 pub trait InfoPrinter {
-    fn print_info(&self);
+    type Mark;
+    fn print_info(&self, mark: Self::Mark);
 }
 
 struct Info {
@@ -58,14 +60,16 @@ struct Info {
 }
 
 impl InfoPrinter for Info {
-    fn print_info(&self) {
-        println!("Info struct: {}", self.value);
+    type Mark = u8;
+
+    fn print_info(&self, mark: Self::Mark) {
+        println!("{} - info struct: {}", mark, self.value);
     }
 }
 
-fn use_info_printer(printer: &impl InfoPrinter) {
+fn use_info_printer<T: InfoPrinter>(printer: &T, mark: T::Mark) {
     println!("Printing info:");
-    printer.print_info();
+    printer.print_info(mark);
 }
 
 fn main() -> () {
@@ -76,7 +80,7 @@ fn main() -> () {
     // Here, the object is fully opaque, and is FFI and ABI safe.
     let obj = trait_obj!(&mut info as InfoPrinter);
 
-    use_info_printer(&obj);
+    use_info_printer(&obj, 42);
 }
 ```
 
@@ -331,7 +335,8 @@ impl<
     > GenGroupVtableFiller<'cglue_a, CGlueInst, CGlueCtx, T> for GA<T>
 where
     Self: TA,
-    &'cglue_a TAVtbl<'cglue_a, GenGroupContainer<CGlueInst, CGlueCtx, T>>:
+    &'cglue_a TAVtbl<'cglue_a, GenGroupContainer<CGlueInst, CGlueCtx, T>,
+    >:
         'cglue_a + Default,
     T: cglue::trait_group::GenericTypeBounds,
 {
@@ -739,5 +744,3 @@ If you want your project to be added to the list, please open an issue report :)
 
 It is available in [CHANGELOG.md](https://github.com/h33p/cglue/blob/main/CHANGELOG.md) file.
 
-
-License: MIT
