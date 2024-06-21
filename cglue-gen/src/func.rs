@@ -794,6 +794,7 @@ impl ParsedFunc {
     /// Create a VTable definition for this function
     pub fn vtbl_def(&self, stream: &mut TokenStream) {
         let name = &self.name;
+        let unsafety = &self.get_safety();
         let args = self.vtbl_args();
         let ParsedReturnType {
             c_out,
@@ -826,7 +827,7 @@ impl ParsedFunc {
         let sig_life_declare = merge_lifetime_declarations(&sig_life_declare, &parse_quote!(#hrtb));
 
         let gen = quote! {
-            #name: for<#sig_life_declare> extern "C" fn(#args #c_ret_params) #c_out,
+            #name: for<#sig_life_declare> #unsafety extern "C" fn(#args #c_ret_params) #c_out,
         };
 
         stream.extend(gen);

@@ -27,3 +27,8 @@ pub trait TE {}
 pub trait TT<T> {
     fn tt_1(&self, v: T) -> T;
 }
+
+#[cglue_trait]
+pub trait TF {
+    unsafe fn tf_1(&self);
+}

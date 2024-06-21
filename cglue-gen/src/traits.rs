@@ -846,10 +846,10 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
     let derive_layouts = quote!();
 
     // Function definitions in the vtable
-    let mut vtbl_func_defintions = TokenStream::new();
+    let mut vtbl_func_definitions = TokenStream::new();
 
     for func in &funcs {
-        func.vtbl_def(&mut vtbl_func_defintions);
+        func.vtbl_def(&mut vtbl_func_definitions);
     }
 
     // Getters for vtable functions
@@ -1168,7 +1168,7 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
             where
                 #gen_where_bounds_base_nolt
             {
-                #vtbl_func_defintions
+                #vtbl_func_definitions
                 #assoc_phantom_data_definitions
                 _lt_cglue_a: ::core::marker::PhantomData<&'cglue_a CGlueC>,
             }
