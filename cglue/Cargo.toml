@@ -19,6 +19,7 @@ try_default = { version = "= 1.0.0", optional = true }
 abi_stable = { version = "0.10", optional = true }
 log = { version = "0.4", optional = true }
 tarc = { version = "0.1", default-features = false }
+_futures = { package = "futures", version = "0.3", optional = true, default-features = false }
 
 [build-dependencies]
 rustc_version = "0.4"
@@ -33,6 +34,7 @@ rust_void = ["cglue-macro/rust_void"]
 unstable = ["cglue-macro/unstable", "try_default"]
 task = ["cglue-macro/task"]
 layout_checks = ["cglue-macro/layout_checks", "abi_stable"]
+futures = ["_futures", "task", "cglue-macro/futures"]
 
 [package.metadata.docs.rs]
-features = ["std", "task"]
+features = ["std", "task", "futures"]

@@ -1,4 +1,6 @@
 pub mod core;
+#[cfg(all(feature = "futures"))]
+pub mod futures;
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
@@ -17,6 +19,8 @@ pub fn get_exports() -> HashMap<Ident, Path> {
     ext_path.segments.push_punct(Default::default());
 
     core::get_exports(&ext_path, &mut exports);
+    #[cfg(all(feature = "futures"))]
+    futures::get_exports(&ext_path, &mut exports);
 
     exports
 }
@@ -28,6 +32,8 @@ pub fn get_store() -> HashMap<(Path, Ident), ItemTrait> {
     ext_path.segments.push_punct(Default::default());
 
     core::get_impl(&ext_path, &mut token_list);
+    #[cfg(all(feature = "futures"))]
+    futures::get_impl(&ext_path, &mut token_list);
 
     let mut parsed_traits = HashMap::new();
 

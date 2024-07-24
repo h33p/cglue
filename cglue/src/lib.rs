@@ -997,6 +997,9 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 extern crate no_std_compat as std;
 
+#[cfg(feature = "futures")]
+extern crate _futures as futures;
+
 pub mod arc;
 pub mod boxed;
 pub mod callback;
