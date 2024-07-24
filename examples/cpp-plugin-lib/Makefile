@@ -8,7 +8,7 @@ bindings:
 	sh ./bindgen.sh
 
 %.o: %.cpp $(DEPS) bindings
-	$(CC) -c -o $@ $< $(CFLAGS)
+	$(CC) -c -xc++ -o $@ $< $(CFLAGS)
 
 libplugin_cpp.so: main.o
 	cargo build --release
