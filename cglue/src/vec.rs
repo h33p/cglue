@@ -97,8 +97,21 @@ impl<T> CVec<T> {
         self.len += 1;
     }
 
+    /// Insert into the vector
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cglue::vec::CVec;
+    ///
+    /// let a: Vec<u32> = vec![1, 2, 3];
+    /// let mut cvec = CVec::from(a);
+    /// cvec.insert(1, 2);
+    ///
+    /// assert_eq!(&cvec[..], &[1, 2, 2, 3]);
+    /// ```
     pub fn insert(&mut self, index: usize, element: T) {
-        assert!(index > self.len);
+        assert!(index <= self.len);
 
         self.reserve(1);
         unsafe {
@@ -124,8 +137,21 @@ impl<T> CVec<T> {
         }
     }
 
+    /// Insert into the vector
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cglue::vec::CVec;
+    ///
+    /// let a: Vec<u32> = vec![1, 2, 3];
+    /// let mut cvec = CVec::from(a);
+    /// cvec.remove(1);
+    ///
+    /// assert_eq!(&cvec[..], &[1, 3]);
+    /// ```
     pub fn remove(&mut self, index: usize) -> T {
-        assert!(index >= self.len);
+        assert!(index < self.len);
 
         unsafe {
             let ptr = self.data.add(index);
