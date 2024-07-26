@@ -12,8 +12,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [macos-11, ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest]
         toolchain: ["1.45.0", "stable"]
+        include:
+          - os: macos-14
+            toolchain: "stable"
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
@@ -30,7 +33,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [macos-12, ubuntu-latest, windows-latest]
+        os: [macos-14, ubuntu-latest, windows-latest]
         # 1.57 is needed for const panic
         # panic in const is used to verify waker layouts
         toolchain: ["1.57.0", "stable"]
@@ -54,8 +57,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [macos-11, ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest]
         toolchain: ["1.46.0", "stable"]
+        include:
+          - os: macos-14
+            toolchain: "stable"
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
@@ -73,7 +79,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [macos-11, ubuntu-latest, windows-latest]
+        os: [macos-14, ubuntu-latest, windows-latest]
         toolchain: ["1.57.0", "stable", "nightly-2021-11-05"]
     steps:
       - uses: actions/checkout@v2
@@ -114,8 +120,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [macos-11, ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest]
         toolchain: ["1.45.0", "stable"]
+        include:
+          - os: macos-14
+            toolchain: "stable"
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
@@ -130,7 +139,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [macos-11, ubuntu-latest, windows-latest]
+        os: [macos-14, ubuntu-latest, windows-latest]
         toolchain: ["1.57.0", "stable", "nightly-2021-11-05"]
     steps:
       - uses: actions/checkout@v2
