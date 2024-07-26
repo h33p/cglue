@@ -5,33 +5,13 @@ pub use sound::*;
 
 use core::task::*;
 
-/// Actual type: unsafe fn(_: *const ()) -> RawWaker;
-///
-/// However, we don't want to expose it since it's not ABI safe.
-#[cfg(not(feature = "task_unsound"))]
-type CloneFn = *const ();
-#[cfg(feature = "task_unsound")]
-type CloneFn = unsafe fn(_: *const ()) -> RawWaker;
-
-/// Actual type: unsafe fn(_: *const ());
-///
-/// However, we do not want to expose it since it's not ABI safe.
-#[cfg(not(feature = "task_unsound"))]
-type OtherFn = *const ();
-#[cfg(feature = "task_unsound")]
-type OtherFn = unsafe fn(_: *const ());
-
 #[repr(C)]
 #[cfg_attr(feature = "abi_stable", derive(::abi_stable::StableAbi))]
-#[cfg_attr(
-    all(feature = "abi_stable", feature = "task_unsound"),
-    sabi(unsafe_opaque_fields)
-)]
 pub struct CRawWakerVTable {
-    clone: CloneFn,
-    wake: OtherFn,
-    wake_by_ref: OtherFn,
-    drop: OtherFn,
+    clone: *const (),
+    wake: *const (),
+    wake_by_ref: *const (),
+    drop: *const (),
 }
 
 #[repr(transparent)]
@@ -155,10 +135,10 @@ const _: () = {
 
     // Verify the layout of the vtable.
 
-    let clone: CloneFn = unsafe { transmute(1usize) };
-    let wake: OtherFn = unsafe { transmute(2usize) };
-    let wake_by_ref: OtherFn = unsafe { transmute(3usize) };
-    let drop: OtherFn = unsafe { transmute(4usize) };
+    let clone: *const () = unsafe { transmute(1usize) };
+    let wake: *const () = unsafe { transmute(2usize) };
+    let wake_by_ref: *const () = unsafe { transmute(3usize) };
+    let drop: *const () = unsafe { transmute(4usize) };
 
     let vtbl = unsafe {
         RawWakerVTable::new(
