@@ -14,3 +14,6 @@ proc-macro2 = "=1.0.65"
 memchr = "=2.4.1"
 log = "=0.4.18"
 crossbeam-utils = "=0.8.16"
+
+[dev-dependencies]
+pollster = "=0.2.0"

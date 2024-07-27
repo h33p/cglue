@@ -7,8 +7,8 @@ use core::task::*;
 use tarc::BaseArc;
 
 unsafe extern "C" fn clone_adapter(data: *const (), clone: *const ()) -> CRawWaker {
-    let clone: unsafe fn(*const ()) -> CRawWaker = core::mem::transmute(clone);
-    clone(data)
+    let clone: unsafe fn(*const ()) -> RawWaker = core::mem::transmute(clone);
+    core::mem::transmute(clone(data))
 }
 
 unsafe extern "C" fn other_adapter(data: *const (), other: *const ()) {
@@ -178,7 +178,7 @@ impl<'a> FastCWaker<'a> {
 impl<'a> Drop for FastCWakerState<'a> {
     fn drop(&mut self) {
         if let Self::Owned(s) = self {
-            unsafe { BaseArc::decrement_strong_count(s) };
+            unsafe { BaseArc::decrement_strong_count(s.as_ptr()) };
         }
     }
 }
@@ -243,7 +243,7 @@ impl<'a> FastCWaker<'a> {
                 };
                 this.release();
 
-                adapter(data, wake as _)
+                adapter(data, wake as _);
             }
 
             let vtbl = &RawWakerVTable::new(clone, unreach, wake_by_ref, noop);
@@ -291,5 +291,112 @@ impl<'a> FastCWaker<'a> {
         self.release();
 
         ret
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pollster::block_on;
+
+    // Since unavailable before 1.64
+    use core::fmt;
+    use core::future::Future;
+    use core::pin::*;
+
+    pub fn poll_fn<T, F>(f: F) -> PollFn<F>
+    where
+        F: FnMut(&mut Context<'_>) -> Poll<T>,
+    {
+        PollFn { f }
+    }
+
+    /// A Future that wraps a function returning [`Poll`].
+    ///
+    /// This `struct` is created by [`poll_fn()`]. See its
+    /// documentation for more.
+    #[must_use = "futures do nothing unless you `.await` or poll them"]
+    pub struct PollFn<F> {
+        f: F,
+    }
+
+    impl<F: Unpin> Unpin for PollFn<F> {}
+
+    impl<F> fmt::Debug for PollFn<F> {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.debug_struct("PollFn").finish()
+        }
+    }
+
+    impl<T, F> Future for PollFn<F>
+    where
+        F: FnMut(&mut Context<'_>) -> Poll<T>,
+    {
+        type Output = T;
+
+        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<T> {
+            // SAFETY: We are not moving out of the pinned field.
+            (unsafe { &mut self.get_unchecked_mut().f })(cx)
+        }
+    }
+
+    #[test]
+    fn fastcwaker_simple() {
+        let mut polled = false;
+        let fut = poll_fn(|cx| {
+            if !polled {
+                polled = true;
+                cx.waker().wake_by_ref();
+                Poll::Pending
+            } else {
+                Poll::Ready(())
+            }
+        });
+        let fut = crate::trait_obj!(fut as Future);
+        block_on(fut)
+    }
+
+    #[test]
+    fn fastcwaker_simple_cloned() {
+        let mut polled = false;
+        let fut = poll_fn(|cx| {
+            if !polled {
+                polled = true;
+                cx.waker().clone().wake();
+                Poll::Pending
+            } else {
+                Poll::Ready(())
+            }
+        });
+        let fut = crate::trait_obj!(fut as Future);
+        block_on(fut)
+    }
+
+    #[test]
+    fn fastcwaker_threaded() {
+        let (tx, rx) = std::sync::mpsc::channel::<Waker>();
+
+        let thread = std::thread::spawn(move || {
+            for waker in rx.into_iter() {
+                waker.wake();
+            }
+        });
+
+        let mut polled = false;
+        let fut = poll_fn(|cx| {
+            if !polled {
+                polled = true;
+                tx.send(cx.waker().clone()).unwrap();
+                Poll::Pending
+            } else {
+                Poll::Ready(())
+            }
+        });
+        let fut = crate::trait_obj!(fut as Future);
+        block_on(fut);
+
+        core::mem::drop(tx);
+
+        thread.join().unwrap();
     }
 }

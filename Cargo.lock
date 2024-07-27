@@ -90,7 +90,7 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "cglue"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "abi_stable",
  "cglue-macro",
@@ -406,9 +406,9 @@ dependencies = [
 
 [[package]]
 name = "pollster"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b647f02b0ae8f6d4f58e06639cf41316a154b5469dc7e833026645aa2807c8ef"
+checksum = "9824e18e85003f0b5a38fa1932ae8be8c2aac9447c2f28ab6f9704dbe0a1ab58"
 
 [[package]]
 name = "proc-macro-crate"
@@ -658,6 +658,7 @@ dependencies = [
  "log",
  "memchr",
  "once_cell",
+ "pollster",
  "proc-macro2",
  "serde",
  "thiserror",

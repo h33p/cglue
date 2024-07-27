@@ -1,6 +1,6 @@
 [package]
 name = "cglue"
-version = "0.3.0"
+version = "0.3.1"
 authors = ["Aurimas Blažulionis <0x60@pm.me>"]
 edition = "2018"
 description = "FFI safe abstractions for making plugins and C-compatible libraries"
@@ -25,7 +25,7 @@ _futures = { package = "futures", version = "0.3", optional = true, default-feat
 rustc_version = "0.4"
 
 [dev-dependencies]
-pollster = "0.1"
+pollster = "0.2"
 
 [features]
 default = ["std"]
