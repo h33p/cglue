@@ -1,6 +1,6 @@
 [package]
 name = "cglue"
-version = "0.2.14"
+version = "0.3.0"
 authors = ["Aurimas Blažulionis <0x60@pm.me>"]
 edition = "2018"
 description = "FFI safe abstractions for making plugins and C-compatible libraries"
@@ -12,7 +12,7 @@ categories = [ "api-bindings", "accessibility", "parsing" ]
 readme = "../README.md"
 
 [dependencies]
-cglue-macro = { version = "0.2", path = "../cglue-macro" }
+cglue-macro = { version = "0.3", path = "../cglue-macro" }
 no-std-compat = { version = "0.4", features = ["alloc"] }
 serde = { version = "1", optional = true, default-features = false, features = ["derive", "alloc"] }
 try_default = { version = "= 1.0.0", optional = true }

@@ -1,5 +1,6 @@
 use crate::*;
 
+#[allow(dead_code)]
 #[cglue_forward]
 trait ForwardMe {
     #[skip_func]

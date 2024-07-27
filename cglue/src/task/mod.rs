@@ -203,6 +203,7 @@ fn get_order() -> CRawWakerOrder {
 }
 
 #[allow(clippy::useless_transmute)]
+#[allow(unused_braces)]
 #[cfg(not(miri))]
 const ORDER: CRawWakerOrder = { __order!() };
 

@@ -1,5 +1,67 @@
 # CGlue changelog
 
+## Changes in 0.3.0:
+
+### [Stabilize `task` feature](https://github.com/h33p/cglue/blob/e6458ae5542daa489561495fb6c613307bb80001/cglue/src/task/mod.rs)
+
+Enable with `task` feature. Provides C equivalents for `Waker`, `RawWaker`, `RawWakerVtable`.
+
+### [Trait alias within trait groups](https://github.com/h33p/cglue/commit/35b0da5bdf6cfe6ecaeedf07ba795d618113477f)
+
+Enables specifying different generic instantiations of the same trait in the same group. Example:
+
+```rust
+cglue_trait_group!(TestGroupGen, TT<u8>, { TT<usize> = TTUsize, TT<u64> = TTUSixtyFour });
+cglue_impl_group!(SA, TestGroupGen, { TT<usize> = TTUsize });
+```
+
+### [Support traits with associated types](https://github.com/h33p/cglue/commit/5d26c373bd49e935dc65b4434bb6593e2109b8fc)
+
+The following now compiles:
+
+```rust
+#[cglue_trait]
+pub trait WithAssoc<T> {
+	type AssocTy: Clone;
+
+	fn with_assoc(&self, assoc: &Self::AssocTy) -> T;
+}
+```
+
+### [Add Future support + Pin Self parameters](https://github.com/h33p/cglue/commit/6c1662a6db80390690361804626d31b72834ea3c)
+
+The following now works:
+
+```rust
+async fn hii() -> u64 {
+    42
+}
+
+let obj = trait_obj!(hii() as Future);
+
+assert_eq!(pollster::block_on(obj), 42);
+```
+
+### [Add futures Stream+Sink support](https://github.com/h33p/cglue/commit/609bc203fb4a96541a64be1a8098b9e93a631e4e)
+
+The following now works:
+
+```rust
+let items = [42, 43, 42];
+
+let obj = trait_obj!(futures::stream::iter(items) as Stream);
+
+assert_eq!(pollster::block_on(obj.collect::<Vec<_>>()), items);
+```
+
+### [Fix #17](https://github.com/h33p/cglue/commit/2d917012db0caa738eb70a89cb1c16f3ec622fb6)
+
+## Changes in 0.2.14:
+
+[Add unstable task feature](https://github.com/h33p/cglue/commit/9fbee903963b1b407ca218609e43a65cfd1eb219)
+
+[Automatically wrap 'Into<T>' arguments](https://github.com/h33p/cglue/commit/081c590f4eb97b1be10eaeaa9cbf87e7278ea8de)
+
 ## Changes in 0.2.12:
 
 [Initial support for GAT lifetimes](https://github.com/h33p/cglue/commit/1a8098181896bb730d276aea59464d577e5d8927)

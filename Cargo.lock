@@ -90,7 +90,7 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "cglue"
-version = "0.2.14"
+version = "0.3.0"
 dependencies = [
  "abi_stable",
  "cglue-macro",
@@ -106,7 +106,7 @@ dependencies = [
 
 [[package]]
 name = "cglue-bindgen"
-version = "0.2.3"
+version = "0.3.0"
 dependencies = [
  "itertools",
  "log",
@@ -117,7 +117,7 @@ dependencies = [
 
 [[package]]
 name = "cglue-gen"
-version = "0.2.9"
+version = "0.3.0"
 dependencies = [
  "itertools",
  "lazy_static",
@@ -129,7 +129,7 @@ dependencies = [
 
 [[package]]
 name = "cglue-macro"
-version = "0.2.3"
+version = "0.3.0"
 dependencies = [
  "cglue-gen",
  "proc-macro2",

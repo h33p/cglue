@@ -10,7 +10,7 @@ fn use_stream() {
 
     impl_stream(&obj);
 
-    assert_eq!(pollster::block_on(obj.collect::<Vec<_>>()), items,);
+    assert_eq!(pollster::block_on(obj.collect::<Vec<_>>()), items);
 }
 
 #[cfg(test)]
