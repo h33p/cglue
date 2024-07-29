@@ -1,213 +1,259 @@
 //! C-compatible task structures.
 
-mod sound;
-pub use sound::*;
-
 use core::task::*;
+use tarc::BaseArc;
 
 #[repr(C)]
 #[cfg_attr(feature = "abi_stable", derive(::abi_stable::StableAbi))]
-pub struct CRawWakerVTable {
-    clone: *const (),
-    wake: *const (),
-    wake_by_ref: *const (),
-    drop: *const (),
+struct OpaqueRawWakerVtbl {
+    clone: unsafe extern "C" fn(OpaqueRawWaker) -> CRawWaker,
+    wake: unsafe extern "C" fn(OpaqueRawWaker),
+    wake_by_ref: unsafe extern "C" fn(OpaqueRawWaker),
+    drop: unsafe extern "C" fn(OpaqueRawWaker),
+}
+
+impl Default for &'static OpaqueRawWakerVtbl {
+    fn default() -> Self {
+        unsafe extern "C" fn clone(w: OpaqueRawWaker) -> CRawWaker {
+            let waker: RawWaker = core::mem::transmute(w);
+            waker_clone(&waker as *const _ as *const ())
+        }
+
+        unsafe extern "C" fn wake(w: OpaqueRawWaker) {
+            let waker: Waker = core::mem::transmute(w);
+            waker.wake()
+        }
+
+        unsafe extern "C" fn wake_by_ref(w: OpaqueRawWaker) {
+            let waker: RawWaker = core::mem::transmute(w);
+            let waker: &Waker = core::mem::transmute(&waker);
+            waker.wake_by_ref()
+        }
+
+        unsafe extern "C" fn drop(w: OpaqueRawWaker) {
+            let _: Waker = core::mem::transmute(w);
+        }
+
+        &OpaqueRawWakerVtbl {
+            clone,
+            wake,
+            wake_by_ref,
+            drop,
+        }
+    }
+}
+
+#[repr(C)]
+#[cfg_attr(feature = "abi_stable", derive(::abi_stable::StableAbi))]
+struct CRawWaker {
+    waker: OpaqueRawWaker,
+    vtable: &'static OpaqueRawWakerVtbl,
+}
+
+impl CRawWaker {
+    fn to_raw(this: BaseArc<CRawWaker>) -> RawWaker {
+        unsafe fn clone(data: *const ()) -> RawWaker {
+            let data = data as *const CRawWaker;
+            BaseArc::increment_strong_count(data);
+            let waker = BaseArc::from_raw(data);
+            CRawWaker::to_raw(waker)
+        }
+        unsafe fn wake(data: *const ()) {
+            let this = BaseArc::from_raw(data as *const CRawWaker);
+            (this.vtable.wake)(this.waker)
+        }
+        unsafe fn wake_by_ref(data: *const ()) {
+            let data = data as *const CRawWaker;
+            let this = &*data;
+            (this.vtable.wake_by_ref)(this.waker)
+        }
+        unsafe fn drop(data: *const ()) {
+            let this = BaseArc::from_raw(data as *const CRawWaker);
+            (this.vtable.drop)(this.waker)
+        }
+
+        let vtbl = &RawWakerVTable::new(clone, wake, wake_by_ref, drop);
+
+        RawWaker::new(this.into_raw() as *const (), vtbl)
+    }
+}
+
+unsafe extern "C" fn waker_clone(waker: *const ()) -> CRawWaker {
+    let waker: &Waker = &*(waker as *const Waker);
+    let waker = core::mem::transmute(waker.clone());
+
+    CRawWaker {
+        waker,
+        vtable: Default::default(),
+    }
+}
+
+unsafe extern "C" fn waker_wake_by_ref(waker: *const ()) {
+    let waker: &Waker = &*(waker as *const Waker);
+    waker.wake_by_ref()
 }
 
 #[repr(transparent)]
 #[cfg_attr(feature = "abi_stable", derive(::abi_stable::StableAbi))]
 #[derive(Clone, Copy)]
-pub struct CRawWaker {
-    ptrs: [*const (); 2],
-}
-
-impl From<&Waker> for &CRawWaker {
-    fn from(w: &Waker) -> Self {
-        unsafe { &*(w as *const Waker as *const CRawWaker) }
-    }
-}
-
-impl CRawWaker {
-    fn data(&self, order: &CRawWakerOrder) -> *const () {
-        self.ptrs[order.data]
-    }
-
-    unsafe fn vtable(&self, order: &CRawWakerOrder) -> &'static CRawWakerVTable {
-        &*(self.ptrs[order.vtable] as *const CRawWakerVTable)
-    }
+struct OpaqueRawWaker {
+    waker: [*const (); 2],
 }
 
 #[repr(C)]
 #[cfg_attr(feature = "abi_stable", derive(::abi_stable::StableAbi))]
 #[derive(Clone, Copy)]
-struct CRawWakerOrder {
-    data: usize,
-    vtable: usize,
+pub struct CRefWaker<'a> {
+    raw: &'a OpaqueRawWaker,
+    clone: unsafe extern "C" fn(*const ()) -> CRawWaker,
+    wake_by_ref: unsafe extern "C" fn(*const ()),
 }
 
-// Verify the layouts of reimplemented data structures
-//
-// Unfortunately, we cannot verify function ABI.
-#[allow(clippy::useless_transmute)]
-#[cfg(not(miri))]
-const _: () = {
-    use core::mem::{size_of, transmute};
+impl<'a> CRefWaker<'a> {
+    pub unsafe fn from_raw(raw: &'a RawWaker) -> Self {
+        let raw: &'a OpaqueRawWaker = core::mem::transmute(raw);
 
-    if size_of::<CRawWaker>() != size_of::<RawWaker>() {
-        #[cfg(not(const_panic_on_stable))]
-        let _ = "Raw waker size mismatch".as_bytes()[!0];
-        #[cfg(const_panic_on_stable)]
-        panic!("Raw waker size mismatch");
-    }
-
-    if size_of::<CRawWaker>() != size_of::<Waker>() {
-        #[cfg(not(const_panic_on_stable))]
-        let _ = "Raw waker size mismatch".as_bytes()[!0];
-        #[cfg(const_panic_on_stable)]
-        panic!("Raw waker size mismatch");
-    }
-
-    if size_of::<CRawWakerVTable>() != size_of::<RawWakerVTable>() {
-        #[cfg(not(const_panic_on_stable))]
-        let _ = "Raw waker vtbl size mismatch".as_bytes()[!0];
-        #[cfg(const_panic_on_stable)]
-        panic!("Raw waker vtbl size mismatch");
-    }
-
-    macro_rules! expand {
-        ($c:literal, $s:literal, $($e:expr),*) => {
-            [$(concat!($c, " ", $s, " idx ", stringify!($e)),)*]
+        Self {
+            raw,
+            clone: waker_clone,
+            wake_by_ref: waker_wake_by_ref,
         }
     }
 
-    macro_rules! comp_arr {
-        ($a:ident, $b:ident, $c:literal) => {{
-            const BUF: &[&str] = &expand!(
-                $c,
-                "buffers not equal!",
-                0,
-                1,
-                2,
-                3,
-                4,
-                5,
-                6,
-                7,
-                8,
-                9,
-                10,
-                11,
-                12,
-                13,
-                14,
-                15,
-                16,
-                17,
-                18,
-                19,
-                20,
-                21,
-                22,
-                23,
-                24,
-                25,
-                26,
-                27,
-                28,
-                29,
-                30,
-                31,
-                32
-            );
+    pub fn with_waker<T>(&self, cb: impl FnOnce(&Waker) -> T) -> T {
+        unsafe fn unreach(_: *const ()) {
+            unreachable!()
+        }
+        unsafe fn noop(_: *const ()) {}
+        unsafe fn clone(data: *const ()) -> RawWaker {
+            let this = &*(data as *const CRefWaker);
+            let waker = unsafe { (this.clone)(this.raw as *const _ as *const ()) };
+            let waker = BaseArc::new(waker);
+            CRawWaker::to_raw(waker)
+        }
+        unsafe fn wake_by_ref(data: *const ()) {
+            let this = &*(data as *const CRefWaker);
+            unsafe { (this.wake_by_ref)(this.raw as *const _ as *const ()) };
+        }
 
-            let mut cnt = 0;
-            while cnt < $a.len() {
-                if $a[cnt] != $b[cnt] {
-                    #[cfg(not(const_panic_on_stable))]
-                    let _buffers_not_equal: () = [][cnt];
-                    #[cfg(const_panic_on_stable)]
-                    panic!("{}", BUF[cnt]);
-                }
-                cnt += 1;
-            }
-        }};
+        let vtbl = &RawWakerVTable::new(clone, unreach, wake_by_ref, noop);
+        let waker = RawWaker::new(self as *const Self as *const (), vtbl);
+        let waker = unsafe { Waker::from_raw(waker) };
+
+        cb(&waker)
+    }
+}
+
+impl<'a> From<&'a Waker> for CRefWaker<'a> {
+    fn from(waker: &'a Waker) -> Self {
+        const _: [(); core::mem::size_of::<Waker>()] = [(); core::mem::size_of::<OpaqueRawWaker>()];
+        unsafe { Self::from_raw(core::mem::transmute(waker)) }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pollster::block_on;
+
+    // Since unavailable before 1.64
+    use core::fmt;
+    use core::future::Future;
+    use core::pin::*;
+
+    pub fn poll_fn<T, F>(f: F) -> PollFn<F>
+    where
+        F: FnMut(&mut Context<'_>) -> Poll<T>,
+    {
+        PollFn { f }
     }
 
-    // Verify the layout of the vtable.
+    /// A Future that wraps a function returning [`Poll`].
+    ///
+    /// This `struct` is created by [`poll_fn()`]. See its
+    /// documentation for more.
+    #[must_use = "futures do nothing unless you `.await` or poll them"]
+    pub struct PollFn<F> {
+        f: F,
+    }
 
-    let clone: *const () = unsafe { transmute(1usize) };
-    let wake: *const () = unsafe { transmute(2usize) };
-    let wake_by_ref: *const () = unsafe { transmute(3usize) };
-    let drop: *const () = unsafe { transmute(4usize) };
+    impl<F: Unpin> Unpin for PollFn<F> {}
 
-    let vtbl = unsafe {
-        RawWakerVTable::new(
-            transmute(clone),
-            transmute(wake),
-            transmute(wake_by_ref),
-            transmute(drop),
-        )
-    };
-    let vtbl_c = CRawWakerVTable {
-        clone,
-        wake,
-        wake_by_ref,
-        drop,
-    };
+    impl<F> fmt::Debug for PollFn<F> {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.debug_struct("PollFn").finish()
+        }
+    }
 
-    let bvtbl = unsafe { transmute::<_, [u8; size_of::<RawWakerVTable>()]>(vtbl) };
-    let bvtbl_c = unsafe { transmute::<_, [u8; size_of::<RawWakerVTable>()]>(vtbl_c) };
+    impl<T, F> Future for PollFn<F>
+    where
+        F: FnMut(&mut Context<'_>) -> Poll<T>,
+    {
+        type Output = T;
 
-    comp_arr!(bvtbl, bvtbl_c, "vtable");
-};
+        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<T> {
+            // SAFETY: We are not moving out of the pinned field.
+            (unsafe { &mut self.get_unchecked_mut().f })(cx)
+        }
+    }
 
-macro_rules! __order {
-    () => {{
-        use core::mem::transmute;
-
-        // Verify the layout of the raw waker.
-
-        let data = core::ptr::null();
-
-        #[cfg(miri)]
-        let vtbl = unsafe {
-            unsafe fn clone(data: *const ()) -> RawWaker {
-                todo!()
+    #[test]
+    fn cwaker_simple() {
+        let mut polled = false;
+        let fut = poll_fn(|cx| {
+            if !polled {
+                polled = true;
+                cx.waker().wake_by_ref();
+                Poll::Pending
+            } else {
+                Poll::Ready(())
             }
+        });
+        let fut = crate::trait_obj!(fut as Future);
+        block_on(fut)
+    }
 
-            unsafe fn null(data: *const ()) {}
+    #[test]
+    fn cwaker_simple_cloned() {
+        let mut polled = false;
+        let fut = poll_fn(|cx| {
+            if !polled {
+                polled = true;
+                cx.waker().clone().wake();
+                Poll::Pending
+            } else {
+                Poll::Ready(())
+            }
+        });
+        let fut = crate::trait_obj!(fut as Future);
+        block_on(fut)
+    }
 
-            &RawWakerVTable::new(clone, null, null, null)
-        };
-        #[cfg(not(miri))]
-        let vtbl = unsafe { transmute(1 as *const ()) };
+    #[test]
+    fn cwaker_threaded() {
+        let (tx, rx) = std::sync::mpsc::channel::<Waker>();
 
-        let waker = RawWaker::new(data, vtbl);
+        let thread = std::thread::spawn(move || {
+            for waker in rx.into_iter() {
+                waker.wake();
+            }
+        });
 
-        // This verifies the size of the object - will not compile if RawWaker is not the size of 2
-        // pointers, or if usize != pointer size.
-        let bwaker = unsafe { transmute::<_, [usize; 2]>(waker) };
+        let mut polled = false;
+        let fut = poll_fn(|cx| {
+            if !polled {
+                polled = true;
+                tx.send(cx.waker().clone()).unwrap();
+                Poll::Pending
+            } else {
+                Poll::Ready(())
+            }
+        });
+        let fut = crate::trait_obj!(fut as Future);
+        block_on(fut);
 
-        // This will return us the order
-        let data = if bwaker[0] == 0 { 0 } else { 1 };
-        let vtable = if bwaker[0] == 0 { 1 } else { 0 };
+        core::mem::drop(tx);
 
-        CRawWakerOrder { data, vtable }
-    }};
-}
-
-#[cfg(miri)]
-#[allow(clippy::useless_transmute)]
-fn get_order() -> CRawWakerOrder {
-    __order!()
-}
-
-#[allow(clippy::useless_transmute)]
-#[allow(unused_braces)]
-#[cfg(not(miri))]
-const ORDER: CRawWakerOrder = { __order!() };
-
-#[cfg(not(miri))]
-const fn get_order() -> CRawWakerOrder {
-    ORDER
+        thread.join().unwrap();
+    }
 }
