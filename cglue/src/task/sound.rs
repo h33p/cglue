@@ -1,296 +1,68 @@
 use super::*;
 
-use core::cell::UnsafeCell;
-use core::ptr::NonNull;
-use core::sync::atomic::{AtomicBool, Ordering};
 use core::task::*;
-use tarc::BaseArc;
 
-unsafe extern "C" fn clone_adapter(data: *const (), clone: *const ()) -> CRawWaker {
-    let clone: unsafe fn(*const ()) -> RawWaker = core::mem::transmute(clone);
-    core::mem::transmute(clone(data))
+unsafe extern "C" fn waker_clone(data: *const ()) -> CRawWaker {
+    let waker: &Waker = &*(data as *const Waker);
+    let waker: CRawWaker = core::mem::transmute(waker.clone());
+    waker.to_c(&get_order())
 }
 
-unsafe extern "C" fn other_adapter(data: *const (), other: *const ()) {
-    let other: unsafe fn(_: *const ()) = core::mem::transmute(other);
-    other(data)
+unsafe extern "C" fn waker_wake_by_ref(data: *const ()) {
+    let waker: &Waker = &*(data as *const Waker);
+    waker.wake_by_ref()
 }
 
 #[repr(C)]
 #[cfg_attr(feature = "abi_stable", derive(::abi_stable::StableAbi))]
-pub struct CWaker {
-    raw: CRawWaker,
-    order: CRawWakerOrder,
-    clone_adapter: unsafe extern "C" fn(*const (), *const ()) -> CRawWaker,
-    other_adapter: unsafe extern "C" fn(*const (), *const ()),
+#[derive(Clone, Copy)]
+pub struct CWaker<'a> {
+    raw: &'a CRawWaker,
+    clone: unsafe extern "C" fn(*const ()) -> CRawWaker,
+    wake_by_ref: unsafe extern "C" fn(*const ()),
 }
 
-impl CWaker {
-    fn data(&self) -> *const () {
-        self.raw.data(&self.order)
-    }
-
-    fn vtable(&self) -> &'static CRawWakerVTable {
-        // SAFETY: we ensure safety during construction of `CWaker` - the order used is always
-        // correct and tied to the raw vtable.
-        unsafe { self.raw.vtable(&self.order) }
-    }
-
-    pub fn into_waker(this: BaseArc<Self>) -> Waker {
-        unsafe { Waker::from_raw(Self::into_raw_waker(this)) }
-    }
-
-    pub fn into_raw_waker(this: BaseArc<Self>) -> RawWaker {
-        unsafe fn clone(data: *const ()) -> RawWaker {
-            let waker = data as *const CWaker;
-            BaseArc::increment_strong_count(waker);
-            CWaker::into_raw_waker(BaseArc::from_raw(waker))
-        }
-
-        unsafe fn wake(data: *const ()) {
-            let waker = &*(data as *const CWaker);
-            (waker.other_adapter)(waker.data(), waker.vtable().wake_by_ref as _);
-            BaseArc::decrement_strong_count(waker);
-        }
-
-        unsafe fn wake_by_ref(data: *const ()) {
-            let waker = &*(data as *const CWaker);
-            (waker.other_adapter)(waker.data(), waker.vtable().wake_by_ref as _);
-        }
-
-        unsafe fn drop(data: *const ()) {
-            BaseArc::decrement_strong_count(data as *const CWaker);
-        }
-
-        let vtbl = &RawWakerVTable::new(clone, wake, wake_by_ref, drop);
-        RawWaker::new(this.into_raw() as *const (), vtbl)
-    }
-
-    pub fn wake(self) {
-        let other_adapter = self.other_adapter;
-        let wake = self.vtable().wake;
-        let data = self.data();
-        // Don't call `drop` -- the waker will be consumed by `wake`.
-        core::mem::forget(self);
-        // SAFETY: This is safe because `Waker::from_raw` is the only way
-        // to initialize `wake` and `data` requiring the user to acknowledge
-        // that the contract of `RawWaker` is upheld.
-
-        // This is also FFI-safe because `other_adapter` adapts the calling convention.
-        unsafe { (other_adapter)(data, wake as _) };
-    }
-
-    pub fn wake_by_ref(&self) {
-        let other_adapter = self.other_adapter;
-        let wake_by_ref = self.vtable().wake_by_ref;
-        let data = self.data();
-        // SAFETY: This is safe because `Waker::from_raw` is the only way
-        // to initialize `wake` and `data` requiring the user to acknowledge
-        // that the contract of `RawWaker` is upheld.
-
-        // This is also FFI-safe because `other_adapter` adapts the calling convention.
-        unsafe { (other_adapter)(data, wake_by_ref as _) };
-    }
-
-    pub unsafe fn from_raw(raw: RawWaker) -> Self {
-        let raw: CRawWaker = core::mem::transmute(raw);
+impl<'a> CWaker<'a> {
+    pub unsafe fn from_raw(raw: &'a RawWaker) -> Self {
+        let raw: &'a CRawWaker = core::mem::transmute(raw);
 
         Self {
             raw,
-            order: get_order(),
-            clone_adapter,
-            other_adapter,
+            clone: waker_clone,
+            wake_by_ref: waker_wake_by_ref,
         }
     }
-}
 
-impl Drop for CWaker {
-    fn drop(&mut self) {
-        let other_adapter = self.other_adapter;
-        let drop = self.vtable().drop;
-        let data = self.data();
-        // SAFETY: This is safe because `Waker::from_raw` is the only way
-        // to initialize `wake` and `data` requiring the user to acknowledge
-        // that the contract of `RawWaker` is upheld.
-
-        // This is also FFI-safe because `other_adapter` adapts the calling convention.
-        unsafe { (other_adapter)(data, drop as *const ()) };
-    }
-}
-
-impl Clone for CWaker {
-    #[inline]
-    fn clone(&self) -> Self {
-        Self {
-            // SAFETY: This is safe because `Waker::from_raw` is the only way
-            // to initialize `clone` and `data` requiring the user to acknowledge
-            // that the contract of [`RawWaker`] is upheld.
-            raw: unsafe { (self.clone_adapter)(self.data(), self.vtable().clone as *const ()) },
-            order: self.order,
-            clone_adapter: self.clone_adapter,
-            other_adapter: self.other_adapter,
-        }
-    }
-}
-
-impl From<Waker> for CWaker {
-    fn from(waker: Waker) -> Self {
-        unsafe { Self::from_raw(core::mem::transmute(waker)) }
-    }
-}
-
-#[repr(C, u8)]
-#[cfg_attr(feature = "abi_stable", derive(::abi_stable::StableAbi))]
-enum FastCWakerState<'a> {
-    Borrowed {
-        waker: &'a CRawWaker,
-        order: CRawWakerOrder,
-        clone_adapter: unsafe extern "C" fn(*const (), *const ()) -> CRawWaker,
-        other_adapter: unsafe extern "C" fn(*const (), *const ()),
-    },
-    Owned(NonNull<CWaker>),
-}
-
-#[repr(C)]
-#[cfg_attr(feature = "abi_stable", derive(::abi_stable::StableAbi))]
-pub struct FastCWaker<'a> {
-    lock: AtomicBool,
-    state: UnsafeCell<FastCWakerState<'a>>,
-}
-
-impl<'a> FastCWaker<'a> {
-    #[allow(clippy::mut_from_ref)]
-    unsafe fn lock(&self) -> &mut FastCWakerState<'a> {
-        while self.lock.fetch_or(true, Ordering::Acquire) {
-            while self.lock.load(Ordering::Relaxed) {
-                #[allow(deprecated)]
-                core::sync::atomic::spin_loop_hint();
-            }
-        }
-        unsafe { &mut *self.state.get() }
-    }
-
-    fn release(&self) {
-        self.lock.store(false, Ordering::Release);
-    }
-}
-
-impl<'a> Drop for FastCWakerState<'a> {
-    fn drop(&mut self) {
-        if let Self::Owned(s) = self {
-            unsafe { BaseArc::decrement_strong_count(s.as_ptr()) };
-        }
-    }
-}
-
-impl<'a> From<&'a Waker> for FastCWaker<'a> {
-    fn from(waker: &'a Waker) -> Self {
-        Self {
-            lock: Default::default(),
-            state: UnsafeCell::new(FastCWakerState::Borrowed {
-                waker: waker.into(),
-                order: get_order(),
-                clone_adapter,
-                other_adapter,
-            }),
-        }
-    }
-}
-
-impl<'a> FastCWaker<'a> {
     pub fn with_waker<T>(&self, cb: impl FnOnce(&Waker) -> T) -> T {
-        if let FastCWakerState::Owned(owned) = unsafe { self.lock() } {
-            let owned = unsafe {
-                let owned = owned.as_ptr();
-                BaseArc::increment_strong_count(owned);
-                BaseArc::from_raw(owned)
-            };
-            self.release();
-            cb(&CWaker::into_waker(owned))
-        } else {
-            self.release();
-            // Create a waker that modifies self upon clone
-
-            unsafe fn unreach(_: *const ()) {
-                unreachable!()
-            }
-            unsafe fn noop(_: *const ()) {}
-            unsafe fn clone(data: *const ()) -> RawWaker {
-                let this = &*(data as *const FastCWaker);
-                CWaker::into_raw_waker(this.c_waker())
-            }
-            unsafe fn wake_by_ref(data: *const ()) {
-                let this = &*(data as *const FastCWaker);
-                let (data, wake, adapter) = match unsafe { this.lock() } {
-                    FastCWakerState::Borrowed {
-                        waker,
-                        order,
-                        other_adapter,
-                        ..
-                    } => (
-                        waker.data(order),
-                        waker.vtable(order).wake_by_ref,
-                        *other_adapter,
-                    ),
-                    FastCWakerState::Owned(d) => {
-                        let waker = &*d.as_ptr();
-                        (
-                            waker.data(),
-                            waker.vtable().wake_by_ref,
-                            waker.other_adapter,
-                        )
-                    }
-                };
-                this.release();
-
-                adapter(data, wake as _);
-            }
-
-            let vtbl = &RawWakerVTable::new(clone, unreach, wake_by_ref, noop);
-            let waker = RawWaker::new(self as *const Self as *const (), vtbl);
-            let waker = unsafe { Waker::from_raw(waker) };
-
-            cb(&waker)
+        unsafe fn unreach(_: *const ()) {
+            unreachable!()
         }
+        unsafe fn noop(_: *const ()) {}
+        unsafe fn clone(data: *const ()) -> RawWaker {
+            let this = &*(data as *const CWaker);
+            let waker = unsafe { (this.clone)(this.raw as *const _ as *const ()) };
+            RawWaker::new(
+                waker.data(&CRawWakerOrder::c_order()),
+                waker.vtable(&CRawWakerOrder::c_order()).into(),
+            )
+        }
+        unsafe fn wake_by_ref(data: *const ()) {
+            let this = &*(data as *const CWaker);
+            unsafe { (this.wake_by_ref)(this.raw as *const _ as *const ()) };
+        }
+
+        let vtbl = &RawWakerVTable::new(clone, unreach, wake_by_ref, noop);
+        let waker = RawWaker::new(self as *const Self as *const (), vtbl);
+        let waker = unsafe { Waker::from_raw(waker) };
+
+        cb(&waker)
     }
+}
 
-    pub fn clone_waker(&self) -> Waker {
-        self.with_waker(|w| w.clone())
-    }
-
-    pub fn c_waker(&self) -> BaseArc<CWaker> {
-        let state = unsafe { self.lock() };
-
-        let ret = match state {
-            FastCWakerState::Owned(owned) => unsafe {
-                let owned = owned.as_ptr();
-                BaseArc::increment_strong_count(owned);
-                BaseArc::from_raw(owned)
-            },
-            FastCWakerState::Borrowed {
-                waker,
-                order,
-                clone_adapter,
-                other_adapter,
-            } => {
-                let waker =
-                    unsafe { clone_adapter(waker.data(order), waker.vtable(order).clone as _) };
-                let owned: BaseArc<CWaker> = BaseArc::from(CWaker {
-                    raw: waker,
-                    order: *order,
-                    clone_adapter: *clone_adapter,
-                    other_adapter: *other_adapter,
-                });
-                *state = FastCWakerState::Owned(unsafe {
-                    NonNull::new_unchecked(owned.clone().into_raw() as *mut _)
-                });
-                owned
-            }
-        };
-
-        self.release();
-
-        ret
+impl<'a> From<&'a Waker> for CWaker<'a> {
+    fn from(waker: &'a Waker) -> Self {
+        const _: [(); core::mem::size_of::<Waker>()] = [(); core::mem::size_of::<CRawWaker>()];
+        unsafe { Self::from_raw(core::mem::transmute(waker)) }
     }
 }
 
@@ -341,7 +113,7 @@ mod tests {
     }
 
     #[test]
-    fn fastcwaker_simple() {
+    fn cwaker_simple() {
         let mut polled = false;
         let fut = poll_fn(|cx| {
             if !polled {
@@ -357,7 +129,7 @@ mod tests {
     }
 
     #[test]
-    fn fastcwaker_simple_cloned() {
+    fn cwaker_simple_cloned() {
         let mut polled = false;
         let fut = poll_fn(|cx| {
             if !polled {
@@ -373,7 +145,7 @@ mod tests {
     }
 
     #[test]
-    fn fastcwaker_threaded() {
+    fn cwaker_threaded() {
         let (tx, rx) = std::sync::mpsc::channel::<Waker>();
 
         let thread = std::thread::spawn(move || {

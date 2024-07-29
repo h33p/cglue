@@ -14,6 +14,18 @@ pub struct CRawWakerVTable {
     drop: *const (),
 }
 
+impl<'a> From<&'a CRawWakerVTable> for &'a RawWakerVTable {
+    fn from(vtbl: &'a CRawWakerVTable) -> Self {
+        unsafe { core::mem::transmute(vtbl) }
+    }
+}
+
+impl From<CRawWakerVTable> for RawWakerVTable {
+    fn from(vtbl: CRawWakerVTable) -> Self {
+        unsafe { core::mem::transmute(vtbl) }
+    }
+}
+
 #[repr(transparent)]
 #[cfg_attr(feature = "abi_stable", derive(::abi_stable::StableAbi))]
 #[derive(Clone, Copy)]
@@ -35,6 +47,12 @@ impl CRawWaker {
     unsafe fn vtable(&self, order: &CRawWakerOrder) -> &'static CRawWakerVTable {
         &*(self.ptrs[order.vtable] as *const CRawWakerVTable)
     }
+
+    fn to_c(self, order: &CRawWakerOrder) -> Self {
+        Self {
+            ptrs: [self.ptrs[order.data], self.ptrs[order.vtable]],
+        }
+    }
 }
 
 #[repr(C)]
@@ -43,6 +61,12 @@ impl CRawWaker {
 struct CRawWakerOrder {
     data: usize,
     vtable: usize,
+}
+
+impl CRawWakerOrder {
+    fn c_order() -> Self {
+        Self { data: 0, vtable: 1 }
+    }
 }
 
 // Verify the layouts of reimplemented data structures

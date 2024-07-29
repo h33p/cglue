@@ -17,7 +17,7 @@ pub fn get_impl(parent_path: &Path, out: &mut Vec<(Path, TokenStream)>) {
                 #[custom_impl(
                     // Types within the C interface other than self and additional wrappers.
                     {
-                        cx: &#crate_path::task::FastCWaker,
+                        cx: &#crate_path::task::CWaker,
                         out: &mut ::core::mem::MaybeUninit<Self::Item>,
                     },
                     // Unwrapped return type
@@ -26,7 +26,7 @@ pub fn get_impl(parent_path: &Path, out: &mut Vec<(Path, TokenStream)>) {
                     {
                         let mut out_v = ::core::mem::MaybeUninit::uninit();
                         let out = &mut out_v;
-                        let cx = #crate_path::task::FastCWaker::from(cx.waker());
+                        let cx = #crate_path::task::CWaker::from(cx.waker());
                         let cx = &cx;
                     },
                     // This is the body of C impl minus the automatic wrapping.
