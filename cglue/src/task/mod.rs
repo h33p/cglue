@@ -240,7 +240,7 @@ mod tests {
         });
 
         let mut polled = false;
-        let fut = poll_fn(|cx| {
+        let fut = poll_fn(move |cx| {
             if !polled {
                 polled = true;
                 tx.send(cx.waker().clone()).unwrap();
@@ -251,8 +251,6 @@ mod tests {
         });
         let fut = crate::trait_obj!(fut as Future);
         block_on(fut);
-
-        core::mem::drop(tx);
 
         thread.join().unwrap();
     }

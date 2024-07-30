@@ -74,7 +74,8 @@ impl<T> Drop for CBox<'_, T> {
     }
 }
 
-unsafe impl<'a, T> Opaquable for CBox<'a, T> {
+// FIXME: express both Send and !Send box safely (https://github.com/h33p/cglue/issues/18)
+unsafe impl<'a, T: Send> Opaquable for CBox<'a, T> {
     type OpaqueTarget = CBox<'a, c_void>;
 }
 

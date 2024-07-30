@@ -22,7 +22,7 @@ fn test_group() {
     // and a ref group impl.
     //
     // Having both requres explicitly specifying inner type like done here.
-    fn into_test<'a, T: Into<TestGroupBaseBox<'a, T>> + 'a>(t: T) -> TestGroupBox<'a> {
+    fn into_test<'a, T: Into<TestGroupBaseBox<'a, T>> + Send + 'a>(t: T) -> TestGroupBox<'a> {
         group_obj!(t as TestGroup)
     }
     let _ = into_test(&a);

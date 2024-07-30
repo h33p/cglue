@@ -11,7 +11,7 @@ pub trait ExtraFeature {
 }
 
 #[cglue_trait]
-pub trait Basic: Sized {
+pub trait Basic: Sized + Send + Sync {
     #[vtbl_only('_, wrap_with_obj(ExtraFeature))]
     fn b_1(&self) -> ExtraFeatureWrap<&Self> {
         ExtraFeatureWrap { _v: self }
