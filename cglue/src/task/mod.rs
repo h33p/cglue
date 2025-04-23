@@ -93,6 +93,47 @@ unsafe extern "C" fn waker_wake_by_ref(waker: *const ()) {
     waker.wake_by_ref()
 }
 
+#[repr(C)]
+#[cfg_attr(feature = "abi_stable", derive(::abi_stable::StableAbi))]
+pub struct CWaker(CRawWaker);
+
+impl From<Waker> for CWaker {
+    fn from(waker: Waker) -> Self {
+        let waker: OpaqueRawWaker = unsafe { core::mem::transmute(waker) };
+        Self(CRawWaker {
+            waker,
+            vtable: Default::default(),
+        })
+    }
+}
+
+impl Clone for CWaker {
+    fn clone(&self) -> Self {
+        Self(unsafe { (self.0.vtable.clone)(self.0.waker) })
+    }
+}
+
+impl Drop for CWaker {
+    fn drop(&mut self) {
+        unsafe {
+            (self.0.vtable.drop)(self.0.waker);
+        }
+    }
+}
+
+impl CWaker {
+    pub fn wake_by_ref(&self) {
+        unsafe { (self.0.vtable.wake_by_ref)(self.0.waker) }
+    }
+
+    pub fn wake(self) {
+        let vtable = self.0.vtable;
+        let waker = self.0.waker;
+        core::mem::forget(self);
+        unsafe { (vtable.wake)(waker) };
+    }
+}
+
 #[repr(transparent)]
 #[cfg_attr(feature = "abi_stable", derive(::abi_stable::StableAbi))]
 #[derive(Clone, Copy)]
