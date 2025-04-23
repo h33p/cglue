@@ -1,5 +1,18 @@
 # CGlue changelog
 
+## Changes in 0.3.5:
+
+### [Support `C-unwind` ABI](https://github.com/h33p/cglue/blob/7ccbdb762785609409a5dd0d16b315fee2dcf2ee)
+
+Adds support for `extern "C-unwind"` ABI through `#[unwind_abi]` attribute and `unwind_abi_default`/`unwind_abi_ext` feature flags:
+
+- `unwind_abi_default` will default all functions to support unwinding, which can be overridden with `#[no_unwind_abi]` attribute.
+- `unwind_abi_ext` will add `#[unwind_abi]` to all functions in the builtin ext system.
+
+### [Add `CWaker`](https://github.com/h33p/cglue/blob/5302a750bdd483b01b5ea7de5ab4f8ad2036f8d3)
+
+Exposes `CWaker` as a static stable ABI waker type.
+
 ## Changes in 0.3.0:
 
 ### [Stabilize `task` feature](https://github.com/h33p/cglue/blob/e6458ae5542daa489561495fb6c613307bb80001/cglue/src/task/mod.rs)
