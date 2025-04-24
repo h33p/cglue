@@ -742,7 +742,7 @@ impl TraitGroup {
         let mut enable_funcs_vtbl = TokenStream::new();
 
         #[cfg(feature = "layout_checks")]
-        let derive_layouts = quote!(#[derive(::abi_stable::StableAbi)]);
+        let derive_layouts = quote!(#[derive(#crate_path::__sabi::StableAbi)]);
         #[cfg(not(feature = "layout_checks"))]
         let derive_layouts = quote!();
 

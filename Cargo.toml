@@ -19,3 +19,5 @@ default-members = [
     "version-hack",
 ]
 
+#[patch.crates-io]
+#abi_stable = { version = "0.11", path = "../../other/abi_stable_crates/abi_stable" }

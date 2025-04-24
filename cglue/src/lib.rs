@@ -46,6 +46,7 @@
 //! and they should be good to go!
 //!
 //! ```rust
+//! # __export_abi_stable!();
 //! use cglue::*;
 //!
 //! // One annotation for the trait.
@@ -95,6 +96,7 @@
 //! But that's not all, you can also group traits together!
 //!
 //! ```
+//! # __export_abi_stable!();
 //! use cglue::*;
 //!
 //! # // Previous definitions
@@ -291,6 +293,7 @@
 //! Define a group with the standard template syntax:
 //!
 //! ```
+//! # __export_abi_stable!();
 //! # use cglue::*;
 //! # #[cglue_trait]
 //! # pub trait TA {
@@ -320,6 +323,7 @@
 //! It is also possible to specify trait bounds:
 //!
 //! ```
+//! # __export_abi_stable!();
 //! # use cglue::*;
 //! # #[cglue_trait]
 //! # pub trait TA {
@@ -349,6 +353,7 @@
 //! Or:
 //!
 //! ```
+//! # __export_abi_stable!();
 //! # use cglue::*;
 //! # #[cglue_trait]
 //! # pub trait TA {
@@ -378,6 +383,7 @@
 //! Implement the group on a generic type:
 //!
 //! ```
+//! # __export_abi_stable!();
 //! # use cglue::*;
 //! # #[cglue_trait]
 //! # pub trait TA {
@@ -412,6 +418,7 @@
 //! on the line:
 //!
 //! ```
+//! # __export_abi_stable!();
 //! # use cglue::*;
 //! # #[cglue_trait]
 //! # pub trait TA {
@@ -447,6 +454,7 @@
 //! optional traits defined:
 //!
 //! ```
+//! # __export_abi_stable!();
 //! # use cglue::*;
 //! # #[cglue_trait]
 //! # pub trait TA {
@@ -484,6 +492,7 @@
 //! the above 2 macro invocations expand to:
 //!
 //! ```
+//! # __export_abi_stable!();
 //! # use cglue::*;
 //! # #[cglue_trait]
 //! # pub trait TA {
@@ -553,6 +562,7 @@
 //! actual trait, like so:
 //!
 //! ```ignore
+//! # __export_abi_stable!();
 //! # use cglue::*;
 //! #[cglue_trait_ext]
 //! pub trait Clone {
@@ -569,6 +579,7 @@
 //! complicated when groups are involved. This is how a `MaybeClone` group would be implemented:
 //!
 //! ```ignore
+//! # __export_abi_stable!();
 //! # use cglue::*;
 //! # #[cglue_trait_ext]
 //! # pub trait Clone {
@@ -593,6 +604,7 @@
 //! code gets simplified to just this:
 //!
 //! ```
+//! # __export_abi_stable!();
 //! # use cglue::*;
 //! cglue_trait_group!(MaybeClone, { }, { Clone });
 //! # fn main() {}
@@ -601,6 +613,7 @@
 //! For traits not in the prelude, they can be accessed through their fully qualified `::ext` path:
 //!
 //! ```
+//! # __export_abi_stable!();
 //! # use cglue::*;
 //! cglue_trait_group!(MaybeAsRef<T>, { }, { ::ext::core::convert::AsRef<T> });
 //! # fn main() {}
@@ -666,6 +679,7 @@
 //! this in action:
 //!
 //! ```
+//! # __export_abi_stable!();
 //! use cglue::*;
 //! # // Previous definitions
 //! # #[cglue_trait]
@@ -755,6 +769,8 @@
 //!
 //! ```
 //! # #[cfg(gats_on_stable)]
+//! # cglue::__export_abi_stable!();
+//! # #[cfg(gats_on_stable)]
 //! # mod gats {
 //! use cglue::*;
 //! # // Previous definitions
@@ -762,8 +778,8 @@
 //! # pub trait InfoPrinter {
 //! #     fn print_info(&self);
 //! # }
-//! # struct Info {
-//! #     value: usize
+//! # pub struct Info {
+//! #     pub value: usize
 //! # }
 //! # impl InfoPrinter for Info {
 //! #     fn print_info(&self) {
@@ -784,7 +800,9 @@
 //!     }
 //! }
 //!
+//! # pub
 //! struct InfoStore {
+//! # pub
 //!     info: Info,
 //! }
 //!
@@ -795,8 +813,12 @@
 //!         &mut self.info
 //!     }
 //! }
+//! # }
 //!
+//! # #[cfg(gats_on_stable)]
 //! # fn main() {
+//! # use gats::*;
+//! # use cglue::*;
 //! let builder = InfoStore { info: Info { value: 50 } };
 //!
 //! let mut obj = trait_obj!(builder as LendingPrinter);
@@ -804,7 +826,6 @@
 //! let info_printer = obj.borrow_printer();
 //!
 //! info_printer.print_info();
-//! # }
 //! # }
 //! ```
 //!
@@ -818,6 +839,7 @@
 //! until all of the CGlue objects are dropped.
 //!
 //! ```
+//! # __export_abi_stable!();
 //! use cglue::prelude::v1::*;
 //!
 //! #[cglue_trait]
@@ -845,6 +867,7 @@
 //! object.
 //!
 //! ```
+//! # __export_abi_stable!();
 //! # use cglue::prelude::v1::*;
 //! # use std::sync::Arc;
 //! # #[cglue_trait]
@@ -996,6 +1019,26 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(not(feature = "std"), no_std)]
 extern crate no_std_compat as std;
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __export_abi_stable {
+    () => {
+        #[cfg(all(feature = "abi_stable10", not(feature = "_abi_stable11")))]
+        extern crate abi_stable10 as abi_stable;
+
+        #[cfg(feature = "_abi_stable11")]
+        extern crate _abi_stable11 as abi_stable;
+    };
+}
+
+__export_abi_stable!();
+
+#[cfg(feature = "abi_stable")]
+#[doc(hidden)]
+pub mod __sabi {
+    pub use ::abi_stable::*;
+}
 
 #[cfg(feature = "futures")]
 extern crate _futures as futures;

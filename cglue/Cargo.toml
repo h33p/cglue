@@ -16,10 +16,11 @@ cglue-macro = { version = "0.3", path = "../cglue-macro" }
 no-std-compat = { version = "0.4", features = ["alloc"] }
 serde = { version = "1", optional = true, default-features = false, features = ["derive", "alloc"] }
 try_default = { version = "= 1.0.0", optional = true }
-abi_stable = { version = "0.10", optional = true }
 log = { version = "0.4", optional = true }
 tarc = { version = "0.1", default-features = false }
 _futures = { package = "futures", version = "0.3", optional = true, default-features = false }
+abi_stable10 = { package = "abi_stable", version = "0.10", optional = true, default-features = false }
+_abi_stable11 = { package = "abi_stable", version = "0.11", optional = true, default-features = false, features = ["rust_latest_stable"] }
 
 [build-dependencies]
 rustc_version = "0.4"
@@ -37,6 +38,8 @@ layout_checks = ["cglue-macro/layout_checks", "abi_stable"]
 futures = ["_futures", "task", "cglue-macro/futures"]
 unwind_abi_default = ["cglue-macro/unwind_abi_default"]
 unwind_abi_ext = ["cglue-macro/unwind_abi_ext"]
+abi_stable11 = ["_abi_stable11", "cglue-macro/abi_stable11"]
+abi_stable = ["abi_stable10"]
 
 [package.metadata.docs.rs]
 features = ["std", "task", "futures"]

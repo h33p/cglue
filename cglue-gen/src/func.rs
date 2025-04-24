@@ -936,8 +936,9 @@ impl ParsedFunc {
 
         // ABI-Stable does not support C-unwind ABI, so hack around that.
         if cfg!(feature = "layout_checks") && self.unwind_safe {
-            let ty = quote!(for<#sig_life_declare> #unsafety extern "C" fn(#args #c_ret_params))
-                .to_string();
+            let ty = quote!(for<#sig_life_declare> #unsafety extern "C" fn(#args #c_ret_params));
+            #[cfg(not(feature = "abi_stable11"))]
+            let ty = ty.to_string();
             stream.extend(quote!(#[sabi(unsafe_change_type = #ty)]));
         }
 

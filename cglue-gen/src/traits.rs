@@ -865,7 +865,7 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
     };
 
     #[cfg(feature = "layout_checks")]
-    let derive_layouts = quote!(#[derive(::abi_stable::StableAbi)]);
+    let derive_layouts = quote!(#[derive(#crate_path::__sabi::StableAbi)]);
     #[cfg(not(feature = "layout_checks"))]
     let derive_layouts = quote!();
 
@@ -1122,16 +1122,16 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
 
     #[cfg(feature = "layout_checks")]
     let (opaque_vtbl_bounds, container_vtbl_bounds) = (
-        quote!(#vtbl_ident<'cglue_a, CGlueC::OpaqueTarget, #gen_use #assoc_use>: ::abi_stable::StableAbi,),
-        quote!(#vtbl_ident<'cglue_a, <Self as #trg_path::GetContainer>::ContType, #gen_use #assoc_use>: ::abi_stable::StableAbi,),
+        quote!(#vtbl_ident<'cglue_a, CGlueC::OpaqueTarget, #gen_use #assoc_use>: #crate_path::__sabi::StableAbi,),
+        quote!(#vtbl_ident<'cglue_a, <Self as #trg_path::GetContainer>::ContType, #gen_use #assoc_use>: #crate_path::__sabi::StableAbi,),
     );
     #[cfg(not(feature = "layout_checks"))]
     let (opaque_vtbl_bounds, container_vtbl_bounds) = (quote!(), quote!());
 
     #[cfg(feature = "layout_checks")]
     let (layout_checkable_bound, objcont_accessor_bound) = (
-        quote!(::abi_stable::StableAbi),
-        quote!(<CGlueO as #trg_path::GetContainer>::ContType: ::abi_stable::StableAbi,),
+        quote!(#crate_path::__sabi::StableAbi),
+        quote!(<CGlueO as #trg_path::GetContainer>::ContType: #crate_path::__sabi::StableAbi,),
     );
     #[cfg(not(feature = "layout_checks"))]
     let (layout_checkable_bound, objcont_accessor_bound) = (quote!(), quote!());
