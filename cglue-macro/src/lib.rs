@@ -455,3 +455,15 @@ pub fn custom_impl(_: TokenStream, input: TokenStream) -> TokenStream {
 pub fn vtbl_only(_: TokenStream, input: TokenStream) -> TokenStream {
     input
 }
+
+/// Make the resulting C function support C++ unwinding (overrides default).
+#[proc_macro_attribute]
+pub fn unwind_abi(_: TokenStream, input: TokenStream) -> TokenStream {
+    input
+}
+
+/// Make the resulting C function NOT support C++ unwinding (overrides default).
+#[proc_macro_attribute]
+pub fn no_unwind_abi(_: TokenStream, input: TokenStream) -> TokenStream {
+    input
+}

@@ -582,6 +582,24 @@ pub fn parse_trait(
         })
         .next();
 
+    fn unwind_abi(attrs: &[impl AsRef<str>]) -> Option<bool> {
+        if cfg!(__cglue_force_no_unwind_abi) || attrs.iter().any(|i| i.as_ref() == "no_unwind_abi")
+        {
+            return Some(false);
+        }
+        if attrs.iter().any(|i| i.as_ref() == "unwind_abi") {
+            return Some(true);
+        }
+        None
+    }
+
+    let global_unwind_abi = unwind_abi(
+        &tr.attrs
+            .iter()
+            .map(|a| a.path.to_token_stream().to_string())
+            .collect::<Vec<_>>(),
+    );
+
     // Parse all functions in the trait
     for item in &tr.items {
         match item {
@@ -706,6 +724,9 @@ pub fn parse_trait(
                     crate_path,
                     only_c_side,
                     custom_impl,
+                    unwind_abi(&attrs)
+                        .or(global_unwind_abi)
+                        .unwrap_or(cfg!(feature = "unwind_abi_default")),
                 ));
             }
             _ => {}

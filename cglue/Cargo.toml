@@ -35,6 +35,8 @@ unstable = ["cglue-macro/unstable", "try_default"]
 task = ["cglue-macro/task"]
 layout_checks = ["cglue-macro/layout_checks", "abi_stable"]
 futures = ["_futures", "task", "cglue-macro/futures"]
+unwind_abi_default = ["cglue-macro/unwind_abi_default"]
+unwind_abi_ext = ["cglue-macro/unwind_abi_ext"]
 
 [package.metadata.docs.rs]
 features = ["std", "task", "futures"]

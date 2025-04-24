@@ -503,6 +503,7 @@ pub struct ParsedFunc {
     trait_name: Ident,
     safe: bool,
     abi: FuncAbi,
+    unwind_safe: bool,
     receiver: FnArg,
     orig_args: Vec<FnArg>,
     args: Vec<TraitArgConv>,
@@ -584,6 +585,7 @@ impl ParsedFunc {
         crate_path: &TokenStream,
         only_c_side: bool,
         custom_impl: Option<CustomFuncImpl>,
+        unwind_safe: bool,
     ) -> Option<Self> {
         let name = sig.ident;
         let safe = sig.unsafety.is_none();
@@ -691,6 +693,7 @@ impl ParsedFunc {
             trait_name,
             safe,
             abi,
+            unwind_safe,
             receiver,
             orig_args,
             args,
@@ -895,6 +898,7 @@ impl ParsedFunc {
     pub fn vtbl_def(&self, stream: &mut TokenStream) {
         let name = &self.name;
         let unsafety = &self.get_safety();
+        let extern_abi = self.extern_abi();
         let args = self.vtbl_args();
         let ParsedReturnType {
             c_out,
@@ -927,8 +931,15 @@ impl ParsedFunc {
         let sig_life_declare = merge_lifetime_declarations(&sig_life_declare, &parse_quote!(#hrtb));
 
         let gen = quote! {
-            #name: for<#sig_life_declare> #unsafety extern "C" fn(#args #c_ret_params) #c_out,
+            #name: for<#sig_life_declare> #unsafety extern #extern_abi fn(#args #c_ret_params) #c_out,
         };
+
+        // ABI-Stable does not support C-unwind ABI, so hack around that.
+        if cfg!(feature = "layout_checks") && self.unwind_safe {
+            let ty = quote!(for<#sig_life_declare> #unsafety extern "C" fn(#args #c_ret_params))
+                .to_string();
+            stream.extend(quote!(#[sabi(unsafe_change_type = #ty)]));
+        }
 
         stream.extend(gen);
     }
@@ -937,6 +948,7 @@ impl ParsedFunc {
     pub fn vtbl_getter_def(&self, stream: &mut TokenStream) {
         let name = &self.name;
         let args = self.vtbl_args();
+        let extern_abi = self.extern_abi();
         let ParsedReturnType {
             c_out,
             c_cast_out,
@@ -974,7 +986,7 @@ impl ParsedFunc {
             ///
             /// Note that this function is wrapped into unsafe, because if already were is an
             /// opaque one, it would allow to invoke undefined behaviour.
-            pub fn #name(&self) -> for<#sig_life_declare> unsafe extern "C" fn(#args #c_ret_params) #c_out {
+            pub fn #name(&self) -> for<#sig_life_declare> unsafe extern #extern_abi fn(#args #c_ret_params) #c_out {
                 unsafe { ::core::mem::transmute(self.#name) }
             }
         };
@@ -998,7 +1010,7 @@ impl ParsedFunc {
                 ///
                 /// This ought to only be used when references to objects are being returned,
                 /// otherwise there is a risk of lifetime rule breakage.
-                unsafe fn #name2(&self) -> for<#lifetime_cast> #safety extern "C" fn(#args_cast #c_ret_params) #c_cast_out {
+                unsafe fn #name2(&self) -> for<#lifetime_cast> #safety extern #extern_abi fn(#args_cast #c_ret_params) #c_cast_out {
                     ::core::mem::transmute(self.#name)
                 }
             };
@@ -1028,6 +1040,7 @@ impl ParsedFunc {
 
         let name = &self.name;
         let args = self.vtbl_args();
+        let extern_abi = self.extern_abi();
         let ParsedReturnType {
             c_out,
             c_where_bounds,
@@ -1148,7 +1161,7 @@ impl ParsedFunc {
         let ctx_bound = super::traits::ctx_bound();
 
         let gen = quote! {
-            #safety extern "C" fn #fnname<#sig_life_declare CGlueC: #container_bound, CGlueCtx: #ctx_bound, #gen_declare #assoc_declare>(#args #c_ret_params) #c_out where #gen_where_bounds #c_where_bounds #cglue_c_into_inner CGlueC::ObjType: for<'cglue_b> #trname<#tmp_lifetime #gen_use #assoc_equality>, {
+            #safety extern #extern_abi fn #fnname<#sig_life_declare CGlueC: #container_bound, CGlueCtx: #ctx_bound, #gen_declare #assoc_declare>(#args #c_ret_params) #c_out where #gen_where_bounds #c_where_bounds #cglue_c_into_inner CGlueC::ObjType: for<'cglue_b> #trname<#tmp_lifetime #gen_use #assoc_equality>, {
                 #c_pre_call
                 let ret = #inner_impl;
                 #c_ret
@@ -1171,6 +1184,14 @@ impl ParsedFunc {
             quote!()
         } else {
             quote!(unsafe)
+        }
+    }
+
+    pub fn extern_abi(&self) -> TokenStream {
+        if self.unwind_safe {
+            quote!("C-unwind")
+        } else {
+            quote!("C")
         }
     }
 
@@ -1343,6 +1364,7 @@ impl ParsedFunc {
 #[derive(Debug, Eq, PartialEq)]
 enum FuncAbi {
     ReprC,
+    ReprCUnwind,
     Wrapped,
 }
 
@@ -1350,6 +1372,7 @@ impl FuncAbi {
     pub fn prefix(&self) -> TokenStream {
         match self {
             FuncAbi::ReprC => quote!(extern "C"),
+            FuncAbi::ReprCUnwind => quote!(extern "C-unwind"),
             FuncAbi::Wrapped => quote!(),
         }
     }
@@ -1365,6 +1388,10 @@ impl From<Option<Abi>> for FuncAbi {
         {
             if abi.value() == "C" {
                 return FuncAbi::ReprC;
+            }
+
+            if abi.value() == "C-unwind" {
+                return FuncAbi::ReprCUnwind;
             }
         }
 

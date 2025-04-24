@@ -92,11 +92,13 @@ jobs:
         run: cargo build --workspace --all-features --verbose
         env:
           RUSTC_BOOTSTRAP: try_default
+          RUSTFLAGS: ${{ matrix.toolchain != 'stable' && '--cfg __cglue_force_no_unwind_abi' || '' }}
 
       - name: Build examples
         run: cargo build --workspace --all-features --examples --verbose
         env:
           RUSTC_BOOTSTRAP: try_default
+          RUSTFLAGS: ${{ matrix.toolchain != 'stable' && '--cfg __cglue_force_no_unwind_abi' || '' }}
 
   build-cross-aarch64:
     runs-on: ubuntu-latest
@@ -134,6 +136,8 @@ jobs:
 
       - name: Run all tests
         run: cargo test --verbose -p cglue
+        env:
+          RUSTFLAGS: ${{ matrix.toolchain != 'stable' && '--cfg __cglue_force_no_unwind_abi' || '' }}
 
   test-all-features:
     runs-on: ${{ matrix.os }}
@@ -152,6 +156,7 @@ jobs:
         run: cargo test --workspace --all-features --verbose
         env:
           RUSTC_BOOTSTRAP: try_default
+          RUSTFLAGS: ${{ matrix.toolchain != 'stable' && '--cfg __cglue_force_no_unwind_abi' || '' }}
 
   lint:
     runs-on: ubuntu-latest
@@ -188,10 +193,13 @@ jobs:
           miri-rustabi-patcher ~/.rustup/toolchains/${{ matrix.toolchain }}-x86_64-unknown-linux-gnu/bin/miri
           mv ~/.rustup/toolchains/${{ matrix.toolchain }}-x86_64-unknown-linux-gnu/bin/miri.patched ~/.rustup/toolchains/${{ matrix.toolchain }}-x86_64-unknown-linux-gnu/bin/miri
           chmod +x ~/.rustup/toolchains/${{ matrix.toolchain }}-x86_64-unknown-linux-gnu/bin/miri
+      - name: Install locked xargo
+        run: |
+          cargo install xargo --locked --version 0.3.26
       - name: Run miri
         run: |
           cd cglue
-          MIRIFLAGS="-Zmiri-disable-stacked-borrows" cargo miri test --features rust_void
+          MIRIFLAGS="-Zmiri-disable-stacked-borrows" RUSTFLAGS="--cfg __cglue_force_no_unwind_abi" cargo miri test --features rust_void
 
   c-examples:
     runs-on: ubuntu-latest
@@ -215,6 +223,8 @@ jobs:
           platform: x64
       - name: Build the plugins
         run: cargo build --release -p plugin-api -p plugin-lib -p cglue-bindgen
+        env:
+          RUSTFLAGS: ${{ matrix.toolchain != 'stable' && '--cfg __cglue_force_no_unwind_abi' || '' }}
       - name: Build C++ plugin library
         run: |
           cd examples/cpp-plugin-lib/

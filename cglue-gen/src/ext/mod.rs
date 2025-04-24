@@ -180,9 +180,15 @@ pub fn impl_ext_forward() -> TokenStream {
 
 /// Implement the external trait store.
 pub fn impl_store() -> TokenStream {
+    let unwind_abi = if cfg!(feature = "unwind_abi_ext") {
+        quote!(#[unwind_abi])
+    } else {
+        quote!()
+    };
+
     impl_inner(
         |subpath, name| quote!(pub use #subpath #name;),
-        |_, _| quote!(#[cglue_trait_ext]),
+        |_, _| quote!(#[cglue_trait_ext] #unwind_abi),
         |exports, out| {
             // Re-export everything
             for (k, v) in exports.into_iter() {

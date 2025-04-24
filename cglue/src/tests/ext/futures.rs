@@ -38,6 +38,12 @@ fn use_sink() {
     });
 
     // The logic of the sink should force a panic afterwards
+    // However, we cannot test this post 1.81 without explicitly opting in C-unwind ABI.
+    #[cfg(any(
+        feature = "unwind_abi_ext",
+        feature = "unwind_abi_default",
+        not(c_unwind_on_stable)
+    ))]
     assert!(
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
             pollster::block_on(obj.send(0))
