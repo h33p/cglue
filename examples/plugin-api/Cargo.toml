@@ -9,5 +9,9 @@ crate-type = ["lib", "cdylib", "staticlib"]
 
 [dependencies]
 cglue = { path = "../../cglue/", features = ["layout_checks"] }
-abi_stable = "0.10"
 libloading = "0.7"
+abi_stable10 = { package = "abi_stable", version = "0.10", default-features = false }
+_abi_stable11 = { package = "abi_stable", version = "0.11", optional = true, default-features = false }
+
+[features]
+abi_stable11 = ["_abi_stable11", "cglue/abi_stable11"]

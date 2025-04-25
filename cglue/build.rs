@@ -10,7 +10,7 @@ fn main() {
     let version = version().unwrap();
 
     for (v, c) in &cfgs {
-        println!("cargo::rustc-check-cfg=cfg({})", c);
+        println!("cargo:rustc-check-cfg=cfg({})", c);
         if version >= Version::parse(v).unwrap() {
             println!("cargo:rustc-cfg={}", c);
         }
@@ -19,6 +19,6 @@ fn main() {
     let test_cfgs = ["__cglue_force_no_unwind_abi"];
 
     for c in &test_cfgs {
-        println!("cargo::rustc-check-cfg=cfg({})", c);
+        println!("cargo:rustc-check-cfg=cfg({})", c);
     }
 }

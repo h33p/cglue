@@ -146,10 +146,10 @@ struct TraitArgConv {
     to_c_args: TokenStream,
     /// Arguments inside the call to the C vtable function.
     call_c_args: TokenStream,
-    /// C function signature.
-    c_args: TokenStream,
-    /// C function signature, where 'cglue_a lifetimes are replaced with 'cglue_b.
-    c_cast_args: TokenStream,
+    /// C function signature (in getters).
+    c_impl_args: TokenStream,
+    /// C function signature (in getters), where 'cglue_a lifetimes are replaced with 'cglue_b.
+    c_impl_args_cast: TokenStream,
     /// Arguments inside the call to the trait function.
     to_trait_arg: TokenStream,
 }
@@ -263,7 +263,7 @@ impl TraitArgConv {
         inject_lifetime_cast: Option<&Lifetime>,
         lifetime_map: &BTreeMap<Lifetime, Lifetime>,
     ) -> Self {
-        let (to_c_args, call_c_args, c_args, c_cast_args, to_trait_arg) = match arg {
+        let (to_c_args, call_c_args, c_impl_args, c_impl_args_cast, to_trait_arg) = match arg {
             FnArg::Receiver(r) => {
                 let lifetime = inject_lifetime.or_else(|| r.lifetime());
                 let lifetime_cast = inject_lifetime_cast.or_else(|| r.lifetime());
@@ -278,10 +278,11 @@ impl TraitArgConv {
                             // separately
                             // TODO 2: figure out how to test this.
                             let __ctx = #crate_path::trait_group::CGlueObjBase::cobj_base_ref(&cont).1.clone();
+                            let cont = #crate_path::trait_group::OpaqueHelper::new(cont);
                         },
                         quote!(cont,),
-                        quote!(cont: CGlueC,),
-                        quote!(cont: CGlueC,),
+                        quote!(cont: #crate_path::trait_group::OpaqueHelper<CGlueC>,),
+                        quote!(cont: #crate_path::trait_group::OpaqueHelper<CGlueC>,),
                         quote!(),
                     )
                 } else if r.mutability.is_some() {
@@ -491,8 +492,8 @@ impl TraitArgConv {
         Self {
             to_c_args,
             call_c_args,
-            c_args,
-            c_cast_args,
+            c_impl_args,
+            c_impl_args_cast,
             to_trait_arg,
         }
     }
@@ -797,21 +798,21 @@ impl ParsedFunc {
         }
     }
 
-    pub fn vtbl_args(&self) -> TokenStream {
+    pub fn c_impl_args(&self) -> TokenStream {
         let mut ret = TokenStream::new();
 
         for arg in &self.args {
-            arg.c_args.to_tokens(&mut ret);
+            arg.c_impl_args.to_tokens(&mut ret);
         }
 
         ret
     }
 
-    pub fn vtbl_args_cast(&self) -> TokenStream {
+    pub fn c_impl_args_cast(&self) -> TokenStream {
         let mut ret = TokenStream::new();
 
         for arg in &self.args {
-            arg.c_cast_args.to_tokens(&mut ret);
+            arg.c_impl_args_cast.to_tokens(&mut ret);
         }
 
         ret
@@ -899,7 +900,7 @@ impl ParsedFunc {
         let name = &self.name;
         let unsafety = &self.get_safety();
         let extern_abi = self.extern_abi();
-        let args = self.vtbl_args();
+        let args = self.c_impl_args();
         let ParsedReturnType {
             c_out,
             c_cast_out,
@@ -923,7 +924,7 @@ impl ParsedFunc {
             lifetime_cast,
             *unbounded_hrtb,
         ) {
-            (_, Some(lifetime), false) => (quote!(#lifetime), self.vtbl_args_cast(), c_cast_out),
+            (_, Some(lifetime), false) => (quote!(#lifetime), self.c_impl_args_cast(), c_cast_out),
             (Some(lifetime), _, _) => (quote!(#lifetime), args, c_out),
             _ => (quote!(), args, c_out),
         };
@@ -948,7 +949,7 @@ impl ParsedFunc {
     /// Create a VTable definition for this function
     pub fn vtbl_getter_def(&self, stream: &mut TokenStream) {
         let name = &self.name;
-        let args = self.vtbl_args();
+        let args = self.c_impl_args();
         let extern_abi = self.extern_abi();
         let ParsedReturnType {
             c_out,
@@ -973,7 +974,7 @@ impl ParsedFunc {
             lifetime_cast,
             *unbounded_hrtb,
         ) {
-            (_, Some(lifetime), false) => (quote!(#lifetime), self.vtbl_args_cast(), c_cast_out),
+            (_, Some(lifetime), false) => (quote!(#lifetime), self.c_impl_args_cast(), c_cast_out),
             (Some(lifetime), _, _) => (quote!(#lifetime), args, c_out),
             _ => (quote!(), args, c_out),
         };
@@ -981,6 +982,9 @@ impl ParsedFunc {
         let sig_life_declare = merge_lifetime_declarations(&sig_life_declare, &parse_quote!(#hrtb));
 
         let doc_text = format!(" Getter for {}.", name);
+
+        let name2 = format_ident!("{}_cast", name);
+        let safety = self.get_safety();
 
         let gen = quote! {
             #[doc = #doc_text]
@@ -990,16 +994,22 @@ impl ParsedFunc {
             pub fn #name(&self) -> for<#sig_life_declare> unsafe extern #extern_abi fn(#args #c_ret_params) #c_out {
                 unsafe { ::core::mem::transmute(self.#name) }
             }
+
+            #[doc = #doc_text]
+            ///
+            /// Note that this function is wrapped into unsafe, because if already were is an
+            /// opaque one, it would allow to invoke undefined behaviour.
+            unsafe fn #name2(&self) -> for<#sig_life_declare> #safety extern #extern_abi fn(#args #c_ret_params) #c_out {
+                unsafe { ::core::mem::transmute(self.#name) }
+            }
         };
 
         stream.extend(gen);
 
         if lifetime_cast.is_some() && *unbounded_hrtb {
-            let name2 = format_ident!("{}_lifetimed", name);
+            let name2 = format_ident!("{}_cast_lifetimed", name);
 
-            let safety = self.get_safety();
-
-            let args_cast = self.vtbl_args_cast();
+            let args_cast = self.c_impl_args_cast();
 
             let gen = quote! {
                 #[doc = #doc_text]
@@ -1040,7 +1050,7 @@ impl ParsedFunc {
         }
 
         let name = &self.name;
-        let args = self.vtbl_args();
+        let args = self.c_impl_args();
         let extern_abi = self.extern_abi();
         let ParsedReturnType {
             c_out,
@@ -1109,6 +1119,7 @@ impl ParsedFunc {
 
             (
                 quote! {
+                    let cont = cont.take_raw();
                     let (this, cglue_ctx) = cont.cobj_base_owned();
                     let this = unsafe { #trg_path::IntoInner::into_inner(this) };
                     #c_pre_call
@@ -1221,10 +1232,11 @@ impl ParsedFunc {
             } = &self.sig_generics;
 
             let get_vfunc = if lifetime_cast.is_some() && *unbounded_hrtb {
-                let name_lifetimed = format_ident!("{}_lifetimed", name);
+                let name_lifetimed = format_ident!("{}_cast_lifetimed", name);
                 quote!(unsafe { self.get_vtbl().#name_lifetimed() })
             } else {
-                quote!(self.get_vtbl().#name)
+                let name_cast = format_ident!("{}_cast", name);
+                quote!(unsafe { self.get_vtbl().#name_cast() })
             };
 
             let custom_precall_impl = self.custom_conv.pre_call_impl.to_token_stream();

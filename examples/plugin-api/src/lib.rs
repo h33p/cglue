@@ -2,6 +2,12 @@
 //!
 //! This crate is shared by plugins and users.
 
+#[cfg(not(feature = "abi_stable11"))]
+extern crate abi_stable10 as abi_stable;
+
+#[cfg(feature = "abi_stable11")]
+extern crate _abi_stable11 as abi_stable;
+
 pub use abi_stable::type_layout::TypeLayout;
 use abi_stable::StableAbi;
 use cglue::prelude::v1::{trait_group::compare_layouts, *};

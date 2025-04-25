@@ -13,7 +13,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
-        toolchain: ["1.45.0", "stable"]
+        toolchain: ["1.56.0", "stable"]
         include:
           - os: macos-14
             toolchain: "stable"
@@ -58,7 +58,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
-        toolchain: ["1.46.0", "stable"]
+        toolchain: ["1.56.0", "stable"]
         include:
           - os: macos-14
             toolchain: "stable"
@@ -80,7 +80,7 @@ jobs:
     strategy:
       matrix:
         os: [macos-14, ubuntu-latest, windows-latest]
-        toolchain: ["1.57.0", "stable", "nightly-2021-11-05"]
+        toolchain: ["1.64.0", "stable", "nightly-2022-08-08"]
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
@@ -104,7 +104,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        toolchain: ["1.45.0", "stable"]
+        toolchain: ["1.56.0", "stable"]
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
@@ -123,7 +123,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
-        toolchain: ["1.45.0", "stable"]
+        toolchain: ["1.56.0", "stable"]
         include:
           - os: macos-14
             toolchain: "stable"
@@ -144,7 +144,7 @@ jobs:
     strategy:
       matrix:
         os: [macos-14, ubuntu-latest, windows-latest]
-        toolchain: ["1.57.0", "stable", "nightly-2021-11-05"]
+        toolchain: ["1.64.0", "stable", "nightly-2022-08-08"]
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
@@ -175,11 +175,11 @@ jobs:
         env:
           RUSTC_BOOTSTRAP: try_default
 
-  patched-miri:
+  miri:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        toolchain: ["nightly-2021-11-05"]
+        toolchain: ["nightly-2024-11-22"]
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
@@ -187,25 +187,19 @@ jobs:
           toolchain: ${{ matrix.toolchain }}
           override: true
       - run: rustup component add miri
-      - name: Patch out a part of miri to allow type erasure
-        run: |
-          cargo install --git https://github.com/h33p/miri-rustabi-patcher.git
-          miri-rustabi-patcher ~/.rustup/toolchains/${{ matrix.toolchain }}-x86_64-unknown-linux-gnu/bin/miri
-          mv ~/.rustup/toolchains/${{ matrix.toolchain }}-x86_64-unknown-linux-gnu/bin/miri.patched ~/.rustup/toolchains/${{ matrix.toolchain }}-x86_64-unknown-linux-gnu/bin/miri
-          chmod +x ~/.rustup/toolchains/${{ matrix.toolchain }}-x86_64-unknown-linux-gnu/bin/miri
       - name: Install locked xargo
         run: |
           cargo install xargo --locked --version 0.3.26
       - name: Run miri
         run: |
           cd cglue
-          MIRIFLAGS="-Zmiri-disable-stacked-borrows" RUSTFLAGS="--cfg __cglue_force_no_unwind_abi" cargo miri test --features rust_void
+          MIRIFLAGS="-Zmiri-symbolic-alignment-check -Zmiri-retag-fields=all -Zmiri-symbolic-alignment-check -Zmiri-strict-provenance -Zmiri-tree-borrows" RUSTFLAGS="--cfg __cglue_force_no_unwind_abi" cargo miri test --features rust_void
 
   c-examples:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        toolchain: ["1.46.0", "stable"]
+        toolchain: ["1.56.0", "stable"]
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1

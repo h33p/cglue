@@ -76,8 +76,16 @@ pub fn parse_header(header: &str, config: &Config) -> Result<String> {
 
     // PROCESSING:
 
+    // Remove OpaqueHelper definition
+    let oht_regex = opaque_helper_typedef_regex()?;
+    let header = oht_regex.replace_all(&header, "");
+
+    // Remap all OpaqueHelper usage
+    let ohu_regex = opaque_helper_usage_regex()?;
+    let header = ohu_regex.replace_all(&header, "struct ");
+
     // Remove zsized ret tmps
-    let header = zsr_regex.replace_all(header, "");
+    let header = zsr_regex.replace_all(&header, "");
 
     let gr_regex = group_ret_tmp_regex(&zst_rets)?;
     let header = gr_regex.replace_all(&header, "");
@@ -802,6 +810,14 @@ fn callback_regex() -> Result<Regex> {
         r"typedef struct Callback_c_void__(?P<typename>[^\s]+) \{[^}]*\} Callback_c_void__[^\s]+;",
     )
     .map_err(Into::into)
+}
+
+fn opaque_helper_typedef_regex() -> Result<Regex> {
+    Regex::new("(\n)?typedef OpaqueTarget OpaqueHelper_.*;\n").map_err(Into::into)
+}
+
+fn opaque_helper_usage_regex() -> Result<Regex> {
+    Regex::new("OpaqueHelper_").map_err(Into::into)
 }
 
 fn zero_sized_ret_regex() -> Result<Regex> {

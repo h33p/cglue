@@ -201,7 +201,7 @@ impl Function {
 
         if wrap_in_container {
             for v in vtbls {
-                copied_vtbls.push_str(&format!("\n        __ret.{} = {}{};", v, this_access, v));
+                copied_vtbls.push_str(&format!("\n    __ret.{} = {}{};", v, this_access, v));
             }
         }
 

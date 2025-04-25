@@ -1,7 +1,7 @@
 //!
 //! # CGlue
 //!
-//! [![Crates.io]][crates] [![API Docs]][docs] [![Build and test]][workflows] [![MIT licensed]][license] [![Rustc 1.45]][rust]
+//! [![Crates.io]][crates] [![API Docs]][docs] [![Build and test]][workflows] [![MIT licensed]][license] [![Rustc 1.56]][rust]
 //!
 //! [Crates.io]: https://img.shields.io/crates/v/cglue.svg
 //! [crates]: https://crates.io/crates/cglue
@@ -11,8 +11,8 @@
 //! [workflows]: https://github.com/h33p/cglue/actions/workflows/build.yml
 //! [MIT licensed]: https://img.shields.io/badge/license-MIT-blue.svg
 //! [license]: https://github.com/h33p/cglue/blob/main/LICENSE
-//! [Rustc 1.45]: https://img.shields.io/badge/rustc-1.45+-lightgray.svg
-//! [rust]: https://blog.rust-lang.org/2020/07/16/Rust-1.45.0.html
+//! [Rustc 1.56]: https://img.shields.io/badge/rustc-1.56+-lightgray.svg
+//! [rust]: https://blog.rust-lang.org/2020/07/16/Rust-1.56.0.html
 //!
 //! If all code is glued together, our glue is the safest on the market.
 //!
@@ -521,7 +521,7 @@
 //! # #[cfg(not(feature = "unstable"))]
 //! impl<
 //!         'cglue_a,
-//!         CGlueInst: ::core::ops::Deref<Target = GA<T>>,
+//!         CGlueInst: cglue::trait_group::InstanceBounds<InstanceObjType = GA<T>>,
 //!         CGlueCtx: cglue::trait_group::ContextBounds,
 //!         T: Eq,
 //!     > GenGroupVtableFiller<'cglue_a, CGlueInst, CGlueCtx, T> for GA<T>
@@ -541,7 +541,7 @@
 //! # #[cfg(not(feature = "unstable"))]
 //! impl<
 //!         'cglue_a,
-//!         CGlueInst: ::core::ops::Deref<Target = GA<u64>>,
+//!         CGlueInst: cglue::trait_group::InstanceBounds<InstanceObjType = GA<u64>>,
 //!         CGlueCtx: cglue::trait_group::ContextBounds,
 //!     > GenGroupVtableFiller<'cglue_a, CGlueInst, CGlueCtx, u64> for GA<u64>
 //! {
@@ -815,8 +815,9 @@
 //! }
 //! # }
 //!
-//! # #[cfg(gats_on_stable)]
 //! # fn main() {
+//! # #[cfg(gats_on_stable)]
+//! # {
 //! # use gats::*;
 //! # use cglue::*;
 //! let builder = InfoStore { info: Info { value: 50 } };
@@ -826,6 +827,7 @@
 //! let info_printer = obj.borrow_printer();
 //!
 //! info_printer.print_info();
+//! # }
 //! # }
 //! ```
 //!

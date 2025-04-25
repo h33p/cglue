@@ -341,15 +341,21 @@ pub fn process_item(
                                 )
                             };
 
-                            let type_bounds = quote! {
+                            let mut type_bounds = quote! {
                                 for<#hrtb_lifetime> #ty_ref: Into<#from_new_ty>,
                                 for<#hrtb_lifetime> #from_new_ty: #crate_path::trait_group::Opaquable<OpaqueTarget = #new_ty_hrtb>,
                             };
 
-                            let type_bounds_simple = quote! {
+                            let mut type_bounds_simple = quote! {
                                 #ty_ref_simple: Into<#from_new_ty_simple>,
                                 #from_new_ty_simple: #crate_path::trait_group::Opaquable<OpaqueTarget = #new_ty_simple>,
                             };
+
+                            if ["wrap_with_group", "wrap_with_obj"].contains(&x) {
+                                type_bounds.extend(quote!(for<#hrtb_lifetime> #from_new_ty_ref #cglue_f_ty_def: Send,));
+                                type_bounds_simple.extend(quote!(for<#hrtb_lifetime> #from_new_ty_simple_ref #cglue_f_ty_simple_ident: Send,));
+                            }
+
                             (Some(type_bounds), Some(type_bounds_simple))
                         } else if lifetime_bound == Some(&static_lifetime) {
                             (
@@ -550,15 +556,19 @@ pub fn parse_trait(
 
     types.insert(
         Some(AssocType::from(format_ident!("Self"))),
+        // TODO: do not expose OpaqueHelper in the non-shadow vtable
+        // Need to rework return type wrapping...
         WrappedType {
-            ty: parse2(quote!(CGlueC)).unwrap(),
+            ty: parse2(quote!(#crate_path::trait_group::OpaqueHelper<CGlueC>)).unwrap(),
             // TODO: should we forward ty in here??
             ty_ret_tmp: None,
             ty_static: None,
             return_conv: Some(
                 parse2(quote!(|ret| {
                     use #crate_path::from2::From2;
-                    CGlueC::from2((ret, cglue_ctx))
+                    #crate_path::trait_group::OpaqueHelper::new(
+                        CGlueC::from2((ret, cglue_ctx))
+                    )
                 }))
                 .expect("Internal closure parsing fail"),
             ),
@@ -566,7 +576,7 @@ pub fn parse_trait(
             lifetime_type_bound: None,
             other_bounds: Some(quote!((CGlueC::ObjType, CGlueCtx): Into<CGlueC>,)),
             other_bounds_simple: Some(quote!((CGlueC::ObjType, CGlueCtx): Into<CGlueC>,)),
-            impl_return_conv: Some(quote!(self.build_with_ccont(ret))),
+            impl_return_conv: Some(quote!(self.build_with_ccont(ret.take_raw()))),
             inject_ret_tmp: false,
             unbounded_hrtb: true,
         },
@@ -1395,7 +1405,7 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
 
             impl<
                 'cglue_a,
-                CGlueT: ::core::ops::Deref<Target = CGlueF>,
+                CGlueT: #trg_path::InstanceBounds<InstanceObjType = CGlueF>,
                 CGlueF,
                 CGlueCtx: #ctx_bound,
                 CGlueRetTmp,
@@ -1422,7 +1432,7 @@ pub fn gen_trait(mut tr: ItemTrait, ext_name: Option<&Ident>) -> TokenStream {
 
             impl<
                 'cglue_a,
-                CGlueT: ::core::ops::Deref<Target = CGlueF>,
+                CGlueT: #trg_path::InstanceBounds<InstanceObjType = CGlueF>,
                 CGlueF,
                 CGlueCtx: #ctx_bound,
                 CGlueRetTmp,

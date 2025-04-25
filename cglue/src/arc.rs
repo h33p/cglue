@@ -1,6 +1,7 @@
 //! # FFI-safe Arc.
 use crate::trait_group::c_void;
 use crate::trait_group::Opaquable;
+use core::ptr::NonNull;
 use std::sync::Arc;
 
 unsafe impl<T: Sync + Send> Send for CArc<T> {}
@@ -12,14 +13,32 @@ unsafe impl<T: Sync + Send> Sync for CArc<T> {}
 #[repr(C)]
 #[cfg_attr(feature = "abi_stable", derive(::abi_stable::StableAbi))]
 pub struct CArc<T: Sized + 'static> {
-    instance: Option<&'static T>,
-    clone_fn: Option<unsafe extern "C" fn(Option<&'static T>) -> Option<&'static T>>,
-    drop_fn: Option<unsafe extern "C" fn(Option<&T>)>,
+    // TODO: remove these remaps in 0.4
+    #[cfg_attr(
+        all(feature = "abi_stable10", not(feature = "abi_stable11")),
+        sabi(unsafe_change_type = "Option<&'static T>")
+    )]
+    #[cfg_attr(feature = "abi_stable11", sabi(unsafe_change_type = Option<&'static T>))]
+    instance: *const T,
+    #[cfg_attr(
+        all(feature = "abi_stable10", not(feature = "abi_stable11")),
+        sabi(
+            unsafe_change_type = "Option<unsafe extern \"C\" fn (Option<&'static T>) -> Option<&'static T>>"
+        )
+    )]
+    #[cfg_attr(feature = "abi_stable11", sabi(unsafe_change_type = Option<unsafe extern "C" fn (Option<&'static T>) -> Option<&'static T>>))]
+    clone_fn: Option<unsafe extern "C" fn(*const T) -> *const T>,
+    #[cfg_attr(
+        all(feature = "abi_stable10", not(feature = "abi_stable11")),
+        sabi(unsafe_change_type = "Option<unsafe extern \"C\" fn (Option<&T>)>")
+    )]
+    #[cfg_attr(feature = "abi_stable11", sabi(unsafe_change_type = Option<unsafe extern "C" fn (Option<&T>)>))]
+    drop_fn: Option<unsafe extern "C" fn(*const T)>,
 }
 
 impl<T: Sized + 'static> AsRef<Option<&'static T>> for CArc<T> {
     fn as_ref(&self) -> &Option<&'static T> {
-        &self.instance
+        unsafe { core::mem::transmute(&self.instance) }
     }
 }
 
@@ -59,7 +78,7 @@ impl<T> CArc<T> {
     /// ```
     pub fn take(&mut self) -> CArc<T> {
         Self {
-            instance: self.instance.take(),
+            instance: core::mem::replace(&mut self.instance, core::ptr::null()),
             clone_fn: self.clone_fn.take(),
             drop_fn: self.drop_fn.take(),
         }
@@ -88,13 +107,17 @@ impl<T> CArc<T> {
 impl<T> From<Option<CArcSome<T>>> for CArc<T> {
     fn from(opt: Option<CArcSome<T>>) -> Self {
         match opt {
-            Some(mut arc) => Self {
-                instance: Some(arc.instance),
-                clone_fn: Some(arc.clone_fn),
-                drop_fn: arc.drop_fn.take(),
-            },
+            Some(mut arc) => {
+                let ret = Self {
+                    instance: arc.instance.as_ptr(),
+                    clone_fn: Some(arc.clone_fn),
+                    drop_fn: arc.drop_fn.take(),
+                };
+                core::mem::forget(arc);
+                ret
+            }
             None => Self {
-                instance: None,
+                instance: core::ptr::null(),
                 clone_fn: None,
                 drop_fn: None,
             },
@@ -111,7 +134,7 @@ impl<T> From<T> for CArc<T> {
 impl<T> From<Arc<T>> for CArc<T> {
     fn from(arc: Arc<T>) -> Self {
         Self {
-            instance: unsafe { Arc::into_raw(arc).as_ref() },
+            instance: Arc::into_raw(arc),
             clone_fn: Some(c_clone),
             drop_fn: Some(c_drop),
         }
@@ -129,7 +152,7 @@ impl<T> From<Option<Arc<T>>> for CArc<T> {
 
 impl<T> From<&mut CArc<T>> for Option<&mut CArcSome<T>> {
     fn from(copt: &mut CArc<T>) -> Self {
-        if copt.instance.is_none() {
+        if copt.instance.is_null() {
             None
         } else {
             unsafe { (copt as *mut CArc<T>).cast::<CArcSome<T>>().as_mut() }
@@ -139,7 +162,7 @@ impl<T> From<&mut CArc<T>> for Option<&mut CArcSome<T>> {
 
 impl<T> From<&CArc<T>> for Option<&CArcSome<T>> {
     fn from(copt: &CArc<T>) -> Self {
-        if copt.instance.is_none() {
+        if copt.instance.is_null() {
             None
         } else {
             unsafe { (copt as *const CArc<T>).cast::<CArcSome<T>>().as_ref() }
@@ -148,20 +171,21 @@ impl<T> From<&CArc<T>> for Option<&CArcSome<T>> {
 }
 
 impl<T> From<CArc<T>> for Option<CArcSome<T>> {
-    fn from(mut copt: CArc<T>) -> Self {
-        let instance = copt.instance.take()?;
-        match copt.take() {
-            CArc {
+    fn from(copt: CArc<T>) -> Self {
+        let ret = match &copt {
+            &CArc {
+                instance,
                 clone_fn: Some(clone_fn),
                 drop_fn,
-                ..
             } => Some(CArcSome {
-                instance,
+                instance: NonNull::new(instance as _)?,
                 clone_fn,
                 drop_fn,
             }),
             _ => None,
-        }
+        };
+        core::mem::forget(copt);
+        ret
     }
 }
 
@@ -172,29 +196,27 @@ unsafe impl<T> Opaquable for CArc<T> {
 impl<T> Default for CArc<T> {
     fn default() -> Self {
         Self {
-            instance: None,
+            instance: core::ptr::null(),
             clone_fn: None,
             drop_fn: None,
         }
     }
 }
 
-unsafe extern "C" fn c_clone<T: Sized + 'static>(
-    ptr_to_arc: Option<&'static T>,
-) -> Option<&'static T> {
-    if let Some(p) = ptr_to_arc {
-        let arc = Arc::from_raw(p);
+unsafe extern "C" fn c_clone<T: Sized + 'static>(ptr_to_arc: *const T) -> *const T {
+    if !ptr_to_arc.is_null() {
+        let arc = Arc::from_raw(ptr_to_arc);
         let cloned_arc = arc.clone();
         let _ = Arc::into_raw(arc);
-        Arc::into_raw(cloned_arc).as_ref()
+        Arc::into_raw(cloned_arc)
     } else {
-        None
+        core::ptr::null()
     }
 }
 
-unsafe extern "C" fn c_drop<T: Sized + 'static>(ptr_to_arc: Option<&T>) {
-    if let Some(p) = ptr_to_arc {
-        let _ = Arc::from_raw(p);
+unsafe extern "C" fn c_drop<T: Sized + 'static>(ptr_to_arc: *const T) {
+    if !ptr_to_arc.is_null() {
+        let _ = Arc::from_raw(ptr_to_arc);
     }
 }
 
@@ -210,9 +232,27 @@ const _: [(); std::mem::size_of::<CArcSome<u128>>()] = [(); std::mem::size_of::<
 #[repr(C)]
 #[cfg_attr(feature = "abi_stable", derive(::abi_stable::StableAbi))]
 pub struct CArcSome<T: Sized + 'static> {
-    instance: &'static T,
-    clone_fn: unsafe extern "C" fn(Option<&'static T>) -> Option<&'static T>,
-    drop_fn: Option<unsafe extern "C" fn(Option<&T>)>,
+    // TODO: remove these remaps in 0.4
+    #[cfg_attr(
+        all(feature = "abi_stable10", not(feature = "abi_stable11")),
+        sabi(unsafe_change_type = "&'static T")
+    )]
+    #[cfg_attr(feature = "abi_stable11", sabi(unsafe_change_type = &'static T))]
+    instance: core::ptr::NonNull<T>,
+    #[cfg_attr(
+        all(feature = "abi_stable10", not(feature = "abi_stable11")),
+        sabi(
+            unsafe_change_type = "unsafe extern \"C\" fn (Option<&'static T>) -> Option<&'static T>"
+        )
+    )]
+    #[cfg_attr(feature = "abi_stable11", sabi(unsafe_change_type = unsafe extern "C" fn (Option<&'static T>) -> Option<&'static T>))]
+    clone_fn: unsafe extern "C" fn(*const T) -> *const T,
+    #[cfg_attr(
+        all(feature = "abi_stable10", not(feature = "abi_stable11")),
+        sabi(unsafe_change_type = "Option<unsafe extern \"C\" fn (Option<&T>)>")
+    )]
+    #[cfg_attr(feature = "abi_stable11", sabi(unsafe_change_type = Option<unsafe extern "C" fn (Option<&T>)>))]
+    drop_fn: Option<unsafe extern "C" fn(*const T)>,
 }
 
 unsafe impl<T: Sync + Send> Send for CArcSome<T> {}
@@ -243,7 +283,7 @@ impl<T> CArcSome<T> {
     /// This function is only safe when the underlying arc was created in the same binary/library.
     /// If a third-party arc is used, the behavior is undefined.
     pub unsafe fn into_arc(self) -> Arc<T> {
-        let ptr = self.instance as *const _;
+        let ptr = self.instance.as_ptr();
         std::mem::forget(self);
         Arc::from_raw(ptr)
     }
@@ -258,7 +298,8 @@ impl<T> From<T> for CArcSome<T> {
 impl<T> From<Arc<T>> for CArcSome<T> {
     fn from(arc: Arc<T>) -> Self {
         Self {
-            instance: unsafe { Arc::into_raw(arc).as_ref().unwrap() },
+            // TODO: use new_unchecked?
+            instance: NonNull::new(Arc::into_raw(arc) as _).unwrap(),
             clone_fn: c_clone,
             drop_fn: Some(c_drop),
         }
@@ -268,7 +309,9 @@ impl<T> From<Arc<T>> for CArcSome<T> {
 impl<T> Clone for CArcSome<T> {
     fn clone(&self) -> Self {
         Self {
-            instance: unsafe { (self.clone_fn)(Some(self.instance)).unwrap() },
+            instance: unsafe {
+                NonNull::new((self.clone_fn)(self.instance.as_ptr()) as _).unwrap()
+            },
             ..*self
         }
     }
@@ -277,14 +320,14 @@ impl<T> Clone for CArcSome<T> {
 impl<T> Drop for CArcSome<T> {
     fn drop(&mut self) {
         if let Some(drop_fn) = self.drop_fn {
-            unsafe { drop_fn(Some(self.instance)) }
+            unsafe { drop_fn(self.instance.as_ptr()) }
         }
     }
 }
 
 impl<T> AsRef<T> for CArcSome<T> {
     fn as_ref(&self) -> &T {
-        self.instance
+        unsafe { self.instance.as_ref() }
     }
 }
 
@@ -292,7 +335,7 @@ impl<T> core::ops::Deref for CArcSome<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        self.instance
+        unsafe { self.instance.as_ref() }
     }
 }
 

@@ -9,10 +9,10 @@ use abi_stable::{abi_stability::check_layout_compatibility, type_layout::TypeLay
 use core::mem::ManuallyDrop;
 use core::ops::{Deref, DerefMut};
 use core::pin::Pin;
-#[cfg(feature = "rust_void")]
+#[cfg(any(feature = "rust_void", miri))]
 #[allow(non_camel_case_types)]
 pub type c_void = ();
-#[cfg(not(feature = "rust_void"))]
+#[cfg(not(any(feature = "rust_void", miri)))]
 #[allow(non_camel_case_types)]
 #[repr(transparent)]
 #[derive(Debug)]
@@ -54,6 +54,49 @@ pub struct CGlueObjContainer<T, C, R> {
     ret_tmp: R,
 }
 
+// This gets cleaned up in post by cglue_bindgen
+#[repr(transparent)]
+#[cfg_attr(feature = "abi_stable", derive(::abi_stable::StableAbi))]
+pub struct OpaqueHelper<T: Opaquable>(
+    #[cfg_attr(
+        all(feature = "abi_stable10", not(feature = "abi_stable11")),
+        sabi(unsafe_change_type = "T")
+    )]
+    #[cfg_attr(feature = "abi_stable11", sabi(unsafe_change_type = T))]
+    T::OpaqueTarget,
+);
+
+impl<T: Opaquable> OpaqueHelper<T> {
+    pub fn new(v: T) -> Self {
+        // Implementors should ensure the same size.
+        debug_assert_eq!(
+            core::mem::size_of::<T>(),
+            core::mem::size_of::<T::OpaqueTarget>()
+        );
+
+        let input = ManuallyDrop::new(v);
+
+        // We could use a union here, but that forbids us from using Rust 1.45.
+        // Rust does optimize this into a no-op anyways
+        let opaque = unsafe { core::ptr::read(&input as *const _ as *const _) };
+
+        Self(opaque)
+    }
+
+    pub unsafe fn from_opaque(v: T::OpaqueTarget) -> Self {
+        Self(v)
+    }
+
+    pub fn take_raw(self) -> T {
+        let this = ManuallyDrop::new(self);
+        unsafe { core::ptr::read(&this.0 as *const _ as *const _) }
+    }
+
+    pub fn take_opaque(self) -> T::OpaqueTarget {
+        self.0
+    }
+}
+
 /// Describes an opaquable object.
 ///
 /// This trait provides a safe many-traits-to-one conversion. For instance, concrete vtable types
@@ -76,17 +119,7 @@ pub unsafe trait Opaquable: Sized {
     /// The opaque version safely destroys type information, and after this point there is no way
     /// back.
     fn into_opaque(self) -> Self::OpaqueTarget {
-        // Implementors should ensure the same size.
-        debug_assert_eq!(
-            core::mem::size_of::<Self>(),
-            core::mem::size_of::<Self::OpaqueTarget>()
-        );
-
-        let input = ManuallyDrop::new(self);
-
-        // We could use a union here, but that forbids us from using Rust 1.45.
-        // Rust does optimize this into a no-op anyways
-        unsafe { core::ptr::read(&input as *const _ as *const _) }
+        OpaqueHelper::new(self).take_opaque()
     }
 }
 
@@ -157,9 +190,7 @@ impl<T, V, C, R> GetVtblBase<V> for CGlueTraitObj<'_, T, V, C, R> {
 // Conversions into container type itself.
 // Needed when generated code returns Self
 
-impl<T: Deref<Target = F>, F, C: ContextBounds, R: Default> From<(T, C)>
-    for CGlueObjContainer<T, C, R>
-{
+impl<T: InstanceBounds, C: ContextBounds, R: Default> From<(T, C)> for CGlueObjContainer<T, C, R> {
     fn from((instance, context): (T, C)) -> Self {
         Self {
             instance,
@@ -169,19 +200,21 @@ impl<T: Deref<Target = F>, F, C: ContextBounds, R: Default> From<(T, C)>
     }
 }
 
-impl<T: Deref<Target = F>, F, R: Default> From<T> for CGlueObjContainer<T, NoContext, R> {
+impl<T: InstanceBounds, R: Default> From<T> for CGlueObjContainer<T, NoContext, R> {
     fn from(this: T) -> Self {
         Self::from((this, Default::default()))
     }
 }
 
-impl<'a, T, R: Default> From<T> for CGlueObjContainer<CBox<'a, T>, NoContext, R> {
+impl<'a, T: Send, R: Default> From<T> for CGlueObjContainer<CBox<'a, T>, NoContext, R> {
     fn from(this: T) -> Self {
         Self::from(CBox::from(this))
     }
 }
 
-impl<'a, T, C: ContextBounds, R: Default> From<(T, C)> for CGlueObjContainer<CBox<'a, T>, C, R> {
+impl<'a, T: Send, C: ContextBounds, R: Default> From<(T, C)>
+    for CGlueObjContainer<CBox<'a, T>, C, R>
+{
     fn from((this, context): (T, C)) -> Self {
         Self::from((CBox::from(this), context))
     }
@@ -189,8 +222,7 @@ impl<'a, T, C: ContextBounds, R: Default> From<(T, C)> for CGlueObjContainer<CBo
 
 impl<
         'a,
-        T: Deref<Target = F>,
-        F,
+        T: InstanceBounds,
         V: CGlueVtbl<CGlueObjContainer<T, C, R>, Context = C, RetTmp = R>,
         C: ContextBounds,
         R: Default,
@@ -207,8 +239,7 @@ where
 }
 impl<
         'a,
-        T: Deref<Target = F>,
-        F,
+        T: InstanceBounds,
         V: CGlueVtbl<CGlueObjContainer<T, C, R>, Context = C, RetTmp = R>,
         C: ContextBounds,
         R: Default,
@@ -223,8 +254,7 @@ where
 
 impl<
         'a,
-        T: Deref<Target = F>,
-        F,
+        T: InstanceBounds,
         V: CGlueVtbl<CGlueObjContainer<T, C, R>, Context = C, RetTmp = R>,
         C: ContextBounds,
         R: Default,
@@ -239,8 +269,7 @@ where
 
 impl<
         'a,
-        T: Deref<Target = F>,
-        F,
+        T: InstanceBounds,
         V: CGlueVtbl<CGlueObjContainer<T, NoContext, R>, Context = NoContext, RetTmp = R>,
         R: Default,
     > From<T> for CGlueTraitObj<'a, T, V, V::Context, V::RetTmp>
@@ -254,7 +283,7 @@ where
 
 impl<
         'a,
-        T,
+        T: Send,
         V: CGlueVtbl<CGlueObjContainer<CBox<'a, T>, NoContext, R>, Context = NoContext, RetTmp = R>,
         R: Default,
     > From<T> for CGlueTraitObj<'a, CBox<'a, T>, V, V::Context, V::RetTmp>
@@ -268,7 +297,7 @@ where
 
 impl<
         'a,
-        T,
+        T: Send,
         V: CGlueVtbl<CGlueObjContainer<CBox<'a, T>, C, R>, Context = C, RetTmp = R>,
         C: ContextBounds,
         R: Default,
@@ -317,14 +346,22 @@ pub trait GenericTypeBounds {}
 #[cfg(not(feature = "layout_checks"))]
 impl<T> GenericTypeBounds for T {}
 
+/// Describe type bounds for Instance (CGlueT) type.
+pub trait InstanceBounds: Deref<Target = Self::InstanceObjType> + Opaquable {
+    type InstanceObjType: Sized;
+}
+impl<T: Deref<Target = F> + Opaquable, F> InstanceBounds for T {
+    type InstanceObjType = <T as Deref>::Target;
+}
+
 /// CGlue compatible object.
 ///
 /// This trait allows to retrieve the constant `this` pointer on the structure.
-pub trait CGlueObjBase {
+pub trait CGlueObjBase: Opaquable {
     /// Type of the underlying object.
     type ObjType;
     /// Type of the container housing the object.
-    type InstType: ::core::ops::Deref<Target = Self::ObjType>;
+    type InstType: InstanceBounds<InstanceObjType = Self::ObjType>;
     /// Type of the context associated with the container.
     type Context: ContextBounds;
 
@@ -342,12 +379,12 @@ pub trait CGlueObjRef<R>: CGlueObjBase {
     }
 }
 
-impl<T: Deref<Target = F>, F, C: ContextBounds, R> CGlueObjBase for CGlueObjContainer<T, C, R> {
-    type ObjType = F;
+impl<T: InstanceBounds, C: ContextBounds, R> CGlueObjBase for CGlueObjContainer<T, C, R> {
+    type ObjType = T::Target;
     type InstType = T;
     type Context = C;
 
-    fn cobj_base_ref(&self) -> (&F, &Self::Context) {
+    fn cobj_base_ref(&self) -> (&T::Target, &Self::Context) {
         (self.instance.deref(), &self.context)
     }
 
@@ -356,8 +393,8 @@ impl<T: Deref<Target = F>, F, C: ContextBounds, R> CGlueObjBase for CGlueObjCont
     }
 }
 
-impl<T: Deref<Target = F>, F, C: ContextBounds, R> CGlueObjRef<R> for CGlueObjContainer<T, C, R> {
-    fn cobj_ref(&self) -> (&F, &R, &Self::Context) {
+impl<T: InstanceBounds, C: ContextBounds, R> CGlueObjRef<R> for CGlueObjContainer<T, C, R> {
+    fn cobj_ref(&self) -> (&T::Target, &R, &Self::Context) {
         (self.instance.deref(), &self.ret_tmp, &self.context)
     }
 }
@@ -375,10 +412,10 @@ pub trait CGlueObjMut<R>: CGlueObjRef<R> {
     }
 }
 
-impl<T: Deref<Target = F> + DerefMut, F, C: ContextBounds, R> CGlueObjMut<R>
+impl<T: InstanceBounds + DerefMut, C: ContextBounds, R> CGlueObjMut<R>
     for CGlueObjContainer<T, C, R>
 {
-    fn cobj_mut(&mut self) -> (&mut F, &mut R, &Self::Context) {
+    fn cobj_mut(&mut self) -> (&mut T::Target, &mut R, &Self::Context) {
         (self.instance.deref_mut(), &mut self.ret_tmp, &self.context)
     }
 }
@@ -400,9 +437,7 @@ pub trait GetContainer {
     }
 }
 
-impl<T: Deref<Target = F>, F, V, C: ContextBounds, R> GetContainer
-    for CGlueTraitObj<'_, T, V, C, R>
-{
+impl<T: InstanceBounds, V, C: ContextBounds, R> GetContainer for CGlueTraitObj<'_, T, V, C, R> {
     type ContType = CGlueObjContainer<T, C, R>;
 
     fn ccont_ref(&self) -> &Self::ContType {
@@ -483,7 +518,7 @@ unsafe impl<T: Opaquable> Opaquable for std::marker::PhantomData<T> {
     type OpaqueTarget = std::marker::PhantomData<T::OpaqueTarget>;
 }
 
-#[cfg(not(feature = "rust_void"))]
+#[cfg(not(any(feature = "rust_void", miri)))]
 unsafe impl Opaquable for () {
     type OpaqueTarget = ();
 }

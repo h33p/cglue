@@ -391,6 +391,7 @@ impl TraitGroupImpl {
     #[cfg(not(feature = "unstable"))]
     pub fn implement_group(&self) -> TokenStream {
         let crate_path = crate_path();
+        let trg_path: TokenStream = quote!(#crate_path::trait_group);
 
         let ctx_bound = super::traits::ctx_bound();
 
@@ -463,7 +464,7 @@ impl TraitGroupImpl {
         );
 
         let gen = quote! {
-            impl<#life_declare CGlueInst: ::core::ops::Deref<Target = #ty>, CGlueCtx: #ctx_bound, #gen_declare>
+            impl<#life_declare CGlueInst: #trg_path::InstanceBounds<InstanceObjType = #ty>, CGlueCtx: #ctx_bound, #gen_declare>
                 #group_path #filler_trait<#life_use CGlueInst, CGlueCtx, #gen_use> for #ty
             where #gen_where_bounds #vtbl_where_bounds {
                 fn fill_table(table: #group_path #vtable_type<#life_use CGlueInst, CGlueCtx, #gen_use>) -> #group_path #vtable_type<#life_use CGlueInst, CGlueCtx, #gen_use> {
@@ -491,7 +492,7 @@ impl TraitGroupImpl {
             quote! {
                 #gen
 
-                impl<#life_declare CGlueInst: ::core::ops::Deref<Target = #fwd_ty>, CGlueCtx: #ctx_bound, #gen_declare>
+                impl<#life_declare CGlueInst: #trg_path::InstanceBounds<InstanceObjType = #fwd_ty>, CGlueCtx: #ctx_bound, #gen_declare>
                     #group_path #fwd_filler_trait<#life_use CGlueInst, CGlueCtx, #gen_use> for #ty
                 where
                     #cont_name<CGlueInst, CGlueCtx, #gen_use>: #crate_path::trait_group::CGlueObjBase,
@@ -1111,7 +1112,7 @@ impl TraitGroup {
         #[cfg(not(feature = "unstable"))]
         let (extra_filler_traits, filler_trait_imports) = if self.extra_filler_traits {
             let traits = quote! {
-                pub trait #fwd_filler_trait<'cglue_a, CGlueInst: ::core::ops::Deref, CGlueCtx: #ctx_bound, #gen_declare>: 'cglue_a + Sized
+                pub trait #fwd_filler_trait<'cglue_a, CGlueInst: #trg_path::InstanceBounds, CGlueCtx: #ctx_bound, #gen_declare>: 'cglue_a + Sized
                 where
                     #cont_name<CGlueInst, CGlueCtx, #gen_use>: #trg_path::CGlueObjBase,
                     #gen_where_bounds
@@ -1119,7 +1120,7 @@ impl TraitGroup {
                     fn fill_fwd_table(table: #vtable_type<'cglue_a, CGlueInst, CGlueCtx, #gen_use>) -> #vtable_type<'cglue_a, CGlueInst, CGlueCtx, #gen_use>;
                 }
 
-                impl<'cglue_a, CGlueInst: ::core::ops::Deref<Target = #crate_path::forward::Fwd<&'cglue_a mut CGlueT>>, CGlueT, CGlueCtx: #ctx_bound, #gen_declare>
+                impl<'cglue_a, CGlueInst: #trg_path::InstanceBounds<InstanceObjType = #crate_path::forward::Fwd<&'cglue_a mut CGlueT>>, CGlueT, CGlueCtx: #ctx_bound, #gen_declare>
                     #filler_trait<'cglue_a, CGlueInst, CGlueCtx, #gen_use>
                     for #crate_path::forward::Fwd<&'cglue_a mut CGlueT>
                 where
@@ -1361,7 +1362,7 @@ impl TraitGroup {
                     = #base_name_arc_box<'cglue_a, #c_void, #c_void, #gen_use>;
 
 
-                impl<'cglue_a, CGlueInst: ::core::ops::Deref, CGlueCtx: #ctx_bound, #gen_declare>
+                impl<'cglue_a, CGlueInst: #trg_path::InstanceBounds, CGlueCtx: #ctx_bound, #gen_declare>
                     From<(CGlueInst, CGlueCtx)> for #cont_name<CGlueInst, CGlueCtx, #gen_use>
                 where
                     Self: #trg_path::CGlueObjBase
@@ -1376,7 +1377,7 @@ impl TraitGroup {
                     }
                 }
 
-                impl<'cglue_a, CGlueT, CGlueCtx: #ctx_bound, #gen_declare>
+                impl<'cglue_a, CGlueT: Send, CGlueCtx: #ctx_bound, #gen_declare>
                     From<(CGlueT, CGlueCtx)> for #cont_name<#crate_path::boxed::CBox<'cglue_a, CGlueT>, CGlueCtx, #gen_use>
                 where
                     Self: #trg_path::CGlueObjBase
@@ -1386,7 +1387,7 @@ impl TraitGroup {
                     }
                 }
 
-                impl<'cglue_a, CGlueInst: ::core::ops::Deref, CGlueCtx: #ctx_bound, #gen_declare>
+                impl<'cglue_a, CGlueInst: #trg_path::InstanceBounds, CGlueCtx: #ctx_bound, #gen_declare>
                     From<#cont_name<CGlueInst, CGlueCtx, #gen_use>> for #name<'cglue_a, CGlueInst, CGlueCtx, #gen_use>
                 where
                     #cont_name<CGlueInst, CGlueCtx, #gen_use>: #trg_path::CGlueObjBase,
@@ -1409,7 +1410,7 @@ impl TraitGroup {
                     }
                 }
 
-                impl<'cglue_a, CGlueInst: ::core::ops::Deref, CGlueCtx: #ctx_bound, #gen_declare>
+                impl<'cglue_a, CGlueInst: #trg_path::InstanceBounds, CGlueCtx: #ctx_bound, #gen_declare>
                     From<(CGlueInst, CGlueCtx)> for #name<'cglue_a, CGlueInst, CGlueCtx, #gen_use>
                 where
                     Self: From<#cont_name<CGlueInst, CGlueCtx, #gen_use>>,
@@ -1421,7 +1422,7 @@ impl TraitGroup {
                     }
                 }
 
-                impl<'cglue_a, CGlueT, #gen_declare>
+                impl<'cglue_a, CGlueT: Send, #gen_declare>
                     From<CGlueT> for #name<'cglue_a, #crate_path::boxed::CBox<'cglue_a, CGlueT>, #crate_path::trait_group::NoContext, #gen_use>
                 where
                     Self: From<(#crate_path::boxed::CBox<'cglue_a, CGlueT>, #crate_path::trait_group::NoContext)>,
@@ -1432,7 +1433,7 @@ impl TraitGroup {
                     }
                 }
 
-                impl<'cglue_a, CGlueInst: core::ops::Deref, #gen_declare> From<CGlueInst>
+                impl<'cglue_a, CGlueInst: #trg_path::InstanceBounds, #gen_declare> From<CGlueInst>
                     for #name<'cglue_a, CGlueInst, #trg_path::NoContext, #gen_use>
                 where
                     Self: From<(CGlueInst, #crate_path::trait_group::NoContext)>,
@@ -1444,7 +1445,7 @@ impl TraitGroup {
                     }
                 }
 
-                impl<'cglue_a, CGlueT, CGlueCtx: #ctx_bound, #gen_declare> From<(CGlueT, CGlueCtx)>
+                impl<'cglue_a, CGlueT: Send, CGlueCtx: #ctx_bound, #gen_declare> From<(CGlueT, CGlueCtx)>
                     for #name<'cglue_a, #crate_path::boxed::CBox<'cglue_a, CGlueT>, CGlueCtx, #gen_use>
                 where
                     Self: From<(#crate_path::boxed::CBox<'cglue_a, CGlueT>, CGlueCtx)>,
@@ -1479,7 +1480,7 @@ impl TraitGroup {
                     }
                 }
 
-                impl<'cglue_a, CGlueT, #gen_declare> #name<'cglue_a, #crate_path::boxed::CBox<'cglue_a, CGlueT>, #crate_path::trait_group::NoContext, #gen_use>
+                impl<'cglue_a, CGlueT: Send, #gen_declare> #name<'cglue_a, #crate_path::boxed::CBox<'cglue_a, CGlueT>, #crate_path::trait_group::NoContext, #gen_use>
                     where #gen_where_bounds
                 {
                     #[doc = #new_doc]
@@ -1507,7 +1508,7 @@ impl TraitGroup {
 
                 impl<
                     'cglue_a,
-                    CGlueInst, //: ::core::ops::Deref
+                    CGlueInst, //: #trg_path::InstanceBounds
                     CGlueCtx: #ctx_bound,
                     #gen_declare
                 >
@@ -1790,7 +1791,7 @@ impl TraitGroup {
         let ctx_bound = super::traits::ctx_bound();
 
         quote! {
-            impl<CGlueInst: ::core::ops::Deref, CGlueCtx: #ctx_bound, #gen_declare>
+            impl<CGlueInst: #trg_path::InstanceBounds, CGlueCtx: #ctx_bound, #gen_declare>
                 #trg_path::GetContainer for #name<'_, CGlueInst, CGlueCtx, #gen_use>
             where
                 #cont_name<CGlueInst, CGlueCtx, #gen_use>: #trg_path::CGlueObjBase,
@@ -1833,7 +1834,7 @@ impl TraitGroup {
         let ctx_bound = super::traits::ctx_bound();
 
         let mut ret = quote! {
-            impl<CGlueInst: ::core::ops::Deref, CGlueCtx: #ctx_bound, #all_gen_declare> #trg_path::CGlueObjBase
+            impl<CGlueInst: #trg_path::InstanceBounds, CGlueCtx: #ctx_bound, #all_gen_declare> #trg_path::CGlueObjBase
                 for #cont_name<CGlueInst, CGlueCtx, #all_gen_use>
             where
                 CGlueInst::Target: Sized,
@@ -1865,7 +1866,7 @@ impl TraitGroup {
         } in self.mandatory_vtbl.iter().chain(self.optional_vtbl.iter())
         {
             ret.extend(quote!{
-                impl<CGlueInst: ::core::ops::Deref, CGlueCtx: #ctx_bound, #all_gen_declare>
+                impl<CGlueInst: #trg_path::InstanceBounds, CGlueCtx: #ctx_bound, #all_gen_declare>
                     #trg_path::CGlueObjRef<#path #ret_tmp_typename<CGlueCtx, #gen_use #assoc_use>>
                     for #cont_name<CGlueInst, CGlueCtx, #all_gen_use>
                 where
@@ -1878,7 +1879,7 @@ impl TraitGroup {
                 }
 
                 impl<
-                        CGlueInst: ::core::ops::DerefMut,
+                        CGlueInst: #trg_path::InstanceBounds + ::core::ops::DerefMut,
                         CGlueCtx: #ctx_bound,
                         #all_gen_declare
                     > #trg_path::CGlueObjMut<#path #ret_tmp_typename<CGlueCtx, #gen_use #assoc_use>>
@@ -1962,7 +1963,7 @@ impl TraitGroup {
                     }
                 }
 
-                impl<'cglue_a, CGlueInst: ::core::ops::Deref, CGlueCtx: #ctx_bound, #all_gen_declare> #path #vtbl_get_ident<'cglue_a, #gen_use #assoc_use>
+                impl<'cglue_a, CGlueInst: #trg_path::InstanceBounds, CGlueCtx: #ctx_bound, #all_gen_declare> #path #vtbl_get_ident<'cglue_a, #gen_use #assoc_use>
                     for #name<'cglue_a, CGlueInst, CGlueCtx, #all_gen_use>
                 where
                     <CGlueInst as ::core::ops::Deref>::Target: Sized,
@@ -1974,7 +1975,7 @@ impl TraitGroup {
                     }
                 }
 
-                impl<'cglue_a, CGlueInst: ::core::ops::Deref, CGlueCtx: #ctx_bound, #all_gen_declare> #path #assoc_bind_ident<#gen_use>
+                impl<'cglue_a, CGlueInst: #trg_path::InstanceBounds, CGlueCtx: #ctx_bound, #all_gen_declare> #path #assoc_bind_ident<#gen_use>
                     for #name<'cglue_a, CGlueInst, CGlueCtx, #all_gen_use>
                 where
                     <CGlueInst as ::core::ops::Deref>::Target: Sized,

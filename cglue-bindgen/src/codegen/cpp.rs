@@ -115,7 +115,11 @@ pub fn parse_header(header: &str, config: &Config) -> Result<String> {
     // Fix up the MaybeUninit
     // Basically, we strip it completely, and then define `RustMaybeUninit` for special cases.
 
-    let header = &strip_maybe_uninit(header);
+    let mut header = header.to_string();
+    for w in &["MaybeUninit", "OpaqueHelper"] {
+        header = strip_wrapper(&header, w);
+    }
+    let header = &header;
 
     // COLLECTION:
 
@@ -163,6 +167,13 @@ pub fn parse_header(header: &str, config: &Config) -> Result<String> {
         header.contains("const TypeLayout *") && !type_layout_re.is_match(header);
 
     // PROCESSING:
+
+    let header = header.replace(
+        r"
+template<typename T>
+using OpaqueHelper = OpaqueTarget;",
+        "",
+    );
 
     let header = header.replace(
         "struct MaybeUninit;",
@@ -895,10 +906,11 @@ struct [^\{\}\n]+<.*CGlueInst.*>)?",
     Ok(header)
 }
 
-fn strip_maybe_uninit(header: &str) -> String {
+fn strip_wrapper(header: &str, wrapper: &str) -> String {
     let mut out = String::new();
 
-    let mut iter = header.split("MaybeUninit<");
+    let split = format!("{}<", wrapper);
+    let mut iter = header.split(&split);
 
     if let Some(v) = iter.next() {
         out += v;

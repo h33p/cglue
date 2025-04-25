@@ -10,6 +10,7 @@ repository = "https://github.com/h33p/cglue"
 keywords = [ "cglue", "abi", "ffi", "cbindgen", "macro" ]
 categories = [ "api-bindings", "accessibility", "parsing" ]
 readme = "../README.md"
+rust-version = "1.56"
 
 [lib]
 proc-macro = true
